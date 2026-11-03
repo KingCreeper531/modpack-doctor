@@ -1,16 +1,21 @@
 /** Crash analysis and watch mode in the store (M4), against the mock backend and the real rules core. */
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CrashDetected } from '../../../bindings';
+import type { CrashDetected, DiscoveryReport } from '../../../bindings';
 import { CRASH_ANCHORS } from '../../../core/crash';
-import { defaultSourceId, digestView, sortSources, upsertSource } from '../crashState';
+import type { CrashSummary } from '../../../core/crash/summary';
+import { CRASH_NOTIFICATION_FALLBACK_TITLE, crashNotification, defaultSourceId, digestView, sortSources, upsertSource } from '../crashState';
+import type { Result } from '../ipc';
 import { MOCK_INSTANCES } from '../mockData';
 import { notifierFrom, type Notifier } from '../notify';
-import { CRASH_NOTIFICATION_TITLE, watchAnchors } from '../store';
-import { mockStore, until } from './helpers';
+import { watchAnchors } from '../store';
+import { finding, mockStore, until } from './helpers';
 
 const ATM = MOCK_INSTANCES[0]!.id;
+const ATM_NAME = MOCK_INSTANCES[0]!.name;
 const FO = MOCK_INSTANCES[1]!.id;
+const FO_NAME = MOCK_INSTANCES[1]!.name;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MRPACK = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!.id;
 const NEWEST_CRASH = 'crash-reports/crash-2026-11-03_14.22.07-client.txt';
 const EMBERFORGE = 'mods/emberforge-1.20.1-2.4.0.jar';
@@ -76,14 +81,17 @@ describe('crash analysis flow', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it('a listing error is kept per instance (permission), and unavailable stays neutral', async () => {
+  it('a listing error is kept per instance (permission); a .mrpack lists no logs, as in Rust', async () => {
     const m = mockStore({ scenario: 'errors' });
     await m.store.getState().init();
     await until(() => m.store.getState().crashes[ATM]?.sourcesStatus === 'error');
     expect(m.store.getState().crashes[ATM]!.sourcesError).toMatchObject({ kind: 'permission' });
     m.store.getState().selectInstance(MRPACK);
-    await until(() => m.store.getState().crashes[MRPACK]?.sourcesStatus === 'error');
-    expect(m.store.getState().crashes[MRPACK]!.sourcesError?.kind).toBe('unavailable');
+    await until(() => m.store.getState().crashes[MRPACK]?.sourcesStatus === 'done');
+    expect(m.store.getState().crashes[MRPACK]).toMatchObject({ sources: [], sourcesError: null, selectedSourceId: null });
+    // Rust (commands/logs.rs) refuses to read or watch a .mrpack: the mock does too.
+    expect((await m.backend.commands.readLogDigest(MRPACK, 'logs/latest.log', ['x'], null)).status).toBe('error');
+    expect(await m.backend.commands.setWatch(MRPACK, true, watchAnchors())).toMatchObject({ status: 'error', error: { kind: 'invalid' } });
   });
 
   it('a digest error becomes an error analysis that Retry (force) reads again', async () => {
@@ -140,6 +148,78 @@ describe('watch mode', () => {
     expect(sw).not.toHaveBeenCalled();
   });
 
+  /** The mock's discovery report without the given instances. */
+  async function reportWithout(m: ReturnType<typeof mockStore>, ...ids: string[]): Promise<Result<DiscoveryReport>> {
+    const r = await m.backend.commands.discoverInstances();
+    if (r.status !== 'ok') throw new Error('discovery failed');
+    return { status: 'ok', data: { ...r.data, instances: r.data.instances.filter((i) => !ids.includes(i.id)) } };
+  }
+
+  it('re-arms after every discovery load: never an absent id, again when it comes back, never twice while armed', async () => {
+    const m = mockStore({ scenario: 'crash', crashDelayMs: 60_000 });
+    const sw = vi.spyOn(m.backend.commands, 'setWatch');
+    const armedIds = () => sw.mock.calls.map((c) => c[0]);
+    // Startup: FO is watched but not on disk right now.
+    vi.spyOn(m.backend.commands, 'discoverInstances').mockResolvedValueOnce(await reportWithout(m, FO));
+    await m.store.getState().init();
+    await until(() => m.backend.watches().has(ATM) && !m.store.getState().watchPending[ATM]);
+    expect(armedIds()).toEqual([ATM]);
+    expect(m.store.getState().watchErrors[FO]).toBeUndefined();
+    // A discovery load that lists FO again arms it; ATM is armed already.
+    await m.store.getState().addLauncherRoot('prism');
+    await until(() => m.backend.watches().has(FO) && !m.store.getState().watchPending[FO]);
+    expect(armedIds()).toEqual([ATM, FO]);
+    // ATM vanishes (Rust stops its watcher on rediscovery): nothing is armed for it…
+    vi.spyOn(m.backend.commands, 'pickLauncherRoot').mockResolvedValueOnce(await reportWithout(m, ATM));
+    await m.store.getState().addLauncherRoot('prism');
+    await sleep(10);
+    expect(armedIds()).toEqual([ATM, FO]);
+    // …and it is re-armed when it reappears.
+    await m.store.getState().addLauncherRoot('prism');
+    await until(() => armedIds().length === 3 && !m.store.getState().watchPending[ATM]);
+    expect(armedIds()).toEqual([ATM, FO, ATM]);
+    for (const [, enabled, anchors] of sw.mock.calls) {
+      expect(enabled).toBe(true);
+      expect(anchors).toEqual(watchAnchors());
+    }
+  });
+
+  it('a failed re-arm shows its error and is retried on the next discovery load', async () => {
+    const m = mockStore({ scenario: 'crash', crashDelayMs: 60_000 });
+    const real = m.backend.commands.setWatch;
+    let failures = 1;
+    const sw = vi.spyOn(m.backend.commands, 'setWatch').mockImplementation(async (id, enabled, anchors) => {
+      if (id === FO && failures-- > 0) return { status: 'error', error: { kind: 'io', message: 'The logs folder could not be watched.', path: null } };
+      return real(id, enabled, anchors);
+    });
+    await m.store.getState().init();
+    await until(() => !!m.store.getState().watchErrors[FO] && m.backend.watches().has(ATM));
+    expect(m.backend.watches().has(FO)).toBe(false);
+    // The toggle was disabled while arming, and is usable again.
+    expect(m.store.getState().watchPending).toEqual({});
+    await m.store.getState().addLauncherRoot('prism');
+    await until(() => m.backend.watches().has(FO) && !m.store.getState().watchPending[FO]);
+    expect(m.store.getState().watchErrors[FO]).toBeUndefined();
+    expect(sw.mock.calls.filter((c) => c[0] === ATM)).toHaveLength(1);
+    expect(sw.mock.calls.filter((c) => c[0] === FO)).toHaveLength(2);
+  });
+
+  it('turning watch off and on again keeps re-arm from repeating it', async () => {
+    const m = mockStore();
+    await ready(m);
+    const sw = vi.spyOn(m.backend.commands, 'setWatch');
+    await m.store.getState().setWatch(ATM, true);
+    await m.store.getState().addLauncherRoot('prism');
+    await sleep(10);
+    expect(sw).toHaveBeenCalledTimes(1);
+    await m.store.getState().setWatch(ATM, false);
+    expect(sw).toHaveBeenCalledTimes(2);
+    await m.store.getState().addLauncherRoot('prism');
+    await sleep(10);
+    // Not watched any more: nothing to re-arm.
+    expect(sw).toHaveBeenCalledTimes(2);
+  });
+
   it('the toggle calls set_watch and mirrors Settings.watched; errors stay per instance', async () => {
     const m = mockStore();
     await ready(m);
@@ -161,7 +241,7 @@ describe('watch mode', () => {
 });
 
 describe('CrashDetected', () => {
-  it('analyses the episode source, notifies once with the likely cause, alerts and selects the crash', async () => {
+  it('analyses the episode source, notifies once naming the instance and the likely cause, alerts and selects the crash', async () => {
     const { notifier, sent } = recordingNotifier('sent');
     const m = mockStore({}, undefined, undefined, { notifier });
     await ready(m);
@@ -171,8 +251,9 @@ describe('CrashDetected', () => {
     const st = m.store.getState();
     const a = analysis(m, ATM, e.source.id)!;
     expect(a.summary).not.toBeNull();
-    expect(sent).toEqual([{ title: CRASH_NOTIFICATION_TITLE, body: a.summary!.likelyCause! }]);
+    expect(sent).toEqual([{ title: `${ATM_NAME} crashed`, body: `Likely cause: ${a.summary!.likelyCause!}` }]);
     expect(sent[0]!.body).toMatch(/Pipeworks/);
+    expect(sent[0]!.body).not.toContain(a.summary!.headline);
     expect(st.crashes[ATM]!.sources[0]!.id).toBe(e.source.id);
     expect(st.crashes[ATM]!.selectedSourceId).toBe(e.source.id);
     expect(st.findingsTab[ATM]).toBe('crashes');
@@ -241,7 +322,102 @@ describe('CrashDetected', () => {
     const m = mockStore({ scenario: 'crash', crashDelayMs: 5 }, undefined, undefined, { notifier });
     await m.store.getState().init();
     await until(() => sent.length === 2, 4000);
-    expect(Object.keys(m.store.getState().crashAlerts).sort()).toEqual([ATM, FO].sort());
+    expect(sent.map((s) => s.title).sort()).toEqual([`${ATM_NAME} crashed`, `${FO_NAME} crashed`].sort());
+    // ATM is open (its crash is on screen): only FO's crash is unseen.
+    expect(m.store.getState().selectedInstanceId).toBe(ATM);
+    expect(Object.keys(m.store.getState().crashAlerts)).toEqual([FO]);
+  });
+
+  it('race: a Refresh while the episode is read still announces it exactly once', async () => {
+    // Reviewer's repro: CrashDetected with a stat that differs from the listing (size - 1, as
+    // for a file still being written), loadLogSources right away, every digest read 30 ms late.
+    const { notifier, sent } = recordingNotifier('sent');
+    const m = mockStore({}, undefined, undefined, { notifier });
+    await ready(m);
+    m.store.getState().selectInstance(FO);
+    await until(() => m.store.getState().crashes[FO]?.sourcesStatus === 'done');
+    const real = m.backend.commands.readLogDigest;
+    const read = vi.spyOn(m.backend.commands, 'readLogDigest').mockImplementation(async (...args) => {
+      await sleep(30);
+      return real(...args);
+    });
+    const listed = m.store.getState().crashes[ATM]!.sources.find((s) => s.id === NEWEST_CRASH)!;
+    const e: CrashDetected = { instanceId: ATM, episode: 1, source: { ...listed, size: listed.size - 1 }, triggers: [{ kind: 'processExit', pid: 1 }] };
+    m.backend.emitCrashDetected(e);
+    void m.store.getState().loadLogSources(ATM);
+    await until(() => sent.length > 0);
+    await sleep(80);
+    expect(sent).toEqual([{ title: `${ATM_NAME} crashed`, body: expect.stringMatching(/^Likely cause: /) as string }]);
+    expect(m.store.getState().crashAlerts[ATM]).toMatchObject({ episode: 1, sourceId: NEWEST_CRASH });
+    expect(analysis(m, ATM, NEWEST_CRASH)?.status).toBe('done');
+    // The Refresh shared the episode's read instead of starting another one.
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('race: a forced re-read (Retry) during the episode read hands the episode the newer analysis', async () => {
+    const { notifier, sent } = recordingNotifier('denied');
+    const m = mockStore({}, undefined, undefined, { notifier });
+    await ready(m);
+    m.store.getState().selectInstance(FO);
+    const real = m.backend.commands.readLogDigest;
+    vi.spyOn(m.backend.commands, 'readLogDigest').mockImplementation(async (...args) => {
+      await sleep(30);
+      return real(...args);
+    });
+    const listed = m.store.getState().crashes[ATM]!.sources.find((s) => s.id === NEWEST_CRASH)!;
+    m.backend.emitCrashDetected({ instanceId: ATM, episode: 2, source: listed, triggers: [{ kind: 'processExit', pid: 1 }] });
+    await sleep(5);
+    void m.store.getState().analyzeLogSource(ATM, NEWEST_CRASH, true);
+    await until(() => m.store.getState().crashBanner !== null);
+    await sleep(80);
+    expect(sent).toHaveLength(1);
+    expect(m.store.getState().crashBanner).toMatchObject({ instanceId: ATM, episode: 2 });
+    expect(m.store.getState().crashAlerts[ATM]).toMatchObject({ episode: 2 });
+  });
+
+  it('race: a listing that started before the crash file existed keeps the announced file listed', async () => {
+    const { notifier, sent } = recordingNotifier('sent');
+    const m = mockStore({}, undefined, undefined, { notifier });
+    await ready(m);
+    m.store.getState().selectInstance(FO);
+    const real = m.backend.commands.listLogSources;
+    // The listing sees the folder before the crash report is written, and answers late.
+    const before = await real(ATM);
+    vi.spyOn(m.backend.commands, 'listLogSources').mockImplementationOnce(async () => {
+      await sleep(20);
+      return before;
+    });
+    const realRead = m.backend.commands.readLogDigest;
+    vi.spyOn(m.backend.commands, 'readLogDigest').mockImplementation(async (...args) => {
+      await sleep(40);
+      return realRead(...args);
+    });
+    void m.store.getState().loadLogSources(ATM);
+    const e = m.backend.crash(ATM, 5)!;
+    await until(() => sent.length === 1);
+    const c = m.store.getState().crashes[ATM]!;
+    expect(c.sources.some((s) => s.id === e.source.id)).toBe(true);
+    expect(c.selectedSourceId).toBe(e.source.id);
+  });
+
+  it('a crash in the open instance notifies but raises no unseen alert; the crash is on screen', async () => {
+    const { notifier, sent } = recordingNotifier('sent');
+    const m = mockStore({}, undefined, undefined, { notifier });
+    await ready(m);
+    expect(m.store.getState().selectedInstanceId).toBe(ATM);
+    const e = m.backend.crash(ATM, 1)!;
+    await until(() => sent.length === 1);
+    const st = m.store.getState();
+    expect(st.crashAlerts[ATM]).toBeUndefined();
+    expect(st.findingsTab[ATM]).toBe('crashes');
+    expect(st.crashes[ATM]!.selectedSourceId).toBe(e.source.id);
+    expect(st.crashes[ATM]!.pane).toBe('diagnosis');
+    // Another instance's crash is unseen until it is opened.
+    m.backend.crash(FO, 2);
+    await until(() => sent.length === 2);
+    expect(m.store.getState().crashAlerts[FO]).toMatchObject({ episode: 2 });
+    m.store.getState().selectInstance(FO);
+    expect(m.store.getState().crashAlerts[FO]).toBeUndefined();
   });
 });
 
@@ -268,6 +444,21 @@ describe('crashState helpers', () => {
     expect(defaultSourceId([s('logs/latest.log', 'latestLog', 9), s('crash-reports/a.txt', 'crashReport', 5), s('hs_err_pid1.log', 'hsErr', 7)])).toBe('hs_err_pid1.log');
     expect(defaultSourceId([s('logs/latest.log', 'latestLog', 9)])).toBe('logs/latest.log');
     expect(defaultSourceId([])).toBeNull();
+  });
+
+  it('crashNotification: "<instance> crashed", the likely cause, else the finding title; never the headline', () => {
+    const top = finding('c1', 'error', [], { code: 'C-ROOT-CAUSE', title: 'java.lang.IllegalStateException: boom' });
+    const known: CrashSummary = { headline: 'Modpack crashed — likely cause: Pipeworks broke', likelyCause: 'Pipeworks broke', culpritFiles: [] };
+    expect(crashNotification('All the Mods 9', known, [top], 'crash-reports/c.txt')).toEqual({ title: 'All the Mods 9 crashed', body: 'Likely cause: Pipeworks broke' });
+    expect(crashNotification(null, known, [top], 'crash-reports/c.txt').title).toBe(CRASH_NOTIFICATION_FALLBACK_TITLE);
+    expect(crashNotification('  ', known, [top], 'crash-reports/c.txt').title).toBe('Modpack crashed');
+    const unknown: CrashSummary = { headline: 'Modpack crashed — java.lang.IllegalStateException: boom', likelyCause: null, culpritFiles: [] };
+    const n = crashNotification('ATM9', unknown, [finding('w', 'warning', []), top], 'crash-reports/c.txt');
+    expect(n).toEqual({ title: 'ATM9 crashed', body: 'java.lang.IllegalStateException: boom' });
+    expect(n.body).not.toBe(unknown.headline);
+    // No usable title: point at the file rather than repeat the headline.
+    const blank = crashNotification('ATM9', { headline: 'Modpack crashed', likelyCause: null, culpritFiles: [] }, [{ ...top, title: '' }], 'crash-reports/c.txt');
+    expect(blank.body).toBe('See c.txt in Modpack Doctor.');
   });
 
   it('upserts a source keeping newest-first order', () => {

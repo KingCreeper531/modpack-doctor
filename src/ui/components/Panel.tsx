@@ -4,11 +4,13 @@
  *
  * `tabs` turns the legend into a row of legends that switch the panel body (FINDINGS / CRASHES).
  * The active legend reads `fg` over a 2px `signal` rule at the header's bottom edge (amber means
- * selection); the others stay `fg-faint`. Left/Right move between them.
+ * selection); the others stay `fg-faint`. Left/Right move between them (wrapping), Home/End jump
+ * to the first/last; only the active tab is a tab stop (roving.ts).
  */
-import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 import { cx } from './cx';
+import { onRovingKeyDown } from './roving';
 
 export interface PanelTab {
   id: string;
@@ -39,18 +41,9 @@ export interface PanelProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
 }
 
 function Tabs({ tabs, tab, onTab, controls }: { tabs: readonly PanelTab[]; tab?: string | undefined; onTab?: ((id: string) => void) | undefined; controls?: string | undefined }) {
-  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    const i = tabs.findIndex((t) => t.id === tab);
-    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-    if (!next) return;
-    e.preventDefault();
-    onTab?.(next.id);
-    const el = e.currentTarget.querySelector<HTMLElement>(`[data-tab="${next.id}"]`);
-    el?.focus();
-  };
+  const ids = tabs.map((t) => t.id);
   return (
-    <div role="tablist" className="flex h-8 items-stretch gap-4" onKeyDown={onKey}>
+    <div role="tablist" className="flex h-8 items-stretch gap-4" onKeyDown={(e) => onRovingKeyDown(e, ids, tab, onTab, 'tabs')}>
       {tabs.map((t) => {
         const active = t.id === tab;
         return (
@@ -58,7 +51,7 @@ function Tabs({ tabs, tab, onTab, controls }: { tabs: readonly PanelTab[]; tab?:
             key={t.id}
             type="button"
             role="tab"
-            data-tab={t.id}
+            data-roving={t.id}
             aria-selected={active}
             aria-controls={controls}
             tabIndex={active ? 0 : -1}

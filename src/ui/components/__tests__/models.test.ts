@@ -5,6 +5,7 @@ import { basename, formatAgo, formatBytes, formatDuration, formatInt, opNumber, 
 import { fixLabel, probeResult } from '../labels';
 import { buildLogRows, excerptLines, gutterChars } from '../logModel';
 import { matchMask, matchRuns } from '../paletteModel';
+import { rovingIndex } from '../roving';
 import { describeOp, enterExecutes } from '../workOrderModel';
 
 describe('format', () => {
@@ -118,5 +119,26 @@ describe('work order', () => {
       detail: 'replaces mods/sodium-0.5.8.jar',
     });
     expect(describeOp(rename.op)).toMatchObject({ verb: 'rename', subject: 'mods/a.jar.disabled', target: 'mods/a.jar' });
+  });
+});
+
+describe('roving keys', () => {
+  it('radio groups: all arrows wrap, Home/End jump, other keys are ignored', () => {
+    expect(rovingIndex('ArrowRight', 0, 3)).toBe(1);
+    expect(rovingIndex('ArrowDown', 2, 3)).toBe(0);
+    expect(rovingIndex('ArrowLeft', 0, 3)).toBe(2);
+    expect(rovingIndex('ArrowUp', 1, 3)).toBe(0);
+    expect(rovingIndex('Home', 2, 3)).toBe(0);
+    expect(rovingIndex('End', 0, 3)).toBe(2);
+    expect(rovingIndex('Enter', 0, 3)).toBeNull();
+    expect(rovingIndex('ArrowRight', -1, 3)).toBe(1);
+    expect(rovingIndex('Home', 0, 0)).toBeNull();
+  });
+
+  it('horizontal tab lists take Left/Right/Home/End only', () => {
+    expect(rovingIndex('ArrowRight', 1, 2, 'tabs')).toBe(0);
+    expect(rovingIndex('ArrowLeft', 0, 2, 'tabs')).toBe(1);
+    expect(rovingIndex('ArrowDown', 0, 2, 'tabs')).toBeNull();
+    expect(rovingIndex('End', 0, 2, 'tabs')).toBe(1);
   });
 });

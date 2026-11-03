@@ -14,10 +14,14 @@
  * Crash analysis (M4): an instance's log sources load when it is opened; the newest crash report
  * (else the newest log) is selected and analysed (`read_log_digest` → `analyzeCrash`, see
  * crashState.ts). Watch mode: `setWatch` → `set_watch` with the tiered `CRASH_ANCHORS`; Rust
- * persists `Settings.watched`, and `init` re-arms every watched id once. A `CrashDetected`
- * episode (duplicates dropped) is read and analysed; only an error-severity crash finding
- * (`summarizeCrash` non-null) raises a native notification, a rail alert and selects the crash.
- * When notifications are not allowed, an in-app banner shows instead.
+ * persists `Settings.watched`. After every successful discovery load the UI re-arms each watched
+ * id that is in the instance list and not armed yet (or whose arm failed); absent ids are left
+ * alone and re-armed when they come back. A `CrashDetected` episode (duplicates dropped) is read
+ * and analysed; only an error-severity crash finding (`summarizeCrash` non-null) raises a native
+ * notification (`<instance> crashed`, the likely cause) and selects the crash, plus a rail alert
+ * unless the user is already looking at that instance. When notifications are not allowed, an
+ * in-app banner shows instead. Every read of a source resolves with the newest analysis of that
+ * source, so an episode is announced even when a Refresh or Retry re-reads its file meanwhile.
  *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
@@ -33,6 +37,7 @@ import type {
   Instance,
   Launcher,
   LogDigest,
+  LogSource,
   OpStatus,
   PackOverride,
   ResolvedTheme,
@@ -55,6 +60,7 @@ import { clampSize, INSPECTOR_DEFAULT, INSPECTOR_MAX, INSPECTOR_MIN } from '../c
 import type { SortState } from '../components/sort';
 import { packIdentity, topLevelId } from './derive';
 import {
+  crashNotification,
   defaultSourceId,
   emptyCrashes,
   sortSources,
@@ -96,9 +102,6 @@ export interface CrashCoreApi {
   analyzeCrash: (input: CrashInput) => Finding[];
   buildJarIndex: (scan: ScanResult) => JarIndex;
 }
-
-/** Title of every crash notification (the body is the likely cause). */
-export const CRASH_NOTIFICATION_TITLE = 'Modpack crashed';
 
 /** The tiered anchor list as `set_watch` takes it (fresh objects each call). */
 export function watchAnchors(): WatchAnchor[] {
@@ -257,9 +260,15 @@ export function createAppStore(deps: StoreDeps): AppStore {
   /** Latest `list_log_sources` / `read_log_digest` request per instance / source. */
   const sourceTokens = new Map<string, number>();
   const digestTokens = new Map<string, number>();
+  /**
+   * The newest read of each `instanceId/sourceId`. A superseded read resolves with the one that
+   * replaced it, so whoever waits on a source (a `CrashDetected` episode) gets its analysis.
+   */
+  const latestRead = new Map<string, Promise<CrashAnalysis | null>>();
   /** `instanceId#episode` of every `CrashDetected` handled (duplicates are dropped). */
   const episodes = new Set<string>();
-  let rearmed = false;
+  /** Instances whose watcher this run armed successfully (re-arm skips them). */
+  const armed = new Set<string>();
   const indexes = new WeakMap<ScanResult, JarIndex>();
   const bump = (m: Map<string, number>, key: string) => {
     const t = (m.get(key) ?? 0) + 1;
@@ -383,19 +392,30 @@ export function createAppStore(deps: StoreDeps): AppStore {
       }
     };
 
-    /** Read + analyse one source; resolves with the analysis (null when superseded). */
-    const analyze = async (id: string, sourceId: string, force: boolean): Promise<CrashAnalysis | null> => {
-      const cur = get().crashes[id]?.analyses[sourceId];
-      if (!force && cur && cur.status !== 'error') return cur.status === 'done' ? cur : null;
+    /**
+     * Read + analyse one source. Resolves with the analysis that ends up stored for it: a read
+     * that another read of the same source superseded (Refresh, Retry, a forced re-read) resolves
+     * with that newer read's result rather than null, and a non-forced call while a read is in
+     * flight shares it. Null only when the source has no analysis to give.
+     */
+    const analyze = (id: string, sourceId: string, force: boolean): Promise<CrashAnalysis | null> => {
       const key = `${id}/${sourceId}`;
+      const cur = get().crashes[id]?.analyses[sourceId];
+      if (!force && cur?.status === 'done') return Promise.resolve(cur);
+      if (!force && cur?.status === 'loading') return latestRead.get(key) ?? Promise.resolve(null);
       const token = bump(digestTokens, key);
       putAnalysis(id, sourceId, { status: 'loading', digest: null, findings: [], summary: null, error: null, mapped: false });
-      const r = await call(cmd.readLogDigest(id, sourceId, [...CRASH_ANCHOR_TEXTS], null));
-      if (digestTokens.get(key) !== token) return null;
-      const a: CrashAnalysis =
-        r.status === 'ok' ? classify(id, r.data) : { status: 'error', digest: null, findings: [], summary: null, error: r.error, mapped: false };
-      putAnalysis(id, sourceId, a);
-      return a;
+      const read = (async (): Promise<CrashAnalysis | null> => {
+        const r = await call(cmd.readLogDigest(id, sourceId, [...CRASH_ANCHOR_TEXTS], null));
+        // Superseded: follow the newer read (set synchronously when it started).
+        if (digestTokens.get(key) !== token) return (await latestRead.get(key)) ?? null;
+        const a: CrashAnalysis =
+          r.status === 'ok' ? classify(id, r.data) : { status: 'error', digest: null, findings: [], summary: null, error: r.error, mapped: false };
+        putAnalysis(id, sourceId, a);
+        return a;
+      })();
+      latestRead.set(key, read);
+      return read;
     };
 
     /** Re-run the analysis of every digest already read (after a scan or an override). */
@@ -413,37 +433,93 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (get().selection?.kind === 'crash') keepSelection(id);
     };
 
-    const rearm = async (ids: readonly string[]) => {
-      if (rearmed) return;
-      rearmed = true;
+    const setWatchPending = (ids: readonly string[], pending: boolean) =>
+      set((st) => {
+        const watchPending: Record<string, true> = { ...st.watchPending };
+        for (const id of ids) {
+          if (pending) watchPending[id] = true;
+          else delete watchPending[id];
+        }
+        return { watchPending };
+      });
+
+    /**
+     * Rust never starts watchers by itself (CONTRACTS invariant 11), and a rediscovery stops the
+     * watcher of an instance that left the list. So after every successful discovery load: arm
+     * each id in `Settings.watched` that is listed and not armed yet (or whose arm failed). Ids
+     * that are not listed are never armed; they are forgotten as armed, so they re-arm when they
+     * come back. Idempotent (`set_watch(true)` on a watched instance replaces its watcher).
+     */
+    const rearm = async () => {
+      const instances = get().discovery?.instances ?? [];
+      const present = new Set(instances.map((i) => i.id));
+      for (const id of [...armed]) if (!present.has(id)) armed.delete(id);
+      const ids = get().settings.watched.filter((id) => {
+        const inst = instances.find((i) => i.id === id);
+        return !!inst && inst.launcher !== 'mrpack' && !armed.has(id) && !get().watchPending[id];
+      });
+      if (!ids.length) return;
+      // The toggle is disabled while its instance is being armed (no racing user toggle).
+      setWatchPending(ids, true);
       const anchors = watchAnchors();
       await Promise.all(
         ids.map(async (id) => {
           const r = await call(cmd.setWatch(id, true, anchors));
-          if (r.status === 'error') set((st) => ({ watchErrors: { ...st.watchErrors, [id]: r.error } }));
+          if (r.status === 'ok') armed.add(id);
+          set((st) => {
+            const watchErrors = { ...st.watchErrors };
+            if (r.status === 'error') watchErrors[id] = r.error;
+            else delete watchErrors[id];
+            return { watchErrors };
+          });
+          setWatchPending([id], false);
         }),
       );
     };
+
+    /** Episode sources being announced, per `instanceId/sourceId` (a stale listing keeps them). */
+    const announcing = new Map<string, LogSource>();
 
     const onCrash = async (e: CrashDetected) => {
       const key = `${e.instanceId}#${e.episode}`;
       if (episodes.has(key)) return;
       episodes.add(key);
       const id = e.instanceId;
+      const sourceKey = `${id}/${e.source.id}`;
+      announcing.set(sourceKey, e.source);
       patchCrashes(id, (c) => {
         const analyses = { ...c.analyses };
         delete analyses[e.source.id];
         return { ...c, sources: upsertSource(c.sources, e.source), analyses };
       });
-      const a = await analyze(id, e.source.id, true);
+      let a: CrashAnalysis | null;
+      try {
+        // Resolves with whichever read of this source finishes last (a Refresh or a Retry may
+        // re-read the file meanwhile), so the episode is never lost to a superseded read.
+        a = await analyze(id, e.source.id, true);
+      } finally {
+        if (announcing.get(sourceKey) === e.source) announcing.delete(sourceKey);
+      }
       const summary = a?.summary;
       // A normal quit never reaches here (Rust), and a crash without an error-severity finding
       // is listed but never announced.
-      if (!summary) return;
+      if (!a || !summary) return;
       const alert: CrashAlert = { instanceId: id, episode: e.episode, sourceId: e.source.id, summary };
-      patchCrashes(id, (c) => ({ ...c, selectedSourceId: e.source.id, pane: 'diagnosis', logLine: null }));
-      set((st) => ({ findingsTab: { ...st.findingsTab, [id]: 'crashes' }, crashAlerts: { ...st.crashAlerts, [id]: alert } }));
-      const sent = await notifier.notify(CRASH_NOTIFICATION_TITLE, summary.likelyCause ?? summary.headline);
+      patchCrashes(id, (c) => ({
+        ...c,
+        // A listing that started before the crash file existed may have dropped it.
+        sources: c.sources.some((s) => s.id === e.source.id) ? c.sources : upsertSource(c.sources, e.source),
+        selectedSourceId: e.source.id,
+        pane: 'diagnosis',
+        logLine: null,
+      }));
+      set((st) => ({ findingsTab: { ...st.findingsTab, [id]: 'crashes' } }));
+      // The rail mark and tab pip mean "not looked at yet". When this instance is open, its
+      // crashes tab now shows this very source: nothing is unseen.
+      if (get().selectedInstanceId === id) clearAlert(id);
+      else set((st) => ({ crashAlerts: { ...st.crashAlerts, [id]: alert } }));
+      const n = crashNotification(instanceById(id)?.name, summary, a.findings, e.source.id);
+      const sent = await notifier.notify(n.title, n.body);
       if (sent === 'denied') set({ crashBanner: alert });
     };
 
@@ -483,6 +559,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
             return { discovery: { ...d, instances: [...d.instances, instance] } };
           });
           get().selectInstance(instance.id);
+          void rearm();
         }),
         ev.dropRejected.listen(({ name, reason }) =>
           set({ railError: { kind: 'invalid', message: `${name} was not added: ${reason}`, path: null } }),
@@ -501,11 +578,11 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const [settings, discovery] = await Promise.all([call(cmd.getSettings()), call(cmd.discoverInstances())]);
       if (settings.status === 'ok') {
         set({ settings: settings.data, inspectorWidth: clampSize(settings.data.inspectorWidth, INSPECTOR_MIN, INSPECTOR_MAX) });
-        // Rust never starts watchers by itself (CONTRACTS invariant 11): re-arm, once.
-        void rearm(settings.data.watched);
       } else set({ settingsError: settings.error });
-      if (discovery.status === 'ok') set({ discovery: discovery.data });
-      else set({ discoveryError: discovery.error, discovery: { instances: [], probes: [] } });
+      if (discovery.status === 'ok') {
+        set({ discovery: discovery.data });
+        void rearm();
+      } else set({ discoveryError: discovery.error, discovery: { instances: [], probes: [] } });
       set({ phase: 'ready' });
       const first = get().discovery?.instances[0];
       if (first) get().selectInstance(first.id);
@@ -736,6 +813,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
           return d.instances.some((i) => i.id === inst.id) ? {} : { discovery: { ...d, instances: [...d.instances, inst] } };
         });
         get().selectInstance(inst.id);
+        void rearm();
       },
 
       async addLauncherRoot(launcher) {
@@ -747,6 +825,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         set({ railError: null });
         if (!r.data) return;
         set({ discovery: r.data });
+        void rearm();
         const sel = get().selectedInstanceId;
         const first = r.data.instances[0];
         if ((!sel || !r.data.instances.some((i) => i.id === sel)) && first) get().selectInstance(first.id);
@@ -779,15 +858,20 @@ export function createAppStore(deps: StoreDeps): AppStore {
           patchCrashes(id, (c) => ({ ...c, sourcesStatus: 'error', sourcesError: r.error }));
           return;
         }
-        const sources = sortSources(r.data);
+        let sources = sortSources(r.data);
+        // A crash file announced while this listing was in flight stays listed.
+        for (const [k, s] of announcing) {
+          if (k.startsWith(`${id}/`) && !sources.some((x) => x.id === s.id)) sources = upsertSource(sources, s);
+        }
         let selected: string | null = null;
         patchCrashes(id, (c) => {
-          // A rewritten file (latest.log grows, a report is replaced) is read again.
+          // A rewritten file (latest.log grows, a report is replaced) is read again. A read in
+          // flight is kept: it is the newest read of that file (an episode may be waiting on it).
           const analyses: Record<string, CrashAnalysis> = {};
           for (const s of sources) {
             const before = c.sources.find((p) => p.id === s.id);
             const a = c.analyses[s.id];
-            if (a && before && before.modifiedMs === s.modifiedMs && before.size === s.size) analyses[s.id] = a;
+            if (a && (a.status === 'loading' || (before && before.modifiedMs === s.modifiedMs && before.size === s.size))) analyses[s.id] = a;
           }
           selected = c.selectedSourceId && sources.some((s) => s.id === c.selectedSourceId) ? c.selectedSourceId : defaultSourceId(sources);
           return { ...c, sources, sourcesStatus: 'done', sourcesError: null, selectedSourceId: selected, analyses };
@@ -814,7 +898,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       setCrashPane(id, pane, line = null) {
-        patchCrashes(id, (c) => ({ ...c, pane, logLine: line }));
+        patchCrashes(id, (c) => ({ ...c, pane, logLine: line, logRequest: line === null ? c.logRequest : c.logRequest + 1 }));
       },
 
       selectCrash(id, sourceId, findingId) {
@@ -832,6 +916,10 @@ export function createAppStore(deps: StoreDeps): AppStore {
         if (get().watchPending[id]) return;
         set((st) => ({ watchPending: { ...st.watchPending, [id]: true } }));
         const r = await call(cmd.setWatch(id, enabled, watchAnchors()));
+        if (r.status === 'ok') {
+          if (enabled) armed.add(id);
+          else armed.delete(id);
+        }
         set((st) => {
           const watchPending = { ...st.watchPending };
           delete watchPending[id];

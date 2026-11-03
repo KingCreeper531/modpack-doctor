@@ -289,7 +289,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       await lag();
       const inst = instances().find((i) => i.id === instanceId);
       if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
-      if (inst.launcher === 'mrpack') return notYet('Reading logs of .mrpack files');
+      // As in Rust (commands/logs.rs): a .mrpack file has no game folder, so no logs.
+      if (inst.launcher === 'mrpack') return ok([]);
       if (opts.scenario === 'errors' && instanceId === discovery.instances[0]?.id) {
         return err('permission', 'Modpack Doctor cannot read the crash-reports folder. Check the folder permissions and try again.', `${inst.gameDir}\\crash-reports`);
       }
@@ -297,6 +298,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     readLogDigest: async (instanceId: string, sourceId: string, anchors: string[]): Promise<Result<LogDigest>> => {
       await lag();
+      if (instances().find((i) => i.id === instanceId)?.launcher === 'mrpack') return err('invalid', 'a .mrpack file has no logs to read');
       const hit = sourcesOf(instanceId).find((s) => s.source.id === sourceId);
       if (!hit) return err('notFound', `${sourceId} is not in this instance's log list any more. Refresh the list and try again.`);
       if (anchors.length === 0) return err('invalid', 'No anchors were given, so the log digest would be empty.');
@@ -304,6 +306,9 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     setWatch: async (instanceId: string, enabled: boolean, anchors: WatchAnchor[]): Promise<Result<null>> => {
       await lag();
+      const inst = instances().find((i) => i.id === instanceId);
+      if (enabled && !inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
+      if (enabled && inst?.launcher === 'mrpack') return err('invalid', `"${inst.name}" is a .mrpack file, so there is no game to watch`);
       if (enabled && anchors.length === 0) return err('invalid', 'Watch mode needs the crash anchors from the rules core; none were given.');
       if (enabled) {
         watches.set(instanceId, [...anchors]);
