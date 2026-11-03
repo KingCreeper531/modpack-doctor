@@ -1,0 +1,136 @@
+---- Minecraft Crash Report ----
+// Der Fuchs ist schlauer als der Code.
+
+Time: 2025-02-08 22:17:03
+Description: Mod loading failures have occurred; consult the issue messages for more details
+
+net.neoforged.neoforge.logging.CrashReportExtender$ModLoadingCrashException: Mod loading has failed
+	at TRANSFORMER/neoforge@21.1.77/net.neoforged.neoforge.logging.CrashReportExtender.dumpModLoadingCrashReport(CrashReportExtender.java:58) ~[neoforge-21.1.77-universal.jar%23231!/:?] {re:classloading}
+	at TRANSFORMER/neoforge@21.1.77/net.neoforged.neoforge.client.loading.ClientModLoader.completeModLoading(ClientModLoader.java:105) ~[neoforge-21.1.77-universal.jar%23231!/:?] {re:classloading}
+	at TRANSFORMER/minecraft@1.21.1/net.minecraft.client.main.Main.main(Main.java:220) ~[client-1.21.1-20240808.144430.jar%23230!/:?] {re:classloading,pl:runtimedistcleaner:A}
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Render thread
+Stacktrace:
+	at TRANSFORMER/neoforge@21.1.77/net.neoforged.neoforge.logging.CrashReportExtender.dumpModLoadingCrashReport(CrashReportExtender.java:58) ~[neoforge-21.1.77-universal.jar%23231!/:?] {re:classloading}
+	at TRANSFORMER/neoforge@21.1.77/net.neoforged.neoforge.client.loading.ClientModLoader.completeModLoading(ClientModLoader.java:105) ~[neoforge-21.1.77-universal.jar%23231!/:?] {re:classloading}
+	at TRANSFORMER/minecraft@1.21.1/net.minecraft.client.main.Main.main(Main.java:220) ~[client-1.21.1-20240808.144430.jar%23230!/:?] {re:classloading,pl:runtimedistcleaner:A}
+
+-- Mod loading issue for: lumenfox --
+Details:
+	Caused by 0: java.lang.ExceptionInInitializerError
+		at TRANSFORMER/lumenfox@2.0.0/de.fuchsbau.lumenfox.entity.FoxEntities.<clinit>(FoxEntities.java:29) ~[lumenfox-1.21.1-2.0.0.jar%23233!/:2.0.0] {re:classloading}
+		at TRANSFORMER/lumenfox@2.0.0/de.fuchsbau.lumenfox.LumenFox.<init>(LumenFox.java:41) ~[lumenfox-1.21.1-2.0.0.jar%23233!/:2.0.0] {re:classloading}
+		at java.base/jdk.internal.reflect.DirectConstructorHandleAccessor.newInstance(DirectConstructorHandleAccessor.java:62) ~[?:?] {}
+		at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:502) ~[?:?] {}
+		at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:486) ~[?:?] {}
+		at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.javafmlmod.FMLModContainer.constructMod(FMLModContainer.java:115) ~[loader-4.0.31.jar%23119!/:4.0] {}
+		at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.ModLoader.lambda$constructMods$3(ModLoader.java:153) ~[loader-4.0.31.jar%23119!/:4.0] {}
+		at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188) ~[?:?] {}
+	Caused by 1: java.lang.NoClassDefFoundError: net/tidewater/lib/fluids/FluidStackView
+		at TRANSFORMER/lumenfox@2.0.0/de.fuchsbau.lumenfox.entity.FoxEntities.<clinit>(FoxEntities.java:29) ~[lumenfox-1.21.1-2.0.0.jar%23233!/:2.0.0] {re:classloading}
+		... 7 more
+	Mod file: /C:/Users/Jürgen Ölçer/AppData/Roaming/.minecraft/Profile/Füchse & Freunde/mods/lumenfox-1.21.1-2.0.0.jar
+	Failure message: Lumen Fox (lumenfox) has failed to load correctly
+		java.lang.ExceptionInInitializerError: null
+	Mod version: 2.0.0
+	Mod issues URL: https://codeberg.org/fuchsbau/lumenfox/issues
+	Exception message: java.lang.ClassNotFoundException: net.tidewater.lib.fluids.FluidStackView
+Stacktrace:
+	at MC-BOOTSTRAP/cpw.mods.securejarhandler@3.0.8/cpw.mods.cl.ModuleClassLoader.loadClass(ModuleClassLoader.java:141) ~[securejarhandler-3.0.8.jar:?] {}
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:526) ~[?:?] {}
+	at TRANSFORMER/lumenfox@2.0.0/de.fuchsbau.lumenfox.entity.FoxEntities.<clinit>(FoxEntities.java:29) ~[lumenfox-1.21.1-2.0.0.jar%23233!/:2.0.0] {re:classloading}
+	at TRANSFORMER/lumenfox@2.0.0/de.fuchsbau.lumenfox.LumenFox.<init>(LumenFox.java:41) ~[lumenfox-1.21.1-2.0.0.jar%23233!/:2.0.0] {re:classloading}
+	at java.base/jdk.internal.reflect.DirectConstructorHandleAccessor.newInstance(DirectConstructorHandleAccessor.java:62) ~[?:?] {}
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:502) ~[?:?] {}
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:486) ~[?:?] {}
+	at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.javafmlmod.FMLModContainer.constructMod(FMLModContainer.java:115) ~[loader-4.0.31.jar%23119!/:4.0] {}
+	at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.ModLoader.lambda$constructMods$3(ModLoader.java:153) ~[loader-4.0.31.jar%23119!/:4.0] {}
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188) ~[?:?] {}
+
+-- Mod loading issue for: koyoleaves --
+Details:
+	Mod file: /C:/Users/Jürgen Ölçer/AppData/Roaming/.minecraft/Profile/Füchse & Freunde/mods/kōyō-leaves-1.21.1-1.0.4.jar
+	Failure message: Kōyō Leaves (koyoleaves) has failed to load correctly
+		java.lang.IllegalStateException: 紅葉 config could not be read: C:\Users\Jürgen Ölçer\AppData\Roaming\.minecraft\Profile\Füchse & Freunde\config\koyoleaves-client.toml
+	Mod version: 1.0.4
+	Mod issues URL: <No issues URL found>
+	Exception message: java.lang.IllegalStateException: 紅葉 config could not be read: C:\Users\Jürgen Ölçer\AppData\Roaming\.minecraft\Profile\Füchse & Freunde\config\koyoleaves-client.toml
+Stacktrace:
+	at TRANSFORMER/koyoleaves@1.0.4/jp.momiji.koyoleaves.KoyoConfig.load(KoyoConfig.java:52) ~[kōyō-leaves-1.21.1-1.0.4.jar%23229!/:1.0.4] {re:classloading}
+
+-- System Details --
+Details:
+	Minecraft Version: 1.21.1
+	Minecraft Version ID: 1.21.1
+	Operating System: Windows 11 (amd64) version 10.0
+	Java Version: 21.0.5, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: 733421568 bytes (699 MiB) / 1610612736 bytes (1536 MiB) up to 6442450944 bytes (6144 MiB)
+	CPUs: 16
+	Processor Vendor: AuthenticAMD
+	Processor Name: AMD Ryzen 7 5800X 8-Core Processor
+	Identifier: AuthenticAMD Family 25 Model 33 Stepping 0
+	Microarchitecture: Zen 3
+	Frequency (GHz): 3.80
+	Number of physical packages: 1
+	Number of physical CPUs: 8
+	Number of logical CPUs: 16
+	Graphics card #0 name: NVIDIA GeForce RTX 3060
+	Graphics card #0 vendor: NVIDIA (0x10de)
+	Graphics card #0 VRAM (MiB): 4095.00
+	Graphics card #0 deviceId: 0x2504
+	Graphics card #0 versionInfo: DriverVersion=31.0.15.4633
+	Memory slot #0 capacity (MiB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MiB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MiB): 37578.18
+	Virtual memory used (MiB): 21966.40
+	Swap memory total (MiB): 4864.00
+	Swap memory used (MiB): 233.06
+	JVM Flags: 4 total; -Xmx6G -Xms1G -Djava.io.tmpdir=C:\Users\Jürgen Ölçer\AppData\Local\Temp\mc-temp -Duser.language=de
+	Launched Version: Füchse & Freunde
+	Backend library: LWJGL version 3.3.3+5
+	Backend API: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 3.2.0 NVIDIA 566.36, NVIDIA Corporation
+	Window size: 1920x1017
+	GFLW Platform: win32
+	Render Extensions: GL_KHR_debug, GL_ARB_vertex_attrib_binding, GL_ARB_direct_state_access
+	GL debug messages:
+	Is Modded: Definitely; Client brand changed to 'neoforge'
+	Universe: 400921fb54442d18
+	Type: Client (map_client.txt)
+	Locale: de_DE
+	System encoding: Cp1252
+	File encoding: UTF-8
+	CPU: 16x AMD Ryzen 7 5800X 8-Core Processor
+	ModLauncher: 11.0.4+main.d2e20e43
+	ModLauncher launch target: forgeclient
+	ModLauncher services:
+		sponge-mixin-0.15.2+mixin.0.8.7.jar mixin PLUGINSERVICE
+		loader-4.0.31.jar slf4jfixer PLUGINSERVICE
+		loader-4.0.31.jar runtime_enum_extender PLUGINSERVICE
+		at-modlauncher-10.0.1.jar accesstransformer PLUGINSERVICE
+		loader-4.0.31.jar runtimedistcleaner PLUGINSERVICE
+		modlauncher-11.0.4.jar mixin TRANSFORMATIONSERVICE
+		modlauncher-11.0.4.jar fml TRANSFORMATIONSERVICE
+	FML Language Providers:
+		javafml@4.0
+		lowcodefml@4.0
+		minecraft@4.0
+	Mod List:
+		client-1.21.1-20240808.144430.jar                 |Minecraft                     |minecraft                     |1.21.1              |Manifest: NOSIGNATURE
+		lumenfox-1.21.1-2.0.0.jar                         |Lumen Fox                     |lumenfox                      |2.0.0               |Manifest: NOSIGNATURE
+		tidewaterlib-neoforge-1.21.1-1.2.0.jar            |Tidewater Lib                 |tidewaterlib                  |1.2.0               |Manifest: NOSIGNATURE
+		kōyō-leaves-1.21.1-1.0.4.jar                      |Kōyō Leaves                   |koyoleaves                    |1.0.4               |Manifest: NOSIGNATURE
+		jei-1.21.1-neoforge-19.21.0.247.jar               |Just Enough Items             |jei                           |19.21.0.247         |Manifest: NOSIGNATURE
+		neoforge-21.1.77-universal.jar                    |NeoForge                      |neoforge                      |21.1.77             |Manifest: NOSIGNATURE
+	Crash Report UUID: e7f8a9b0-c1d2-4e3f-8a4b-5c6d7e8f9a0b
+	FML: 4.0.31
+	NeoForge: 21.1.77

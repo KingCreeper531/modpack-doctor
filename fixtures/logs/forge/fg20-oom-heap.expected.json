@@ -1,0 +1,90 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "emberforge-1.20.1-2.4.0.jar",
+      "modIds": [
+        "emberforge"
+      ],
+      "packages": [
+        "com.cinderwick.emberforge",
+        "com.cinderwick.emberforge.client",
+        "com.cinderwick.emberforge.mixin.client",
+        "com.cinderwick.emberforge.block"
+      ],
+      "mixinConfigs": [
+        "emberforge.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tidyterrain-1.20.1-1.8.2.jar",
+      "modIds": [
+        "tidyterrain"
+      ],
+      "packages": [
+        "dev.tidy.terrain",
+        "dev.tidy.terrain.mixin",
+        "dev.tidy.terrain.worldgen"
+      ],
+      "mixinConfigs": [
+        "tidyterrain.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pipeworks-1.20.1-2.3.1.jar",
+      "modIds": [
+        "pipeworks"
+      ],
+      "packages": [
+        "net.brassgear.pipeworks",
+        "net.brassgear.pipeworks.block.entity",
+        "net.brassgear.pipeworks.network"
+      ],
+      "mixinConfigs": [
+        "pipeworks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "saplingsplus-forge-1.20.1-3.0.0.jar",
+      "modIds": [
+        "saplingsplus"
+      ],
+      "packages": [
+        "org.grovekeep.saplings",
+        "org.grovekeep.saplings.common"
+      ],
+      "mixinConfigs": [
+        "saplingsplus.mixins.json"
+      ]
+    },
+    {
+      "fileName": "Larder-Forge-1.20.1-4.2.17.jar",
+      "modIds": [
+        "larder"
+      ],
+      "packages": [
+        "net.pantrydev.larder",
+        "net.pantrydev.larder.api"
+      ],
+      "mixinConfigs": [
+        "larder.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-OOM",
+      "lineContains": "java.lang.OutOfMemoryError: Java heap space"
+    }
+  ],
+  "forbid": [
+    "C-SUSPECTED",
+    "C-ROOT-CAUSE",
+    "C-NATIVE",
+    "C-MIXIN",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "Dedicated server ran out of heap with -Xmx2G (Memory line shows 12 MiB free of 2048 MiB max). Suspected Mods: NONE must not produce a suspect finding."
+}

@@ -1,0 +1,44 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.20.6",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.100.1+1.20.6.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-10.0.0-beta.1.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-JAVA-VERSION",
+      "lineContains": "'Minecraft' (minecraft) 1.20.6 requires version 21 or later of 'OpenJDK 64-Bit Server VM' (java), but only the wrong version is present: 17!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Loader-specific wrong-Java message: Fabric models Java as the builtin mod \"java\" and Minecraft 1.20.6 depends on java >= 21. No mod jar is at fault, so no culprit file is expected."
+}

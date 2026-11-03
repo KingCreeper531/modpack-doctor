@@ -1,0 +1,65 @@
+{
+  "kind": "latestLog",
+  "loader": "neoforge",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "ashenrealms-1.21.1-1.4.0.jar",
+      "modIds": [
+        "ashenrealms"
+      ],
+      "packages": [
+        "net.ashen.realms",
+        "net.ashen.realms.setup",
+        "net.ashen.realms.world"
+      ],
+      "mixinConfigs": [
+        "ashenrealms.mixins.json"
+      ]
+    },
+    {
+      "fileName": "emberlantern-1.21.1-0.8.2.jar",
+      "modIds": [
+        "emberlantern"
+      ],
+      "packages": [
+        "io.emberlantern"
+      ],
+      "mixinConfigs": [
+        "emberlantern.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quietcaves-neoforge-1.21.1-1.1.0.jar",
+      "modIds": [
+        "quietcaves"
+      ],
+      "packages": [
+        "org.quietcaves"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-MISSING-MANDATORY",
+      "culpritFileNames": [
+        "ashenrealms-1.21.1-1.4.0.jar",
+        "emberlantern-1.21.1-0.8.2.jar"
+      ],
+      "culpritModIds": [
+        "ashenrealms",
+        "emberlantern"
+      ],
+      "lineContains": "- Mod ashenrealms requires corvuslib 2.1.0 or above"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-SUSPECTED"
+  ],
+  "notes": "Load-time failure that appears only in latest.log: the dedicated server prints \"Failed to start the minecraft server\" and a ModLoadingException listing issues as \"\\t- \" entries with \"\\t  \" continuation lines. No crash report file is written."
+}

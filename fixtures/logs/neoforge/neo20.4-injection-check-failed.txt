@@ -1,0 +1,156 @@
+---- Minecraft Crash Report ----
+// The fog is coming.
+
+Time: 2024-03-02 14:09:33
+Description: Initializing game
+
+org.spongepowered.asm.mixin.transformer.throwables.MixinTransformerError: An unexpected critical error was encountered
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClassBytes(MixinTransformer.java:202) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.launch.MixinLaunchPluginLegacy.processClass(MixinLaunchPluginLegacy.java:131) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.serviceapi.ILaunchPluginService.processClassWithFlags(ILaunchPluginService.java:156) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.LaunchPluginHandler.offerClassNodeToPlugins(LaunchPluginHandler.java:88) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.ClassTransformer.transform(ClassTransformer.java:120) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.TransformingClassLoader.maybeTransformClassBytes(TransformingClassLoader.java:50) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.readerToClass(ModuleClassLoader.java:113) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.lambda$findClass$15(ModuleClassLoader.java:219) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.loadFromModule(ModuleClassLoader.java:229) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.findClass(ModuleClassLoader.java:219) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.loadClass(ModuleClassLoader.java:135) ~[securejarhandler-2.1.24.jar:?] {}
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525) ~[?:?] {}
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.renderer.GameRenderer.<init>(GameRenderer.java:268) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:accesstransformer:B,pl:runtimedistcleaner:A}
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.Minecraft.<init>(Minecraft.java:582) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:accesstransformer:B,pl:runtimedistcleaner:A}
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.main.Main.main(Main.java:222) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:runtimedistcleaner:A}
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method) ~[?:?] {}
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77) ~[?:?] {}
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568) ~[?:?] {}
+	at MC-BOOTSTRAP/fml_loader@2.0.17/net.neoforged.fml.loading.targets.CommonLaunchHandler.runTarget(CommonLaunchHandler.java:111) ~[loader-2.0.17.jar%23104!/:2.0] {}
+	at MC-BOOTSTRAP/fml_loader@2.0.17/net.neoforged.fml.loading.targets.CommonLaunchHandler.clientService(CommonLaunchHandler.java:99) ~[loader-2.0.17.jar%23104!/:2.0] {}
+	at MC-BOOTSTRAP/fml_loader@2.0.17/net.neoforged.fml.loading.targets.CommonClientLaunchHandler.lambda$makeService$0(CommonClientLaunchHandler.java:32) ~[loader-2.0.17.jar%23104!/:2.0] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.LaunchServiceHandlerDecorator.launch(LaunchServiceHandlerDecorator.java:30) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.LaunchServiceHandler.launch(LaunchServiceHandler.java:53) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.LaunchServiceHandler.launch(LaunchServiceHandler.java:71) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.Launcher.run(Launcher.java:108) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.Launcher.main(Launcher.java:78) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:26) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:23) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at cpw.mods.bootstraplauncher@1.1.2/cpw.mods.bootstraplauncher.BootstrapLauncher.main(BootstrapLauncher.java:141) ~[bootstraplauncher-1.1.2.jar:?] {}
+Caused by: org.spongepowered.asm.mixin.injection.throwables.InjectionError: Critical injection failure: Redirector skyward$redirectFogEnd(FFF)F in skyward.mixins.json:client.FogRendererMixin failed injection check, (0/1) succeeded. Scanned 1 target(s). Using refmap skyward.refmap.json
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.injection.struct.InjectionInfo.postInject(InjectionInfo.java:477) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinTargetContext.applyInjections(MixinTargetContext.java:1400) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyInjections(MixinApplicatorStandard.java:731) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyMixin(MixinApplicatorStandard.java:315) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.apply(MixinApplicatorStandard.java:246) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.TargetClassContext.apply(TargetClassContext.java:437) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.TargetClassContext.applyMixins(TargetClassContext.java:418) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:352) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	... 31 more
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Render thread
+Stacktrace:
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClassBytes(MixinTransformer.java:202) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.13.1+mixin.0.8.5/org.spongepowered.asm.launch.MixinLaunchPluginLegacy.processClass(MixinLaunchPluginLegacy.java:131) ~[sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/:0.13.1+mixin.0.8.5] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.serviceapi.ILaunchPluginService.processClassWithFlags(ILaunchPluginService.java:156) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.LaunchPluginHandler.offerClassNodeToPlugins(LaunchPluginHandler.java:88) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.ClassTransformer.transform(ClassTransformer.java:120) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.TransformingClassLoader.maybeTransformClassBytes(TransformingClassLoader.java:50) ~[modlauncher-10.0.9.jar%23110!/:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.readerToClass(ModuleClassLoader.java:113) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.lambda$findClass$15(ModuleClassLoader.java:219) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.loadFromModule(ModuleClassLoader.java:229) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.findClass(ModuleClassLoader.java:219) ~[securejarhandler-2.1.24.jar:?] {}
+	at cpw.mods.securejarhandler@2.1.24/cpw.mods.cl.ModuleClassLoader.loadClass(ModuleClassLoader.java:135) ~[securejarhandler-2.1.24.jar:?] {}
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525) ~[?:?] {}
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.renderer.GameRenderer.<init>(GameRenderer.java:268) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:accesstransformer:B,pl:runtimedistcleaner:A}
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.Minecraft.<init>(Minecraft.java:582) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:accesstransformer:B,pl:runtimedistcleaner:A}
+
+-- Initialization --
+Details:
+	Modules:
+		ADVAPI32.dll:Advanced Windows 32 Base API:10.0.22621.3155 (WinBuild.160101.0800):Microsoft Corporation
+		KERNEL32.DLL:Windows NT BASE API Client DLL:10.0.22621.3155 (WinBuild.160101.0800):Microsoft Corporation
+		atio6axx.dll:AMD OpenGL Driver:31.0.24002.92:Advanced Micro Devices, Inc.
+		lwjgl.dll
+		lwjgl_opengl.dll
+Stacktrace:
+	at TRANSFORMER/minecraft@1.20.4/net.minecraft.client.main.Main.main(Main.java:222) ~[client-1.20.4-20231207.154220.jar%23188!/:?] {re:classloading,pl:runtimedistcleaner:A}
+
+-- System Details --
+Details:
+	Minecraft Version: 1.20.4
+	Minecraft Version ID: 1.20.4
+	Operating System: Windows 11 (amd64) version 10.0
+	Java Version: 17.0.9, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: 402653184 bytes (384 MiB) / 1073741824 bytes (1024 MiB) up to 6442450944 bytes (6144 MiB)
+	CPUs: 16
+	Processor Vendor: AuthenticAMD
+	Processor Name: AMD Ryzen 7 5800X 8-Core Processor
+	Identifier: AuthenticAMD Family 25 Model 33 Stepping 0
+	Microarchitecture: Zen 3
+	Frequency (GHz): 3.80
+	Number of physical packages: 1
+	Number of physical CPUs: 8
+	Number of logical CPUs: 16
+	Graphics card #0 name: NVIDIA GeForce RTX 3060
+	Graphics card #0 vendor: NVIDIA (0x10de)
+	Graphics card #0 VRAM (MB): 4095.00
+	Graphics card #0 deviceId: 0x2504
+	Graphics card #0 versionInfo: DriverVersion=31.0.15.4633
+	Memory slot #0 capacity (MB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MB): 37578.18
+	Virtual memory used (MB): 21966.40
+	Swap memory total (MB): 4864.00
+	Swap memory used (MB): 233.06
+	JVM Flags: 3 total; -Xmx6G -Xms1G -XX:+UseZGC
+	Launched Version: neoforge-20.4.237
+	Backend library: LWJGL version 3.3.2+13
+	Backend API: AMD Radeon RX 6700 XT GL version 4.6.0 Core Profile Context 23.12.1.231205, ATI Technologies Inc.
+	Window size: 1920x1017
+	GFLW Platform: win32
+	Render Extensions: GL_KHR_debug, GL_ARB_vertex_attrib_binding, GL_ARB_direct_state_access
+	GL debug messages:
+	Is Modded: Definitely; Client brand changed to 'neoforge'
+	Universe: 400921fb54442d18
+	Type: Client (map_client.txt)
+	Locale: en_US
+	System encoding: Cp1252
+	File encoding: UTF-8
+	CPU: 16x AMD Ryzen 7 5800X 8-Core Processor
+	ModLauncher: 10.0.9+10.0.9+main.dcd20f30
+	ModLauncher launch target: forgeclient
+	ModLauncher services:
+		mixin-0.8.5.jar mixin PLUGINSERVICE
+		loader-2.0.17.jar slf4jfixer PLUGINSERVICE
+		loader-2.0.17.jar runtime_enum_extender PLUGINSERVICE
+		at-modlauncher-10.0.1.jar accesstransformer PLUGINSERVICE
+		loader-2.0.17.jar runtimedistcleaner PLUGINSERVICE
+		modlauncher-10.0.9.jar mixin TRANSFORMATIONSERVICE
+		modlauncher-10.0.9.jar fml TRANSFORMATIONSERVICE
+	FML Language Providers:
+		javafml@2.0
+		lowcodefml@2.0
+		minecraft@1.0
+	Mod List:
+		client-1.20.4-20231207.154220.jar                 |Minecraft                     |minecraft                     |1.20.4              |Manifest: NOSIGNATURE
+		skyward-neoforge-1.20.4-1.6.1.jar                 |Skyward                       |skyward                       |1.6.1               |Manifest: NOSIGNATURE
+		ferrolib-neoforge-1.20.4-3.2.0.jar                |FerroLib                      |ferrolib                      |3.2.0               |Manifest: NOSIGNATURE
+		jei-1.20.4-neoforge-17.3.0.49.jar                 |Just Enough Items             |jei                           |17.3.0.49           |Manifest: NOSIGNATURE
+		mossypaths-1.20.4-2.1.0.jar                       |Mossy Paths                   |mossypaths                    |2.1.0               |Manifest: NOSIGNATURE
+		neoforge-20.4.237-universal.jar                   |NeoForge                      |neoforge                      |20.4.237            |Manifest: NOSIGNATURE
+	Crash Report UUID: 55e1c0aa-2f3b-4c1d-8e9f-a0b1c2d3e4f5
+	FML: 2.0.17
+	NeoForge: 20.4.237

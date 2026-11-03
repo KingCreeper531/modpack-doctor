@@ -1,0 +1,39 @@
+[30Apr2026 20:14:00.107] [main/INFO] [net.neoforged.fml.startup.FancyModLoader/]: Starting FancyModLoader version 11.0.13 (CLIENT in PROD)
+[30Apr2026 20:14:00.358] [main/INFO] [net.neoforged.fml.startup.FancyModLoader/]: JVM: OpenJDK 64-Bit Server VM 25.0.2+10-LTS (Eclipse Adoptium), flags: -Xmx3G -Xms3G -XX:+UseParallelGC
+[30Apr2026 20:14:00.471] [main/INFO] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found 4 mod files in mods folder, 9 nested jars
+[30Apr2026 20:14:00.738] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=jar:file:///C:/Users/Dev/AppData/Roaming/.minecraft/libraries/net/fabricmc/sponge-mixin/0.16.3+mixin.0.8.7/sponge-mixin-0.16.3+mixin.0.8.7.jar!/ Service=FML Env=CLIENT
+[30Apr2026 20:14:00.886] [main/INFO] [mixin/]: Compatibility level set to JAVA_25
+[30Apr2026 20:14:00.961] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Setting user: Dev
+[30Apr2026 20:14:01.065] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Backend library: LWJGL version 3.3.6+1
+[30Apr2026 20:14:01.405] [Render thread/INFO] [net.neoforged.neoforge.common.NeoForgeMod/]: NeoForge mod loading, version 26.1.2.48-beta, for MC 26.1.2
+[30Apr2026 20:14:01.691] [Render thread/INFO] [net.minecraft.client.sounds.SoundEngine/SOUNDS]: Sound engine started
+[30Apr2026 20:14:01.786] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 2048x2048x4 minecraft:textures/atlas/blocks.png-atlas
+[30Apr2026 20:14:02.006] [Server thread/INFO] [net.minecraft.client.server.IntegratedServer/]: Starting integrated minecraft server version 26.1.2
+[30Apr2026 20:14:02.089] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Preparing start region for dimension minecraft:overworld
+[30Apr2026 20:14:02.385] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Dev joined the game
+[30Apr2026 20:14:02.778] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2400ms or 48 ticks behind
+[30Apr2026 20:14:02.979] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 3131ms or 62 ticks behind
+[30Apr2026 20:14:03.087] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 3862ms or 76 ticks behind
+[30Apr2026 20:14:03.133] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 4593ms or 90 ticks behind
+[30Apr2026 20:14:03.351] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 5324ms or 104 ticks behind
+[30Apr2026 20:14:03.579] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 6055ms or 118 ticks behind
+[30Apr2026 20:14:03.769] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 6786ms or 132 ticks behind
+[30Apr2026 20:14:03.971] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 7517ms or 146 ticks behind
+[30Apr2026 20:14:04.024] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 8248ms or 160 ticks behind
+[30Apr2026 20:14:04.300] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 8979ms or 174 ticks behind
+[30Apr2026 20:14:04.323] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 9710ms or 188 ticks behind
+[30Apr2026 20:14:04.532] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 10441ms or 202 ticks behind
+[30Apr2026 20:14:04.553] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 11172ms or 216 ticks behind
+[30Apr2026 20:14:04.765] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 11903ms or 230 ticks behind
+[30Apr2026 20:14:05.064] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 12634ms or 244 ticks behind
+[30Apr2026 20:14:05.085] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 13365ms or 258 ticks behind
+[30Apr2026 20:14:05.140] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 14096ms or 272 ticks behind
+[30Apr2026 20:14:05.516] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 14827ms or 286 ticks behind
+[30Apr2026 20:14:05.751] [Render thread/ERROR] [net.minecraft.client.Minecraft/FATAL]: Out of memory
+java.lang.OutOfMemoryError: GC overhead limit exceeded
+	at java.base/java.util.Arrays.copyOf(Arrays.java:3541) ~[?:?] {}
+	at java.base/java.util.ArrayList.grow(ArrayList.java:237) ~[?:?] {}
+	at TRANSFORMER/bigbiomes@3.0.0/com.vastland.bigbiomes.client.BiomeColorCache.rebuild(BiomeColorCache.java:88) ~[bigbiomes-26.1.2-3.0.0.jar:?] {}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.renderer.LevelRenderer.renderLevel(LevelRenderer.java:1018) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.Minecraft.run(Minecraft.java:902) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+[30Apr2026 20:14:05.911] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!

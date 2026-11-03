@@ -1,0 +1,74 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.19.2",
+  "jars": [
+    {
+      "fileName": "cobblequest-1.19.2-0.7.2.jar",
+      "modIds": [
+        "cobblequest"
+      ],
+      "packages": [
+        "io.cobblequest",
+        "io.cobblequest.client",
+        "io.cobblequest.quest"
+      ],
+      "mixinConfigs": [
+        "cobblequest.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.19.2-forge-11.6.0.1018.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ferrite-core-5.0.3-forge.jar",
+      "modIds": [
+        "ferritecore"
+      ],
+      "packages": [
+        "malte0811.ferritecore"
+      ],
+      "mixinConfigs": [
+        "ferritecore.mixin.json"
+      ]
+    },
+    {
+      "fileName": "trailmarks-1.19.2-1.1.0.jar",
+      "modIds": [
+        "trailmarks"
+      ],
+      "packages": [
+        "net.trailmarks"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-SUSPECTED",
+      "culpritFileNames": [
+        "cobblequest-1.19.2-0.7.2.jar"
+      ],
+      "culpritModIds": [
+        "cobblequest"
+      ],
+      "lineContains": "Cobble Quest (cobblequest), Version: 0.7.2"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-RESOLUTION"
+  ],
+  "notes": "Robustness: the whole file uses CRLF line endings (as when a crash report is copied off Windows). NPE in an event handler; ASMEventHandler frames from the Forge EventBus."
+}

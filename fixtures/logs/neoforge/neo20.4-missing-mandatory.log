@@ -1,0 +1,22 @@
+[02Mar2024 14:02:10.143] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, neoforge-20.4.237, --gameDir, C:\Users\Dev\AppData\Roaming\.minecraft, --assetsDir, C:\Users\Dev\AppData\Roaming\.minecraft\assets, --assetIndex, 12, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --launchTarget, forgeclient, --fml.neoForgeVersion, 20.4.237, --fml.fmlVersion, 2.0.17, --fml.mcVersion, 1.20.4, --fml.neoFormVersion, 20231207.154220]
+[02Mar2024 14:02:10.505] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 10.0.9+10.0.9+main.dcd20f30 starting: java version 17.0.9 by Eclipse Adoptium; OS Windows 11 arch amd64 version 10.0
+[02Mar2024 14:02:10.801] [main/INFO] [net.neoforged.fml.loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[02Mar2024 14:02:11.024] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[02Mar2024 14:02:11.174] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[02Mar2024 14:02:11.477] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.5 Source=union:/C:/Users/Dev/AppData/Roaming/.minecraft/libraries/net/fabricmc/sponge-mixin/0.13.1+mixin.0.8.5/sponge-mixin-0.13.1+mixin.0.8.5.jar%23115!/ Service=ModLauncher Env=CLIENT
+[02Mar2024 14:02:11.608] [pool-2-thread-1/INFO] [EARLYDISPLAY/]: GL info: AMD Radeon RX 6700 XT GL version 4.6.0 Core Profile Context 23.12.1.231205, ATI Technologies Inc.
+[02Mar2024 14:02:11.754] [main/INFO] [net.neoforged.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 4 dependencies adding them to mods collection
+[02Mar2024 14:02:11.935] [main/ERROR] [net.neoforged.fml.loading.ModSorter/LOADING]: Missing or unsupported mandatory dependencies:
+	Mod ID: 'ferrolib', Requested by: 'skyward', Expected range: '[3.2.0,4.0.0)', Actual version: '[MISSING]'
+	Mod ID: 'neoforge', Requested by: 'mossypaths', Expected range: '[20.4.240,)', Actual version: '20.4.237'
+[02Mar2024 14:02:12.140] [main/INFO] [mixin/]: Compatibility level set to JAVA_17
+[02Mar2024 14:02:12.515] [main/INFO] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forgeclient' with arguments [--version, neoforge-20.4.237, --gameDir, C:\Users\Dev\AppData\Roaming\.minecraft, --assetsDir, C:\Users\Dev\AppData\Roaming\.minecraft\assets, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --username, Dev, --assetIndex, 12, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release]
+[02Mar2024 14:02:12.781] [Datafixer Bootstrap/INFO] [com.mojang.datafixers.DataFixerBuilder/]: 226 Datafixer optimizations took 287 milliseconds
+[02Mar2024 14:02:12.955] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Setting user: Dev
+[02Mar2024 14:02:13.127] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Backend library: LWJGL version 3.3.2+13
+[02Mar2024 14:02:13.388] [Render thread/ERROR] [net.neoforged.fml.ModLoader/CORE]: Error during pre-loading phase: ERROR: skyward, fml.modloading.missingdependency
+[02Mar2024 14:02:13.503] [Render thread/ERROR] [net.neoforged.fml.ModLoader/CORE]: Error during pre-loading phase: ERROR: mossypaths, fml.modloading.missingdependency
+[02Mar2024 14:02:13.711] [Render thread/FATAL] [net.neoforged.fml.ModLoader/LOADING]: Skipping lifecycle event CONSTRUCT, 2 errors found.
+[02Mar2024 14:02:13.746] [Render thread/INFO] [net.minecraft.server.packs.resources.ReloadableResourceManager/]: Reloading ResourceManager: vanilla
+[02Mar2024 14:02:13.991] [Render thread/INFO] [net.minecraft.client.sounds.SoundEngine/SOUNDS]: Sound engine started
+[02Mar2024 14:02:14.340] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!

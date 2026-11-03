@@ -1,0 +1,84 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x00007f3a1c62a3b1, pid=48211, tid=48260
+#
+# JRE version: OpenJDK Runtime Environment (21.0.4+7) (build 21.0.4+7)
+# Java VM: OpenJDK 64-Bit Server VM (21.0.4+7, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# C  [libGL.so.1+0x2a3b1]
+#
+# Core dump will be written. Default location: Core dumps may be processed with "/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h %d %F" (or dumping to /home/kit/.minecraft/core.48211)
+#
+# If you would like to submit a bug report, please visit:
+#   https://bugreport.java.com/bugreport/crash.jsp
+# The crash happened outside the Java Virtual Machine in native code.
+# See problematic frame for where to report the bug.
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Djava.library.path=/home/kit/.minecraft/bin/7e3c1d2a -Djna.tmpdir=/home/kit/.minecraft/bin/7e3c1d2a -Dminecraft.launcher.brand=minecraft-launcher -Dminecraft.launcher.version=2.2.1441 -Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M net.minecraft.client.main.Main --username kit --version 1.21.1 --gameDir /home/kit/.minecraft --assetsDir /home/kit/.minecraft/assets --assetIndex 17 --uuid 2c0a9f8e7d6c4b5a9e8f7a6b5c4d3e2f --accessToken ???????? --clientId 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d --xuid 2535400000000001 --userType msa --versionType release
+
+Host: AMD Ryzen 5 3600 6-Core Processor, 12 cores, 15G, Arch Linux
+Time: Thu Aug 22 21:03:17 2024 CEST elapsed time: 44.207319 seconds (0d 0h 0m 44s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x00007f3a8402b9c0):  JavaThread "Render thread" [_thread_in_native, id=48260, stack(0x00007f3a8bdfe000,0x00007f3a8befe000) (1024K)]
+
+Stack: [0x00007f3a8bdfe000,0x00007f3a8befe000],  sp=0x00007f3a8befb6f0,  free space=1013k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+C  [libGL.so.1+0x2a3b1]
+C  [libglfw.so+0x2b0b6]  glfwSwapBuffers+0x46
+j  org.lwjgl.glfw.GLFW.nglfwSwapBuffers(JJ)V+0
+j  com.mojang.blaze3d.platform.Window.updateDisplay()V+8
+
+Java frames: (J=compiled Java code, j=interpreted, Vv=VM code)
+j  org.lwjgl.glfw.GLFW.nglfwSwapBuffers(JJ)V+0
+j  org.lwjgl.glfw.GLFW.glfwSwapBuffers(J)V+6
+j  com.mojang.blaze3d.systems.RenderSystem.flipFrame(J)V+0
+j  com.mojang.blaze3d.platform.Window.updateDisplay()V+8
+J 13002 c2 net.minecraft.client.Minecraft.runTick(Z)V (1186 bytes) @ 0x00007f3a7052f3b4 [0x00007f3a7052e9e0+0x00000000000009d4]
+j  net.minecraft.client.Minecraft.run()V+129
+j  net.minecraft.client.main.Main.main([Ljava/lang/String;)V+1405
+v  ~StubRoutines::call_stub 0x00007f3a6fa1fcc6
+
+siginfo: si_signo: 11 (SIGSEGV), si_code: 1 (SEGV_MAPERR), si_addr: 0x0000000000000038
+
+Registers:
+RAX=0x0000000000000000, RBX=0x00007f3a84f1a6d0, RCX=0x0000000000000001, RDX=0x0000000000000000
+RIP=0x00007f3a1c62a3b1, EFLAGS=0x0000000000010246, CSGSFS=0x002b000000000033, ERR=0x0000000000000004
+  TRAPNO=0x000000000000000e
+
+---------------  P R O C E S S  ---------------
+
+Heap:
+ garbage-first heap   total 1048576K, used 611342K [0x0000000080000000, 0x0000000100000000)
+  region size 1024K, 201 young (205824K), 14 survivors (14336K)
+ Metaspace       used 101233K, committed 102400K, reserved 1179648K
+  class space    used 14012K, committed 14592K, reserved 1048576K
+
+Dynamic libraries:
+7f3a1c600000-7f3a1c65c000 r-xp 00000000 103:02 1052733                   /usr/lib/libGL.so.1.7.0
+7f3a1c3e0000-7f3a1c45a000 r-xp 00000000 103:02 1050127                   /usr/lib/libGLX_mesa.so.0.0.0
+7f3a1b000000-7f3a1c1b2000 r-xp 00000000 103:02 1061442                   /usr/lib/dri/radeonsi_dri.so
+
+---------------  S Y S T E M  ---------------
+
+OS:
+DISTRIB_ID="Arch"
+DISTRIB_RELEASE="rolling"
+DISTRIB_DESCRIPTION="Arch Linux"
+uname: Linux 6.10.5-arch1-1 #1 SMP PREEMPT_DYNAMIC Thu, 15 Aug 2024 00:25:30 +0000 x86_64
+OS uptime: 0 days 3:41 hours
+libc: glibc 2.40 NPTL 2.40
+rlimit (soft/hard): STACK 8192k/infinity , CORE infinity/infinity , NPROC 62482/62482 , NOFILE 524288/524288 , AS infinity/infinity , CPU infinity/infinity , DATA infinity/infinity , FSIZE infinity/infinity , MEMLOCK 8192k/8192k
+load average: 1.21 0.98 0.77
+
+CPU: total 12 (initial active 12) (6 cores per cpu, 2 threads per core) family 23 model 113 stepping 0 microcode 0x8701021, cx8, cmov, fxsr, ht, mmx, sse, sse2, sse3, ssse3, sse4.1, sse4.2, popcnt, lzcnt, avx, avx2, aes, clmul, bmi1, bmi2, adx, sha, fma, clflush, clflushopt
+Memory: 4k page, physical 16310532k(2811004k free), swap 8388604k(8388604k free)
+
+vm_info: OpenJDK 64-Bit Server VM (21.0.4+7) for linux-amd64 JRE (21.0.4+7), built on 2024-07-17T14:31:18Z by "builduser" with gcc 14.1.1 20240720
+
+END.

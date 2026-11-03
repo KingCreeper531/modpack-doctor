@@ -1,0 +1,63 @@
+{
+  "kind": "latestLog",
+  "loader": "forge",
+  "mcVersion": "1.17.1",
+  "jars": [
+    {
+      "fileName": "jomlkit-1.17.1-1.0.2.jar",
+      "modIds": [
+        "jomlkit"
+      ],
+      "packages": [
+        "dev.jomlkit",
+        "org.joml",
+        "org.joml.sampling"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "lumenrender-1.17.1-0.4.0.jar",
+      "modIds": [
+        "lumenrender"
+      ],
+      "packages": [
+        "net.lumen.render",
+        "net.lumen.render.pipeline",
+        "org.joml"
+      ],
+      "mixinConfigs": [
+        "lumenrender.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tidyterrain-1.17.1-1.2.0.jar",
+      "modIds": [
+        "tidyterrain"
+      ],
+      "packages": [
+        "dev.tidy.terrain",
+        "dev.tidy.terrain.worldgen"
+      ],
+      "mixinConfigs": [
+        "tidyterrain.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-RESOLUTION",
+      "culpritFileNames": [
+        "jomlkit-1.17.1-1.0.2.jar",
+        "lumenrender-1.17.1-0.4.0.jar"
+      ],
+      "lineContains": "Module tidyterrain reads package org.joml from both jomlkit and lumenrender"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "The \"reads package ... from both\" phrasing named in SPEC.md. crash-formats.md Uncertain #1 says it is not in JDK 11/17/21 source; it is kept here as the soft anchor the spec asks for."
+}

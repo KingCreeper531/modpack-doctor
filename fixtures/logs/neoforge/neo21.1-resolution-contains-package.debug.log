@@ -1,0 +1,49 @@
+[20Jan2025 18:11:40.618] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.21.1, --gameDir, C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft, --assetsDir, C:\Users\Dev\AppData\Roaming\PrismLauncher\assets, --assetIndex, 17, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --userType, msa, --versionType, release, --launchTarget, forgeclient, --fml.neoForgeVersion, 21.1.77, --fml.fmlVersion, 4.0.31, --fml.mcVersion, 1.21.1, --fml.neoFormVersion, 20240808.144430]
+[20Jan2025 18:11:40.906] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 11.0.4+main.d2e20e43 starting: java version 21.0.5 by Eclipse Adoptium; OS Windows 11 arch amd64 version 10.0
+[20Jan2025 18:11:41.080] [main/DEBUG] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Found launch services [fmlclientdev,forgeclient,minecraft,forgegametestserverdev,forgeserveruserdev,forgeclientuserdev,forgeserver,forgeserverdev,forgedatauserdev,forgeclientdev,forgegametestserver]
+[20Jan2025 18:11:41.199] [main/DEBUG] [cpw.mods.modlauncher.NameMappingServiceHandler/MODLAUNCHER]: Found naming services : []
+[20Jan2025 18:11:41.481] [main/DEBUG] [cpw.mods.modlauncher.LaunchPluginHandler/MODLAUNCHER]: Found launch plugins: [mixin,slf4jfixer,runtime_enum_extender,accesstransformer,runtimedistcleaner]
+[20Jan2025 18:11:41.765] [main/DEBUG] [cpw.mods.modlauncher.TransformationServicesHandler/MODLAUNCHER]: Discovering transformation services
+[20Jan2025 18:11:42.144] [main/DEBUG] [net.neoforged.fml.loading.FMLServiceProvider/CORE]: Injecting tracing printstreams for STDOUT/STDERR.
+[20Jan2025 18:11:42.419] [main/DEBUG] [net.neoforged.fml.loading.FMLLoader/CORE]: FML 4.0.31 loading
+[20Jan2025 18:11:42.670] [main/DEBUG] [net.neoforged.fml.loading.FMLLoader/CORE]: FML found ModLauncher version : 11.0.4+main.d2e20e43
+[20Jan2025 18:11:42.935] [main/DEBUG] [net.neoforged.fml.loading.FMLLoader/CORE]: FML found AccessTransformer version : 10.0.1
+[20Jan2025 18:11:42.940] [main/DEBUG] [net.neoforged.fml.loading.FMLLoader/CORE]: FML found EventBus version : 8.0.2
+[20Jan2025 18:11:43.084] [main/DEBUG] [net.neoforged.fml.loading.FMLLoader/CORE]: FML found CoreMod version : 7.0.3
+[20Jan2025 18:11:43.473] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Scanning for mods and other resources to load. We know 5 ways to find mods
+[20Jan2025 18:11:43.659] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "ashenrealms-1.21.1-1.4.0.jar" of type MOD with provider {mods folder locator at C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft\mods}
+[20Jan2025 18:11:43.747] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "jei-1.21.1-neoforge-19.21.0.247.jar" of type MOD with provider {mods folder locator at C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft\mods}
+[20Jan2025 18:11:43.991] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "emberlantern-1.21.1-0.8.2.jar" of type MOD with provider {mods folder locator at C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft\mods}
+[20Jan2025 18:11:44.224] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "quietcaves-neoforge-1.21.1-1.1.0.jar" of type MOD with provider {mods folder locator at C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft\mods}
+[20Jan2025 18:11:44.381] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "corvuslib-neoforge-1.21.1-2.1.3.jar" of type MOD with provider {mods folder locator at C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\minecraft\mods}
+[20Jan2025 18:11:44.615] [main/DEBUG] [net.neoforged.fml.loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "neoforge-21.1.77-universal.jar" of type MOD with provider net.neoforged.fml.loading.moddiscovery.locators.NeoForgeDevProvider@3e2f1a7b
+[20Jan2025 18:11:44.858] [main/DEBUG] [net.neoforged.fml.loading.ModSorter/LOADING]: Found 6 mod requirements (6 mandatory, 0 optional)
+[20Jan2025 18:11:45.095] [main/DEBUG] [net.neoforged.fml.loading.ModSorter/LOADING]: Found 0 mod requirements missing (0 mandatory, 0 optional)
+[20Jan2025 18:11:45.297] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file ashenrealms-1.21.1-1.4.0.jar contains package net.ashen.realms
+[20Jan2025 18:11:45.692] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file ashenrealms-1.21.1-1.4.0.jar contains package net.ashen.realms.setup
+[20Jan2025 18:11:45.828] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file ashenrealms-1.21.1-1.4.0.jar contains package net.ashen.realms.world
+[20Jan2025 18:11:45.968] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file ashenrealms-1.21.1-1.4.0.jar contains package com.corvus.lib.util
+[20Jan2025 18:11:46.222] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file jei-1.21.1-neoforge-19.21.0.247.jar contains package mezz.jei.neoforge
+[20Jan2025 18:11:46.437] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file jei-1.21.1-neoforge-19.21.0.247.jar contains package mezz.jei.api
+[20Jan2025 18:11:46.467] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file emberlantern-1.21.1-0.8.2.jar contains package io.emberlantern
+[20Jan2025 18:11:46.849] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file quietcaves-neoforge-1.21.1-1.1.0.jar contains package org.quietcaves
+[20Jan2025 18:11:47.235] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file corvuslib-neoforge-1.21.1-2.1.3.jar contains package com.corvus.lib
+[20Jan2025 18:11:47.261] [main/TRACE] [net.neoforged.fml.loading.moddiscovery.ModFile/SCAN]: Mod file corvuslib-neoforge-1.21.1-2.1.3.jar contains package com.corvus.lib.util
+[20Jan2025 18:11:47.276] [main/DEBUG] [mixin/]: Registering mixin config: ashenrealms.mixins.json
+[20Jan2025 18:11:47.583] [main/DEBUG] [mixin/]: Registering mixin config: corvuslib.mixins.json
+[20Jan2025 18:11:47.756] [main/DEBUG] [mixin/]: Registering mixin config: emberlantern.mixins.json
+[20Jan2025 18:11:47.838] [main/INFO] [mixin/]: Compatibility level set to JAVA_21
+[20Jan2025 18:11:47.895] [main/DEBUG] [cpw.mods.modlauncher.ModuleLayerHandler/MODLAUNCHER]: Building GAME layer from 41 module(s)
+Exception in thread "main" java.lang.module.ResolutionException: Module ashenrealms contains package com.corvus.lib.util, module corvuslib exports package com.corvus.lib.util to ashenrealms
+	at java.base/java.lang.module.Resolver.resolveFail(Resolver.java:901)
+	at java.base/java.lang.module.Resolver.failTwoSuppliers(Resolver.java:797)
+	at java.base/java.lang.module.Resolver.checkExportSuppliers(Resolver.java:718)
+	at java.base/java.lang.module.Resolver.finish(Resolver.java:362)
+	at java.base/java.lang.module.Configuration.<init>(Configuration.java:140)
+	at java.base/java.lang.module.Configuration.resolveAndBind(Configuration.java:494)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.ModuleLayerHandler.buildLayer(ModuleLayerHandler.java:74)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.TransformationServicesHandler.buildTransformingClassLoader(TransformationServicesHandler.java:64)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.run(Launcher.java:99)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.main(Launcher.java:74)
+	at cpw.mods.bootstraplauncher@2.0.2/cpw.mods.bootstraplauncher.BootstrapLauncher.run(BootstrapLauncher.java:210)
+	at cpw.mods.bootstraplauncher@2.0.2/cpw.mods.bootstraplauncher.BootstrapLauncher.main(BootstrapLauncher.java:69)

@@ -1,0 +1,70 @@
+{
+  "kind": "crashReport",
+  "loader": "neoforge",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "lumenfox-1.21.1-2.0.0.jar",
+      "modIds": [
+        "lumenfox"
+      ],
+      "packages": [
+        "de.fuchsbau.lumenfox",
+        "de.fuchsbau.lumenfox.entity"
+      ],
+      "mixinConfigs": [
+        "lumenfox.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tidewaterlib-neoforge-1.21.1-1.2.0.jar",
+      "modIds": [
+        "tidewaterlib"
+      ],
+      "packages": [
+        "net.tidewater.lib",
+        "net.tidewater.lib.fluids",
+        "net.tidewater.lib.net"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "kōyō-leaves-1.21.1-1.0.4.jar",
+      "modIds": [
+        "koyoleaves"
+      ],
+      "packages": [
+        "jp.momiji.koyoleaves"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "jei-1.21.1-neoforge-19.21.0.247.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-NOCLASSDEF",
+      "culpritFileNames": [
+        "tidewaterlib-neoforge-1.21.1-1.2.0.jar"
+      ],
+      "lineContains": "java.lang.NoClassDefFoundError: net/tidewater/lib/fluids/FluidStackView"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-RESOLUTION",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Robustness: user name, profile folder, a jar file name and an exception message contain non-ASCII text (German, Turkish, Japanese). Lumen Fox needs a class from net.tidewater.lib.fluids, a package of the installed (outdated) Tidewater Lib jar."
+}

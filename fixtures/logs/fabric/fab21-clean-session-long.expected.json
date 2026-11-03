@@ -1,0 +1,1672 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.115.0+1.21.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "hollowpaths-fabric-1.21.1-2.1.6.jar",
+      "modIds": [
+        "hollowpaths"
+      ],
+      "packages": [
+        "com.hollow.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatetools-fabric-1.21.1-1.9.7.jar",
+      "modIds": [
+        "slatetools"
+      ],
+      "packages": [
+        "com.slate.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "yarrowdelight-fabric-1.21.1-2.3.7.jar",
+      "modIds": [
+        "yarrowdelight"
+      ],
+      "packages": [
+        "com.yarrow.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartzdecor-fabric-1.21.1-3.6.1.jar",
+      "modIds": [
+        "quartzdecor"
+      ],
+      "packages": [
+        "com.quartz.decor"
+      ],
+      "mixinConfigs": [
+        "quartzdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferndelight-fabric-1.21.1-2.2.19.jar",
+      "modIds": [
+        "ferndelight"
+      ],
+      "packages": [
+        "com.fern.delight"
+      ],
+      "mixinConfigs": [
+        "ferndelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "brambletools-fabric-1.21.1-2.5.0.jar",
+      "modIds": [
+        "brambletools"
+      ],
+      "packages": [
+        "com.bramble.tools"
+      ],
+      "mixinConfigs": [
+        "brambletools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "bramblebiomes-fabric-1.21.1-2.9.17.jar",
+      "modIds": [
+        "bramblebiomes"
+      ],
+      "packages": [
+        "com.bramble.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartztools-fabric-1.21.1-4.0.11.jar",
+      "modIds": [
+        "quartztools"
+      ],
+      "packages": [
+        "com.quartz.tools"
+      ],
+      "mixinConfigs": [
+        "quartztools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelpzoom-fabric-1.21.1-2.1.4.jar",
+      "modIds": [
+        "kelpzoom"
+      ],
+      "packages": [
+        "com.kelp.zoom"
+      ],
+      "mixinConfigs": [
+        "kelpzoom.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quartzbiomes-fabric-1.21.1-3.3.17.jar",
+      "modIds": [
+        "quartzbiomes"
+      ],
+      "packages": [
+        "com.quartz.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "junipercore-fabric-1.21.1-1.0.15.jar",
+      "modIds": [
+        "junipercore"
+      ],
+      "packages": [
+        "com.juniper.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "duskstorage-fabric-1.21.1-2.0.7.jar",
+      "modIds": [
+        "duskstorage"
+      ],
+      "packages": [
+        "com.dusk.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "junipertools-fabric-1.21.1-1.6.2.jar",
+      "modIds": [
+        "junipertools"
+      ],
+      "packages": [
+        "com.juniper.tools"
+      ],
+      "mixinConfigs": [
+        "junipertools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "rusttweaks-fabric-1.21.1-3.2.6.jar",
+      "modIds": [
+        "rusttweaks"
+      ],
+      "packages": [
+        "com.rust.tweaks"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistletweaks-fabric-1.21.1-1.7.2.jar",
+      "modIds": [
+        "thistletweaks"
+      ],
+      "packages": [
+        "com.thistle.tweaks"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "dusklib-fabric-1.21.1-1.9.11.jar",
+      "modIds": [
+        "dusklib"
+      ],
+      "packages": [
+        "com.dusk.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "brambleexpanded-fabric-1.21.1-2.6.18.jar",
+      "modIds": [
+        "brambleexpanded"
+      ],
+      "packages": [
+        "com.bramble.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebblezoom-fabric-1.21.1-4.3.3.jar",
+      "modIds": [
+        "pebblezoom"
+      ],
+      "packages": [
+        "com.pebble.zoom"
+      ],
+      "mixinConfigs": [
+        "pebblezoom.mixins.json"
+      ]
+    },
+    {
+      "fileName": "yarrowcore-fabric-1.21.1-4.3.9.jar",
+      "modIds": [
+        "yarrowcore"
+      ],
+      "packages": [
+        "com.yarrow.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "bramblezoom-fabric-1.21.1-3.8.10.jar",
+      "modIds": [
+        "bramblezoom"
+      ],
+      "packages": [
+        "com.bramble.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartzpaths-fabric-1.21.1-4.8.4.jar",
+      "modIds": [
+        "quartzpaths"
+      ],
+      "packages": [
+        "com.quartz.paths"
+      ],
+      "mixinConfigs": [
+        "quartzpaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "amberpaths-fabric-1.21.1-3.5.15.jar",
+      "modIds": [
+        "amberpaths"
+      ],
+      "packages": [
+        "com.amber.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatedelight-fabric-1.21.1-4.8.5.jar",
+      "modIds": [
+        "slatedelight"
+      ],
+      "packages": [
+        "com.slate.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ambertools-fabric-1.21.1-3.2.8.jar",
+      "modIds": [
+        "ambertools"
+      ],
+      "packages": [
+        "com.amber.tools"
+      ],
+      "mixinConfigs": [
+        "ambertools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "zephyrbiomes-fabric-1.21.1-2.5.1.jar",
+      "modIds": [
+        "zephyrbiomes"
+      ],
+      "packages": [
+        "com.zephyr.biomes"
+      ],
+      "mixinConfigs": [
+        "zephyrbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferncore-fabric-1.21.1-3.4.0.jar",
+      "modIds": [
+        "ferncore"
+      ],
+      "packages": [
+        "com.fern.core"
+      ],
+      "mixinConfigs": [
+        "ferncore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "yarrowtweaks-fabric-1.21.1-3.6.9.jar",
+      "modIds": [
+        "yarrowtweaks"
+      ],
+      "packages": [
+        "com.yarrow.tweaks"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistlemobs-fabric-1.21.1-3.7.3.jar",
+      "modIds": [
+        "thistlemobs"
+      ],
+      "packages": [
+        "com.thistle.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "glimmertools-fabric-1.21.1-3.1.2.jar",
+      "modIds": [
+        "glimmertools"
+      ],
+      "packages": [
+        "com.glimmer.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "marshtweaks-fabric-1.21.1-4.2.1.jar",
+      "modIds": [
+        "marshtweaks"
+      ],
+      "packages": [
+        "com.marsh.tweaks"
+      ],
+      "mixinConfigs": [
+        "marshtweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "amberexpanded-fabric-1.21.1-2.6.8.jar",
+      "modIds": [
+        "amberexpanded"
+      ],
+      "packages": [
+        "com.amber.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loambiomes-fabric-1.21.1-3.0.2.jar",
+      "modIds": [
+        "loambiomes"
+      ],
+      "packages": [
+        "com.loam.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ambercore-fabric-1.21.1-2.3.16.jar",
+      "modIds": [
+        "ambercore"
+      ],
+      "packages": [
+        "com.amber.core"
+      ],
+      "mixinConfigs": [
+        "ambercore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferndecor-fabric-1.21.1-2.2.11.jar",
+      "modIds": [
+        "ferndecor"
+      ],
+      "packages": [
+        "com.fern.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "zephyrlib-fabric-1.21.1-1.1.11.jar",
+      "modIds": [
+        "zephyrlib"
+      ],
+      "packages": [
+        "com.zephyr.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "junipermobs-fabric-1.21.1-2.0.19.jar",
+      "modIds": [
+        "junipermobs"
+      ],
+      "packages": [
+        "com.juniper.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "juniperzoom-fabric-1.21.1-1.3.3.jar",
+      "modIds": [
+        "juniperzoom"
+      ],
+      "packages": [
+        "com.juniper.zoom"
+      ],
+      "mixinConfigs": [
+        "juniperzoom.mixins.json"
+      ]
+    },
+    {
+      "fileName": "loampaths-fabric-1.21.1-1.6.6.jar",
+      "modIds": [
+        "loampaths"
+      ],
+      "packages": [
+        "com.loam.paths"
+      ],
+      "mixinConfigs": [
+        "loampaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quartztweaks-fabric-1.21.1-1.6.18.jar",
+      "modIds": [
+        "quartztweaks"
+      ],
+      "packages": [
+        "com.quartz.tweaks"
+      ],
+      "mixinConfigs": [
+        "quartztweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferntools-fabric-1.21.1-1.7.14.jar",
+      "modIds": [
+        "ferntools"
+      ],
+      "packages": [
+        "com.fern.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartzmobs-fabric-1.21.1-2.3.19.jar",
+      "modIds": [
+        "quartzmobs"
+      ],
+      "packages": [
+        "com.quartz.mobs"
+      ],
+      "mixinConfigs": [
+        "quartzmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshdelight-fabric-1.21.1-1.9.2.jar",
+      "modIds": [
+        "marshdelight"
+      ],
+      "packages": [
+        "com.marsh.delight"
+      ],
+      "mixinConfigs": [
+        "marshdelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "copperdecor-fabric-1.21.1-4.6.17.jar",
+      "modIds": [
+        "copperdecor"
+      ],
+      "packages": [
+        "com.copper.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "oakmobs-fabric-1.21.1-4.6.4.jar",
+      "modIds": [
+        "oakmobs"
+      ],
+      "packages": [
+        "com.oak.mobs"
+      ],
+      "mixinConfigs": [
+        "oakmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pebbletweaks-fabric-1.21.1-2.4.8.jar",
+      "modIds": [
+        "pebbletweaks"
+      ],
+      "packages": [
+        "com.pebble.tweaks"
+      ],
+      "mixinConfigs": [
+        "pebbletweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "amberbiomes-fabric-1.21.1-1.4.13.jar",
+      "modIds": [
+        "amberbiomes"
+      ],
+      "packages": [
+        "com.amber.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowbiomes-fabric-1.21.1-4.6.5.jar",
+      "modIds": [
+        "willowbiomes"
+      ],
+      "packages": [
+        "com.willow.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "bramblepaths-fabric-1.21.1-4.9.13.jar",
+      "modIds": [
+        "bramblepaths"
+      ],
+      "packages": [
+        "com.bramble.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "zephyrexpanded-fabric-1.21.1-2.4.12.jar",
+      "modIds": [
+        "zephyrexpanded"
+      ],
+      "packages": [
+        "com.zephyr.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatestorage-fabric-1.21.1-2.9.15.jar",
+      "modIds": [
+        "slatestorage"
+      ],
+      "packages": [
+        "com.slate.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "yarrowzoom-fabric-1.21.1-4.7.14.jar",
+      "modIds": [
+        "yarrowzoom"
+      ],
+      "packages": [
+        "com.yarrow.zoom"
+      ],
+      "mixinConfigs": [
+        "yarrowzoom.mixins.json"
+      ]
+    },
+    {
+      "fileName": "juniperbiomes-fabric-1.21.1-4.8.12.jar",
+      "modIds": [
+        "juniperbiomes"
+      ],
+      "packages": [
+        "com.juniper.biomes"
+      ],
+      "mixinConfigs": [
+        "juniperbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pebblestorage-fabric-1.21.1-2.4.11.jar",
+      "modIds": [
+        "pebblestorage"
+      ],
+      "packages": [
+        "com.pebble.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "yarrowlib-fabric-1.21.1-3.2.17.jar",
+      "modIds": [
+        "yarrowlib"
+      ],
+      "packages": [
+        "com.yarrow.lib"
+      ],
+      "mixinConfigs": [
+        "yarrowlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "fernzoom-fabric-1.21.1-3.2.10.jar",
+      "modIds": [
+        "fernzoom"
+      ],
+      "packages": [
+        "com.fern.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ambertweaks-fabric-1.21.1-4.0.4.jar",
+      "modIds": [
+        "ambertweaks"
+      ],
+      "packages": [
+        "com.amber.tweaks"
+      ],
+      "mixinConfigs": [
+        "ambertweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelpmobs-fabric-1.21.1-4.5.8.jar",
+      "modIds": [
+        "kelpmobs"
+      ],
+      "packages": [
+        "com.kelp.mobs"
+      ],
+      "mixinConfigs": [
+        "kelpmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "copperexpanded-fabric-1.21.1-2.4.17.jar",
+      "modIds": [
+        "copperexpanded"
+      ],
+      "packages": [
+        "com.copper.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "kelpbiomes-fabric-1.21.1-3.1.5.jar",
+      "modIds": [
+        "kelpbiomes"
+      ],
+      "packages": [
+        "com.kelp.biomes"
+      ],
+      "mixinConfigs": [
+        "kelpbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "rustexpanded-fabric-1.21.1-4.9.7.jar",
+      "modIds": [
+        "rustexpanded"
+      ],
+      "packages": [
+        "com.rust.expanded"
+      ],
+      "mixinConfigs": [
+        "rustexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "brambledecor-fabric-1.21.1-2.5.19.jar",
+      "modIds": [
+        "brambledecor"
+      ],
+      "packages": [
+        "com.bramble.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "glimmerbiomes-fabric-1.21.1-2.6.0.jar",
+      "modIds": [
+        "glimmerbiomes"
+      ],
+      "packages": [
+        "com.glimmer.biomes"
+      ],
+      "mixinConfigs": [
+        "glimmerbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "loamlib-fabric-1.21.1-4.6.10.jar",
+      "modIds": [
+        "loamlib"
+      ],
+      "packages": [
+        "com.loam.lib"
+      ],
+      "mixinConfigs": [
+        "loamlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "thistledecor-fabric-1.21.1-3.2.10.jar",
+      "modIds": [
+        "thistledecor"
+      ],
+      "packages": [
+        "com.thistle.decor"
+      ],
+      "mixinConfigs": [
+        "thistledecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "duskzoom-fabric-1.21.1-1.3.16.jar",
+      "modIds": [
+        "duskzoom"
+      ],
+      "packages": [
+        "com.dusk.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "oaklib-fabric-1.21.1-3.9.0.jar",
+      "modIds": [
+        "oaklib"
+      ],
+      "packages": [
+        "com.oak.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistlestorage-fabric-1.21.1-3.2.16.jar",
+      "modIds": [
+        "thistlestorage"
+      ],
+      "packages": [
+        "com.thistle.storage"
+      ],
+      "mixinConfigs": [
+        "thistlestorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "rusttools-fabric-1.21.1-3.8.6.jar",
+      "modIds": [
+        "rusttools"
+      ],
+      "packages": [
+        "com.rust.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "marshdecor-fabric-1.21.1-1.1.8.jar",
+      "modIds": [
+        "marshdecor"
+      ],
+      "packages": [
+        "com.marsh.decor"
+      ],
+      "mixinConfigs": [
+        "marshdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "dusktweaks-fabric-1.21.1-3.7.1.jar",
+      "modIds": [
+        "dusktweaks"
+      ],
+      "packages": [
+        "com.dusk.tweaks"
+      ],
+      "mixinConfigs": [
+        "dusktweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatebiomes-fabric-1.21.1-1.9.14.jar",
+      "modIds": [
+        "slatebiomes"
+      ],
+      "packages": [
+        "com.slate.biomes"
+      ],
+      "mixinConfigs": [
+        "slatebiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quartzcore-fabric-1.21.1-4.7.1.jar",
+      "modIds": [
+        "quartzcore"
+      ],
+      "packages": [
+        "com.quartz.core"
+      ],
+      "mixinConfigs": [
+        "quartzcore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshlib-fabric-1.21.1-1.1.6.jar",
+      "modIds": [
+        "marshlib"
+      ],
+      "packages": [
+        "com.marsh.lib"
+      ],
+      "mixinConfigs": [
+        "marshlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "thistlebiomes-fabric-1.21.1-1.0.17.jar",
+      "modIds": [
+        "thistlebiomes"
+      ],
+      "packages": [
+        "com.thistle.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "kelpdecor-fabric-1.21.1-1.7.15.jar",
+      "modIds": [
+        "kelpdecor"
+      ],
+      "packages": [
+        "com.kelp.decor"
+      ],
+      "mixinConfigs": [
+        "kelpdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "rustmobs-fabric-1.21.1-2.5.10.jar",
+      "modIds": [
+        "rustmobs"
+      ],
+      "packages": [
+        "com.rust.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loamzoom-fabric-1.21.1-2.2.13.jar",
+      "modIds": [
+        "loamzoom"
+      ],
+      "packages": [
+        "com.loam.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "hollowmobs-fabric-1.21.1-3.3.4.jar",
+      "modIds": [
+        "hollowmobs"
+      ],
+      "packages": [
+        "com.hollow.mobs"
+      ],
+      "mixinConfigs": [
+        "hollowmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quartzstorage-fabric-1.21.1-3.1.9.jar",
+      "modIds": [
+        "quartzstorage"
+      ],
+      "packages": [
+        "com.quartz.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "yarrowpaths-fabric-1.21.1-2.7.16.jar",
+      "modIds": [
+        "yarrowpaths"
+      ],
+      "packages": [
+        "com.yarrow.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loamstorage-fabric-1.21.1-3.6.12.jar",
+      "modIds": [
+        "loamstorage"
+      ],
+      "packages": [
+        "com.loam.storage"
+      ],
+      "mixinConfigs": [
+        "loamstorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelpdelight-fabric-1.21.1-1.1.7.jar",
+      "modIds": [
+        "kelpdelight"
+      ],
+      "packages": [
+        "com.kelp.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowtools-fabric-1.21.1-4.1.18.jar",
+      "modIds": [
+        "willowtools"
+      ],
+      "packages": [
+        "com.willow.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistlelib-fabric-1.21.1-1.2.10.jar",
+      "modIds": [
+        "thistlelib"
+      ],
+      "packages": [
+        "com.thistle.lib"
+      ],
+      "mixinConfigs": [
+        "thistlelib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshmobs-fabric-1.21.1-2.5.9.jar",
+      "modIds": [
+        "marshmobs"
+      ],
+      "packages": [
+        "com.marsh.mobs"
+      ],
+      "mixinConfigs": [
+        "marshmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "zephyrzoom-fabric-1.21.1-1.5.17.jar",
+      "modIds": [
+        "zephyrzoom"
+      ],
+      "packages": [
+        "com.zephyr.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebblebiomes-fabric-1.21.1-1.3.3.jar",
+      "modIds": [
+        "pebblebiomes"
+      ],
+      "packages": [
+        "com.pebble.biomes"
+      ],
+      "mixinConfigs": [
+        "pebblebiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "amberdelight-fabric-1.21.1-3.4.4.jar",
+      "modIds": [
+        "amberdelight"
+      ],
+      "packages": [
+        "com.amber.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "amberdecor-fabric-1.21.1-1.1.3.jar",
+      "modIds": [
+        "amberdecor"
+      ],
+      "packages": [
+        "com.amber.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ruststorage-fabric-1.21.1-1.9.8.jar",
+      "modIds": [
+        "ruststorage"
+      ],
+      "packages": [
+        "com.rust.storage"
+      ],
+      "mixinConfigs": [
+        "ruststorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "bramblestorage-fabric-1.21.1-2.2.13.jar",
+      "modIds": [
+        "bramblestorage"
+      ],
+      "packages": [
+        "com.bramble.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "amberlib-fabric-1.21.1-4.3.14.jar",
+      "modIds": [
+        "amberlib"
+      ],
+      "packages": [
+        "com.amber.lib"
+      ],
+      "mixinConfigs": [
+        "amberlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "bramblemobs-fabric-1.21.1-3.1.3.jar",
+      "modIds": [
+        "bramblemobs"
+      ],
+      "packages": [
+        "com.bramble.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "fernexpanded-fabric-1.21.1-1.9.15.jar",
+      "modIds": [
+        "fernexpanded"
+      ],
+      "packages": [
+        "com.fern.expanded"
+      ],
+      "mixinConfigs": [
+        "fernexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatemobs-fabric-1.21.1-1.2.11.jar",
+      "modIds": [
+        "slatemobs"
+      ],
+      "packages": [
+        "com.slate.mobs"
+      ],
+      "mixinConfigs": [
+        "slatemobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "junipertweaks-fabric-1.21.1-2.2.15.jar",
+      "modIds": [
+        "junipertweaks"
+      ],
+      "packages": [
+        "com.juniper.tweaks"
+      ],
+      "mixinConfigs": [
+        "junipertweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "yarrowtools-fabric-1.21.1-3.5.7.jar",
+      "modIds": [
+        "yarrowtools"
+      ],
+      "packages": [
+        "com.yarrow.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowdelight-fabric-1.21.1-2.8.17.jar",
+      "modIds": [
+        "willowdelight"
+      ],
+      "packages": [
+        "com.willow.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "glimmerlib-fabric-1.21.1-2.6.14.jar",
+      "modIds": [
+        "glimmerlib"
+      ],
+      "packages": [
+        "com.glimmer.lib"
+      ],
+      "mixinConfigs": [
+        "glimmerlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "brambledelight-fabric-1.21.1-2.8.3.jar",
+      "modIds": [
+        "brambledelight"
+      ],
+      "packages": [
+        "com.bramble.delight"
+      ],
+      "mixinConfigs": [
+        "brambledelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slateexpanded-fabric-1.21.1-4.0.7.jar",
+      "modIds": [
+        "slateexpanded"
+      ],
+      "packages": [
+        "com.slate.expanded"
+      ],
+      "mixinConfigs": [
+        "slateexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "juniperdelight-fabric-1.21.1-1.6.17.jar",
+      "modIds": [
+        "juniperdelight"
+      ],
+      "packages": [
+        "com.juniper.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "zephyrmobs-fabric-1.21.1-3.4.12.jar",
+      "modIds": [
+        "zephyrmobs"
+      ],
+      "packages": [
+        "com.zephyr.mobs"
+      ],
+      "mixinConfigs": [
+        "zephyrmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "juniperpaths-fabric-1.21.1-2.7.4.jar",
+      "modIds": [
+        "juniperpaths"
+      ],
+      "packages": [
+        "com.juniper.paths"
+      ],
+      "mixinConfigs": [
+        "juniperpaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "zephyrdelight-fabric-1.21.1-4.9.18.jar",
+      "modIds": [
+        "zephyrdelight"
+      ],
+      "packages": [
+        "com.zephyr.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "duskbiomes-fabric-1.21.1-1.7.16.jar",
+      "modIds": [
+        "duskbiomes"
+      ],
+      "packages": [
+        "com.dusk.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "copperpaths-fabric-1.21.1-1.1.12.jar",
+      "modIds": [
+        "copperpaths"
+      ],
+      "packages": [
+        "com.copper.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "kelpstorage-fabric-1.21.1-2.0.16.jar",
+      "modIds": [
+        "kelpstorage"
+      ],
+      "packages": [
+        "com.kelp.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebblepaths-fabric-1.21.1-1.7.4.jar",
+      "modIds": [
+        "pebblepaths"
+      ],
+      "packages": [
+        "com.pebble.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "marshpaths-fabric-1.21.1-3.9.16.jar",
+      "modIds": [
+        "marshpaths"
+      ],
+      "packages": [
+        "com.marsh.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "yarrowmobs-fabric-1.21.1-4.9.6.jar",
+      "modIds": [
+        "yarrowmobs"
+      ],
+      "packages": [
+        "com.yarrow.mobs"
+      ],
+      "mixinConfigs": [
+        "yarrowmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "amberstorage-fabric-1.21.1-3.4.14.jar",
+      "modIds": [
+        "amberstorage"
+      ],
+      "packages": [
+        "com.amber.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowlib-fabric-1.21.1-2.7.10.jar",
+      "modIds": [
+        "willowlib"
+      ],
+      "packages": [
+        "com.willow.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "coppercore-fabric-1.21.1-2.1.9.jar",
+      "modIds": [
+        "coppercore"
+      ],
+      "packages": [
+        "com.copper.core"
+      ],
+      "mixinConfigs": [
+        "coppercore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "fernmobs-fabric-1.21.1-1.6.2.jar",
+      "modIds": [
+        "fernmobs"
+      ],
+      "packages": [
+        "com.fern.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "bramblelib-fabric-1.21.1-4.3.13.jar",
+      "modIds": [
+        "bramblelib"
+      ],
+      "packages": [
+        "com.bramble.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowzoom-fabric-1.21.1-3.4.2.jar",
+      "modIds": [
+        "willowzoom"
+      ],
+      "packages": [
+        "com.willow.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "oakdecor-fabric-1.21.1-2.1.9.jar",
+      "modIds": [
+        "oakdecor"
+      ],
+      "packages": [
+        "com.oak.decor"
+      ],
+      "mixinConfigs": [
+        "oakdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "glimmertweaks-fabric-1.21.1-1.8.5.jar",
+      "modIds": [
+        "glimmertweaks"
+      ],
+      "packages": [
+        "com.glimmer.tweaks"
+      ],
+      "mixinConfigs": [
+        "glimmertweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "glimmerdecor-fabric-1.21.1-2.5.2.jar",
+      "modIds": [
+        "glimmerdecor"
+      ],
+      "packages": [
+        "com.glimmer.decor"
+      ],
+      "mixinConfigs": [
+        "glimmerdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "zephyrcore-fabric-1.21.1-2.4.15.jar",
+      "modIds": [
+        "zephyrcore"
+      ],
+      "packages": [
+        "com.zephyr.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "copperlib-fabric-1.21.1-1.7.8.jar",
+      "modIds": [
+        "copperlib"
+      ],
+      "packages": [
+        "com.copper.lib"
+      ],
+      "mixinConfigs": [
+        "copperlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "coppertweaks-fabric-1.21.1-4.4.10.jar",
+      "modIds": [
+        "coppertweaks"
+      ],
+      "packages": [
+        "com.copper.tweaks"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistleexpanded-fabric-1.21.1-1.5.12.jar",
+      "modIds": [
+        "thistleexpanded"
+      ],
+      "packages": [
+        "com.thistle.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "hollowtweaks-fabric-1.21.1-3.2.16.jar",
+      "modIds": [
+        "hollowtweaks"
+      ],
+      "packages": [
+        "com.hollow.tweaks"
+      ],
+      "mixinConfigs": [
+        "hollowtweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshstorage-fabric-1.21.1-1.2.2.jar",
+      "modIds": [
+        "marshstorage"
+      ],
+      "packages": [
+        "com.marsh.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistledelight-fabric-1.21.1-1.9.10.jar",
+      "modIds": [
+        "thistledelight"
+      ],
+      "packages": [
+        "com.thistle.delight"
+      ],
+      "mixinConfigs": [
+        "thistledelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "yarrowstorage-fabric-1.21.1-4.3.6.jar",
+      "modIds": [
+        "yarrowstorage"
+      ],
+      "packages": [
+        "com.yarrow.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "rustlib-fabric-1.21.1-1.9.9.jar",
+      "modIds": [
+        "rustlib"
+      ],
+      "packages": [
+        "com.rust.lib"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "fernpaths-fabric-1.21.1-4.8.12.jar",
+      "modIds": [
+        "fernpaths"
+      ],
+      "packages": [
+        "com.fern.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "brambletweaks-fabric-1.21.1-2.4.19.jar",
+      "modIds": [
+        "brambletweaks"
+      ],
+      "packages": [
+        "com.bramble.tweaks"
+      ],
+      "mixinConfigs": [
+        "brambletweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "willowcore-fabric-1.21.1-2.2.15.jar",
+      "modIds": [
+        "willowcore"
+      ],
+      "packages": [
+        "com.willow.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "juniperexpanded-fabric-1.21.1-3.9.5.jar",
+      "modIds": [
+        "juniperexpanded"
+      ],
+      "packages": [
+        "com.juniper.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebbleexpanded-fabric-1.21.1-2.6.19.jar",
+      "modIds": [
+        "pebbleexpanded"
+      ],
+      "packages": [
+        "com.pebble.expanded"
+      ],
+      "mixinConfigs": [
+        "pebbleexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelpexpanded-fabric-1.21.1-2.6.18.jar",
+      "modIds": [
+        "kelpexpanded"
+      ],
+      "packages": [
+        "com.kelp.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowstorage-fabric-1.21.1-1.2.14.jar",
+      "modIds": [
+        "willowstorage"
+      ],
+      "packages": [
+        "com.willow.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "willowmobs-fabric-1.21.1-2.1.19.jar",
+      "modIds": [
+        "willowmobs"
+      ],
+      "packages": [
+        "com.willow.mobs"
+      ],
+      "mixinConfigs": [
+        "willowmobs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshbiomes-fabric-1.21.1-2.3.3.jar",
+      "modIds": [
+        "marshbiomes"
+      ],
+      "packages": [
+        "com.marsh.biomes"
+      ],
+      "mixinConfigs": [
+        "marshbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatelib-fabric-1.21.1-1.8.11.jar",
+      "modIds": [
+        "slatelib"
+      ],
+      "packages": [
+        "com.slate.lib"
+      ],
+      "mixinConfigs": [
+        "slatelib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "oakexpanded-fabric-1.21.1-1.2.2.jar",
+      "modIds": [
+        "oakexpanded"
+      ],
+      "packages": [
+        "com.oak.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistlepaths-fabric-1.21.1-1.5.16.jar",
+      "modIds": [
+        "thistlepaths"
+      ],
+      "packages": [
+        "com.thistle.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatedecor-fabric-1.21.1-4.9.6.jar",
+      "modIds": [
+        "slatedecor"
+      ],
+      "packages": [
+        "com.slate.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "coppertools-fabric-1.21.1-1.7.4.jar",
+      "modIds": [
+        "coppertools"
+      ],
+      "packages": [
+        "com.copper.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "zephyrstorage-fabric-1.21.1-1.1.19.jar",
+      "modIds": [
+        "zephyrstorage"
+      ],
+      "packages": [
+        "com.zephyr.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loamdelight-fabric-1.21.1-2.4.19.jar",
+      "modIds": [
+        "loamdelight"
+      ],
+      "packages": [
+        "com.loam.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartzzoom-fabric-1.21.1-1.8.16.jar",
+      "modIds": [
+        "quartzzoom"
+      ],
+      "packages": [
+        "com.quartz.zoom"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatepaths-fabric-1.21.1-1.1.17.jar",
+      "modIds": [
+        "slatepaths"
+      ],
+      "packages": [
+        "com.slate.paths"
+      ],
+      "mixinConfigs": [
+        "slatepaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatecore-fabric-1.21.1-3.3.17.jar",
+      "modIds": [
+        "slatecore"
+      ],
+      "packages": [
+        "com.slate.core"
+      ],
+      "mixinConfigs": [
+        "slatecore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "willowdecor-fabric-1.21.1-3.8.3.jar",
+      "modIds": [
+        "willowdecor"
+      ],
+      "packages": [
+        "com.willow.decor"
+      ],
+      "mixinConfigs": [
+        "willowdecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "copperzoom-fabric-1.21.1-2.2.5.jar",
+      "modIds": [
+        "copperzoom"
+      ],
+      "packages": [
+        "com.copper.zoom"
+      ],
+      "mixinConfigs": [
+        "copperzoom.mixins.json"
+      ]
+    }
+  ],
+  "expect": [],
+  "forbid": [
+    "C-MIXIN",
+    "C-RESOLUTION",
+    "C-MISSING-MANDATORY",
+    "C-FABRIC-INCOMPAT",
+    "C-NOCLASSDEF",
+    "C-OOM",
+    "C-JAVA-VERSION",
+    "C-SUSPECTED",
+    "C-ROOT-CAUSE",
+    "C-NATIVE"
+  ],
+  "notes": "Negative case: a ~3.5k-line successful play session (151 mods) ending with a normal \"Stopping!\". Only benign WARNs (refmap, missing sounds, shader sampler, \"Can't keep up!\")."
+}

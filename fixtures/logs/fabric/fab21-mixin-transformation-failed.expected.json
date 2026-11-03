@@ -1,0 +1,91 @@
+{
+  "kind": "crashReport",
+  "loader": "fabric",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.115.0+1.21.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "glintful-1.21.1-fabric-3.2.0.jar",
+      "modIds": [
+        "glintful"
+      ],
+      "packages": [
+        "me.prism.glintful",
+        "me.prism.glintful.mixin",
+        "me.prism.glintful.client"
+      ],
+      "mixinConfigs": [
+        "glintful.mixins.json"
+      ]
+    },
+    {
+      "fileName": "sodium-fabric-0.6.5+mc1.21.1.jar",
+      "modIds": [
+        "sodium"
+      ],
+      "packages": [
+        "net.caffeinemc.mods.sodium.client",
+        "net.caffeinemc.mods.sodium.api"
+      ],
+      "mixinConfigs": [
+        "sodium.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-11.0.3.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    },
+    {
+      "fileName": "stackcount-1.21.1-1.0.2.jar",
+      "modIds": [
+        "stackcount"
+      ],
+      "packages": [
+        "io.github.tallyho.stackcount"
+      ],
+      "mixinConfigs": [
+        "stackcount.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-MIXIN",
+      "culpritFileNames": [
+        "glintful-1.21.1-fabric-3.2.0.jar"
+      ],
+      "culpritModIds": [
+        "glintful"
+      ],
+      "lineContains": "Mixin [glintful.mixins.json:GameRendererMixin from mod glintful] from phase [DEFAULT] in config [glintful.mixins.json] FAILED during APPLY"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-FABRIC-INCOMPAT"
+  ],
+  "notes": "Knot wrapper \"Mixin transformation of net.minecraft.class_757 failed\" -> MixinTransformerError -> MixinApplyError (Fabric fork adds \"from mod glintful\") -> InvalidInjectionException. The handler name also embeds the mod id."
+}

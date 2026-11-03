@@ -1,0 +1,31 @@
+[19Jan2025 07:30:02.104] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, forgeserver, --fml.fmlVersion, 4.0.31, --fml.mcVersion, 1.21.1, --fml.neoForgeVersion, 21.1.77, --fml.neoFormVersion, 20240808.144430, nogui]
+[19Jan2025 07:30:02.429] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 11.0.4+main.d2e20e43 starting: java version 21.0.5 by Eclipse Adoptium; OS Linux arch amd64 version 6.1.0-28-amd64
+[19Jan2025 07:30:02.664] [main/INFO] [net.neoforged.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 6 dependencies adding them to mods collection
+[19Jan2025 07:30:03.035] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=union:/srv/ashen/libraries/net/fabricmc/sponge-mixin/0.15.2+mixin.0.8.7/sponge-mixin-0.15.2+mixin.0.8.7.jar%23128!/ Service=ModLauncher Env=SERVER
+[19Jan2025 07:30:03.051] [main/INFO] [mixin/]: Compatibility level set to JAVA_21
+[19Jan2025 07:30:03.144] [main/INFO] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forgeserver' with arguments [nogui]
+[19Jan2025 07:30:03.399] [main/INFO] [MixinExtras|Service/]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.4.1).
+[19Jan2025 07:30:03.610] [main/INFO] [com.mojang.datafixers.DataFixerBuilder/]: 247 Datafixer optimizations took 512 milliseconds
+[19Jan2025 07:30:03.826] [main/INFO] [net.minecraft.server.Bootstrap/]: Bootstrap took 2.1s
+[19Jan2025 07:30:03.861] [main/FATAL] [net.minecraft.server.Main/FATAL]: Failed to start the minecraft server
+net.neoforged.fml.ModLoadingException: Loading errors encountered:
+	- Mod ashenrealms requires corvuslib 2.1.0 or above
+	  Currently, corvuslib is not installed
+	  Reason for the dependency: Portal and dimension utilities
+	- Mod ashenrealms requires neoforge 21.1.90 or above
+	  Currently, neoforge is 21.1.77
+	- Mod emberlantern requires minecraft 1.21.2 or above
+	  Currently, minecraft is 1.21.1
+	at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.ModLoader.gatherAndInitializeMods(ModLoader.java:138) ~[loader-4.0.31.jar%23119!/:4.0] {}
+	at TRANSFORMER/neoforge@21.1.77/net.neoforged.neoforge.server.loading.ServerModLoader.load(ServerModLoader.java:32) ~[neoforge-21.1.77-universal.jar%23231!/:?] {re:classloading}
+	at TRANSFORMER/minecraft@1.21.1/net.minecraft.server.Main.main(Main.java:125) ~[server-1.21.1-20240808.144430.jar%23230!/:?] {re:classloading}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580) ~[?:?] {}
+	at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.loading.targets.CommonLaunchHandler.runTarget(CommonLaunchHandler.java:136) ~[loader-4.0.31.jar%23119!/:4.0] {}
+	at MC-BOOTSTRAP/fml_loader@4.0.31/net.neoforged.fml.loading.targets.CommonLaunchHandler.serverService(CommonLaunchHandler.java:128) ~[loader-4.0.31.jar%23119!/:4.0] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.LaunchServiceHandlerDecorator.launch(LaunchServiceHandlerDecorator.java:30) ~[modlauncher-11.0.4.jar%23109!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.LaunchServiceHandler.launch(LaunchServiceHandler.java:53) ~[modlauncher-11.0.4.jar%23109!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.run(Launcher.java:103) ~[modlauncher-11.0.4.jar%23109!/:?] {}
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@11.0.4/cpw.mods.modlauncher.Launcher.main(Launcher.java:74) ~[modlauncher-11.0.4.jar%23109!/:?] {}
+	at cpw.mods.bootstraplauncher@2.0.2/cpw.mods.bootstraplauncher.BootstrapLauncher.run(BootstrapLauncher.java:210) ~[bootstraplauncher-2.0.2.jar:?] {}
+	at cpw.mods.bootstraplauncher@2.0.2/cpw.mods.bootstraplauncher.BootstrapLauncher.main(BootstrapLauncher.java:69) ~[bootstraplauncher-2.0.2.jar:?] {}

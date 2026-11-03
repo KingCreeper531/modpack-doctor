@@ -1,0 +1,65 @@
+{
+  "kind": "crashReport",
+  "loader": "quilt",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "qfapi-7.5.0_qsl-6.1.2_fapi-0.92.0_mc-1.20.1.jar",
+      "modIds": [
+        "quilted_fabric_api"
+      ],
+      "packages": [
+        "org.quiltmc.qsl",
+        "net.fabricmc.fabric.api"
+      ],
+      "mixinConfigs": [
+        "quilted_fabric_api.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tideglass-quilt-1.20.1-1.1.0.jar",
+      "modIds": [
+        "tideglass"
+      ],
+      "packages": [
+        "net.seafoam.tideglass",
+        "net.seafoam.tideglass.mixin"
+      ],
+      "mixinConfigs": [
+        "tideglass.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-MIXIN",
+      "culpritFileNames": [
+        "tideglass-quilt-1.20.1-1.1.0.jar"
+      ],
+      "culpritModIds": [
+        "tideglass"
+      ],
+      "lineContains": "@Shadow method method_8546 in tideglass.mixins.json:WorldMixin from mod tideglass was not located in the target class"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-FABRIC-INCOMPAT",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "In-game (vanilla-format) crash report under Quilt: Fabric-fork mixin wording (\"from mod tideglass\"), org.quiltmc Knot frames, brand 'quilt'. The `Quilt Mods:` key and its table layout are assumptions (crash-formats.md Uncertain #6)."
+}

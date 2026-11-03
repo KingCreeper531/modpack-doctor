@@ -1,0 +1,27 @@
+[03Jun2026 18:05:01.108] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.20.1-forge-47.2.0, --gameDir, C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley, --assetsDir, C:\Users\Dev\curseforge\minecraft\Install\assets, --assetIndex, 5, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --width, 1600, --height, 900, --launchTarget, forgeclient, --fml.forgeVersion, 47.2.0, --fml.mcVersion, 1.20.1, --fml.forgeGroup, net.minecraftforge, --fml.mcpVersion, 20230612.114412]
+[03Jun2026 18:05:01.182] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 10.0.9+10.0.9+main.dcd20f30 starting: java version 17.0.8 by Microsoft; OS Windows 10 arch amd64 version 10.0
+[03Jun2026 18:05:01.262] [main/INFO] [net.minecraftforge.fml.loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[03Jun2026 18:05:01.441] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[03Jun2026 18:05:01.593] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[03Jun2026 18:05:01.723] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.5 Source=union:/C:/Users/Dev/curseforge/minecraft/Install/libraries/org/spongepowered/mixin/0.8.5/mixin-0.8.5.jar%23100!/ Service=ModLauncher Env=CLIENT
+[03Jun2026 18:05:01.882] [pool-2-thread-1/INFO] [EARLYDISPLAY/]: GL info: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 4.6.0 NVIDIA 546.33, NVIDIA Corporation
+[03Jun2026 18:05:02.234] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\fmlcore\1.20.1-47.2.0\fmlcore-1.20.1-47.2.0.jar is missing mods.toml file
+[03Jun2026 18:05:02.311] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\javafmllanguage\1.20.1-47.2.0\javafmllanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[03Jun2026 18:05:02.627] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\lowcodelanguage\1.20.1-47.2.0\lowcodelanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[03Jun2026 18:05:02.757] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\mclanguage\1.20.1-47.2.0\mclanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[03Jun2026 18:05:02.805] [main/INFO] [net.minecraftforge.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 9 dependencies adding them to mods collection
+[03Jun2026 18:05:02.857] [main/INFO] [mixin/]: Compatibility level set to JAVA_17
+Exception in thread "main" java.lang.module.ResolutionException: Modules quarrylib and voxelkit export package com.fasterxml.jackson.core to module tidyterrain
+	at java.base/java.lang.module.Resolver.resolveFail(Resolver.java:901)
+	at java.base/java.lang.module.Resolver.failTwoSuppliers(Resolver.java:815)
+	at java.base/java.lang.module.Resolver.checkExportSuppliers(Resolver.java:736)
+	at java.base/java.lang.module.Resolver.finish(Resolver.java:380)
+	at java.base/java.lang.module.Configuration.<init>(Configuration.java:140)
+	at java.base/java.lang.module.Configuration.resolveAndBind(Configuration.java:494)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.ModuleLayerHandler.buildLayer(ModuleLayerHandler.java:75)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.TransformationServicesHandler.buildTransformingClassLoader(TransformationServicesHandler.java:65)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.Launcher.run(Launcher.java:104)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.Launcher.main(Launcher.java:78)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:26)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@10.0.9/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:23)
+	at cpw.mods.bootstraplauncher@1.1.2/cpw.mods.bootstraplauncher.BootstrapLauncher.main(BootstrapLauncher.java:141)

@@ -1,0 +1,124 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ffa8c41d2a7, pid=20516, tid=17384
+#
+# JRE version: OpenJDK Runtime Environment Microsoft-8035246 (17.0.8+7) (build 17.0.8+7-LTS)
+# Java VM: OpenJDK 64-Bit Server VM Microsoft-8035246 (17.0.8+7-LTS, mixed mode, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# Problematic frame:
+# C  [nvoglv64.dll+0xcd2a7]
+#
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+# If you would like to submit a bug report, please visit:
+#   https://github.com/microsoft/openjdk/issues
+# The crash happened outside the Java Virtual Machine in native code.
+# See problematic frame for where to report the bug.
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Xss1M -Djava.library.path=C:\Users\Dev\AppData\Roaming\.minecraft\bin\0c2e6e1a -Dminecraft.launcher.brand=minecraft-launcher -Dminecraft.launcher.version=2.2.1441 -DFabricMcEmu= net.minecraft.client.main.Main  -Xmx4G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M net.fabricmc.loader.impl.launch.knot.KnotClient --username Dev --version fabric-loader-0.15.11-1.20.1 --gameDir C:\Users\Dev\AppData\Roaming\.minecraft --assetsDir C:\Users\Dev\AppData\Roaming\.minecraft\assets --assetIndex 5 --uuid 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f --accessToken ???????? --clientId c4b0f1e2-1a2b-4c3d-9e8f-001122334455 --xuid 2535412345678901 --userType msa --versionType release
+
+Host: 12th Gen Intel(R) Core(TM) i5-12400F, 12 cores, 31G,  Windows 11 , 64 bit Build 22631 (10.0.22631.3880)
+Time: Tue Jul 16 22:47:10 2024 Pacific Daylight Time elapsed time: 3604.118272 seconds (0d 1h 0m 4s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x0000021d9e4a91f0):  JavaThread "Render thread" [_thread_in_native, id=17384, stack(0x000000c4f7a00000,0x000000c4f7b00000)]
+
+Stack: [0x000000c4f7a00000,0x000000c4f7b00000],  sp=0x000000c4f7afc8e0,  free space=1010k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+C  [nvoglv64.dll+0xcd2a7]
+C  [nvoglv64.dll+0x6a1f13]
+C  [nvoglv64.dll+0x6a39c0]
+C  [lwjgl_opengl.dll+0xe1f3]
+C  0x0000021db1a52d4e
+
+Java frames: (J=compiled Java code, j=interpreted, Vv=VM code)
+J 15402  org.lwjgl.opengl.GL15C.nglBufferData(IJJI)V (0 bytes) @ 0x0000021db1a52cd1 [0x0000021db1a52c80+0x0000000000000051]
+J 23110 c2 net.minecraft.class_291.method_1353(Lnet/minecraft/class_287$class_7433;)V (88 bytes) @ 0x0000021db2f1c9a8 [0x0000021db2f1c820+0x0000000000000188]
+J 23544 c2 net.minecraft.class_761.method_22710(Lnet/minecraft/class_4587;FJZLnet/minecraft/class_4184;Lnet/minecraft/class_757;Lnet/minecraft/class_765;Lorg/joml/Matrix4f;)V (2719 bytes) @ 0x0000021db30d8e44 [0x0000021db30d5b60+0x00000000000032e4]
+J 23602 c2 net.minecraft.class_757.method_3192(FJZ)V (1216 bytes) @ 0x0000021db31f7f10 [0x0000021db31f7280+0x0000000000000c90]
+J 23655 c2 net.minecraft.class_310.method_1523(Z)V (1095 bytes) @ 0x0000021db3254c3c [0x0000021db3254720+0x000000000000051c]
+j  net.minecraft.class_310.method_1514()V+123
+j  net.minecraft.client.main.Main.main([Ljava/lang/String;)V+1381
+j  net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(Ljava/lang/ClassLoader;)V+299
+j  net.fabricmc.loader.impl.launch.knot.Knot.launch([Ljava/lang/String;Lnet/fabricmc/api/EnvType;)Ljava/lang/ClassLoader;+52
+j  net.fabricmc.loader.impl.launch.knot.KnotClient.main([Ljava/lang/String;)V+6
+v  ~StubRoutines::call_stub
+
+siginfo: EXCEPTION_ACCESS_VIOLATION (0xc0000005), writing address 0x000002203b1f0000
+
+
+Registers:
+RAX=0x000002203b1f0000, RBX=0x0000000000040000, RCX=0x000002203b1f0000, RDX=0x0000021e4b0aa040
+RSP=0x000000c4f7afc8e0, RBP=0x000000c4f7afc9e0, RSI=0x0000021e4b0aa040, RDI=0x0000000000040000
+RIP=0x00007ffa8c41d2a7, EFLAGS=0x0000000000010202
+
+---------------  P R O C E S S  ---------------
+
+Threads class SMR info:
+_java_thread_list=0x000001f2e1d0a3c0, length=58, elements={
+0x000001f2b4a3e120, 0x000001f2d1f10a80, 0x000001f2d1f12f60, 0x000001f2d1f2e7c0
+}
+
+VM state: not at safepoint (normal execution)
+
+VM Mutex/Monitor currently owned by a thread: None
+
+Heap address: 0x0000000600000000, size: 4096MB, Compressed Oops mode: Zero based, Oop shift amount: 3
+
+CDS archive(s) mapped at: [0x0000000800000000-0x0000000800bd0000-0x0000000800bd0000), size 12386304, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+Narrow klass base: 0x0000000800000000, Narrow klass shift: 0, Narrow klass range: 0x100000000
+
+GC Precious Log:
+ CPUs: 12 total, 12 available
+ Memory: 32507M
+ Large Page Support: Disabled
+ NUMA Support: Disabled
+ Compressed Oops: Enabled (Zero based)
+ Heap Region Size: 4M
+ Heap Min Capacity: 8M
+ Heap Initial Capacity: 256M
+ Heap Max Capacity: 4096M
+ Pre-touch: Disabled
+ Parallel Workers: 10
+ Concurrent Workers: 3
+ Concurrent Refinement Workers: 10
+ Periodic GC: Disabled
+
+Heap:
+ garbage-first heap   total 4194304K, used 2312145K [0x0000000600000000, 0x0000000800000000)
+  region size 4096K, 312 young (1277952K), 21 survivors (86016K)
+ Metaspace       used 212345K, committed 214016K, reserved 1245184K
+  class space    used 30122K, committed 31232K, reserved 1048576K
+
+Dynamic libraries:
+0x00007ff6a1b20000 - 0x00007ff6a1b2e000 	C:\Users\Dev\AppData\Local\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Local\runtime\java-runtime-gamma\windows-x64\java-runtime-gamma\bin\javaw.exe
+0x00007ffb4f8f0000 - 0x00007ffb4fb07000 	C:\WINDOWS\SYSTEM32\ntdll.dll
+0x00007ffb4e6b0000 - 0x00007ffb4e774000 	C:\WINDOWS\System32\KERNEL32.DLL
+0x00007ffb0b9e0000 - 0x00007ffb0c5c4000 	C:\Users\Dev\AppData\Local\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Local\runtime\java-runtime-gamma\windows-x64\java-runtime-gamma\bin\server\jvm.dll
+0x00007ffa8c350000 - 0x00007ffa8f0d1000 	C:\WINDOWS\System32\DriverStore\FileRepository\nvltsi.inf_amd64_1b3f5e7a9c2d4e60\nvoglv64.dll
+0x00007ffb40aa0000 - 0x00007ffb40b07000 	C:\Users\Dev\AppData\Local\Temp\lwjglDev\3.3.1-build-7\lwjgl.dll
+0x00007ffb3fd60000 - 0x00007ffb3fdc4000 	C:\Users\Dev\AppData\Local\Temp\lwjglDev\3.3.1-build-7\lwjgl_opengl.dll
+
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 11 , 64 bit Build 22621 (10.0.22621.3958)
+OS uptime: 2 days 4:11 hours
+Hyper-V role detected
+
+CPU: total 12 (initial active 12) (6 cores per cpu, 2 threads per core) family 25 model 33 stepping 0 microcode 0x0, cx8, cmov, fxsr, ht, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4a, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, sha, fma, vzeroupper, clflush, clflushopt, hv
+Processor Information for all 12 processors :
+  Max Mhz: 3701, Current Mhz: 3701, Mhz Limit: 3701
+
+Memory: 4k page, system-wide physical 32507M (9870M free)
+TotalPageFile size 37371M (AvailPageFile size 11918M)
+current process WorkingSet (physical memory assigned to process): 5231M, peak: 5302M
+current process commit charge ("private bytes"): 5480M, peak: 5512M
+
+vm_info: OpenJDK 64-Bit Server VM (17.0.8+7-LTS) for windows-amd64 JRE (17.0.8+7-LTS), built on Jul 13 2023 17:54:36 by "MicrosoftCorporation" with unknown MS VC++:1935
+
+END.

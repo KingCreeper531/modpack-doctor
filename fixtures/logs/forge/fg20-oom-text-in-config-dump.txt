@@ -1,0 +1,124 @@
+---- Minecraft Crash Report ----
+// Plant it and they will grow. Eventually.
+
+Time: 2026-05-29 13:44:02
+Description: Exception ticking world
+
+java.lang.ClassCastException: class net.minecraft.world.level.block.state.BlockState cannot be cast to class org.grovekeep.saplings.common.GrowthState (net.minecraft.world.level.block.state.BlockState is in module minecraft@1.20.1 of loader 'TRANSFORMER' @5a2f1b0d; org.grovekeep.saplings.common.GrowthState is in module saplingsplus@3.0.0 of loader 'TRANSFORMER' @5a2f1b0d)
+	at org.grovekeep.saplings.common.GrowthHandler.onRandomTick(GrowthHandler.java:57) ~[saplingsplus-forge-1.20.1-3.0.0.jar%23214!/:3.0.0] {re:classloading}
+	at org.grovekeep.saplings.common.SaplingBlockHooks.randomTick(SaplingBlockHooks.java:31) ~[saplingsplus-forge-1.20.1-3.0.0.jar%23214!/:3.0.0] {re:classloading}
+	at net.minecraft.world.level.block.SaplingBlock.m_213898_(SaplingBlock.java:43) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:mixin,re:classloading,pl:mixin:APP:saplingsplus.mixins.json:SaplingBlockMixin,pl:mixin:A}
+	at net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase.m_222972_(BlockBehaviour.java:759) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.level.ServerLevel.m_183526_(ServerLevel.java:633) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.level.ServerChunkCache.m_8490_(ServerChunkCache.java:368) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.level.ServerLevel.m_8793_(ServerLevel.java:331) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.MinecraftServer.m_5703_(MinecraftServer.java:893) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.MinecraftServer.m_5705_(MinecraftServer.java:814) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.client.server.IntegratedServer.m_5705_(IntegratedServer.java:89) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:runtimedistcleaner:A}
+	at net.minecraft.server.MinecraftServer.m_130011_(MinecraftServer.java:661) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.MinecraftServer.m_206580_(MinecraftServer.java:251) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at java.lang.Thread.run(Thread.java:833) ~[?:?] {}
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Server thread
+Suspected Mod:
+	Saplings Plus (saplingsplus), Version: 3.0.0
+		at TRANSFORMER/saplingsplus@3.0.0/org.grovekeep.saplings.common.GrowthHandler.onRandomTick(GrowthHandler.java:57)
+Stacktrace:
+	at org.grovekeep.saplings.common.GrowthHandler.onRandomTick(GrowthHandler.java:57) ~[saplingsplus-forge-1.20.1-3.0.0.jar%23214!/:3.0.0] {re:classloading}
+	at org.grovekeep.saplings.common.SaplingBlockHooks.randomTick(SaplingBlockHooks.java:31) ~[saplingsplus-forge-1.20.1-3.0.0.jar%23214!/:3.0.0] {re:classloading}
+	at net.minecraft.world.level.block.SaplingBlock.m_213898_(SaplingBlock.java:43) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:mixin,re:classloading,pl:mixin:APP:saplingsplus.mixins.json:SaplingBlockMixin,pl:mixin:A}
+
+-- Memory Hint --
+Details:
+	Config file: config/memoryhint-client.toml
+	warnThresholdPercent: 90
+	oomScreenMessage: "Minecraft ran out of memory (java.lang.OutOfMemoryError: Java heap space). Allocate more RAM in your launcher."
+	gcOverheadHint: "If you see 'GC overhead limit exceeded', lower your render distance."
+	showMetaspaceUsage: true
+	Last sampled heap usage: 3211 MiB / 8192 MiB (39%)
+	Last sampled Metaspace usage: 412 MiB
+Stacktrace:
+	at org.lowram.memoryhint.client.CrashDetails.append(CrashDetails.java:22) ~[memoryhint-forge-1.20.1-1.3.0.jar%23209!/:1.3.0] {re:classloading}
+	at net.minecraftforge.fml.CrashReportCallables.lambda$allCrashCallables$2(CrashReportCallables.java:41) ~[fmlcore-1.20.1-47.3.0.jar%23305!/:?] {}
+
+-- System Details --
+Details:
+	Minecraft Version: 1.20.1
+	Minecraft Version ID: 1.20.1
+	Operating System: Windows 10 (amd64) version 10.0
+	Java Version: 17.0.8, Microsoft
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode), Microsoft
+	Memory: 4970811392 bytes (4740 MiB) / 7516192768 bytes (7168 MiB) up to 8589934592 bytes (8192 MiB)
+	CPUs: 16
+	Processor Vendor: AuthenticAMD
+	Processor Name: AMD Ryzen 7 5800X 8-Core Processor
+	Identifier: AuthenticAMD Family 25 Model 33 Stepping 0
+	Microarchitecture: Zen 3
+	Frequency (GHz): 3.80
+	Number of physical packages: 1
+	Number of physical CPUs: 8
+	Number of logical CPUs: 16
+	Graphics card #0 name: NVIDIA GeForce RTX 3060
+	Graphics card #0 vendor: NVIDIA (0x10de)
+	Graphics card #0 VRAM (MB): 4095.00
+	Graphics card #0 deviceId: 0x2504
+	Graphics card #0 versionInfo: DriverVersion=31.0.15.4633
+	Memory slot #0 capacity (MB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MB): 37578.18
+	Virtual memory used (MB): 21966.40
+	Swap memory total (MB): 4864.00
+	Swap memory used (MB): 233.06
+	JVM Flags: 7 total; -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump -Xss1M -Xmx8G -Xms1G -XX:+HeapDumpOnOutOfMemoryError -XX:MetaspaceSize=256M -XX:MaxMetaspaceSize=1G
+	Launched Version: 1.20.1-forge-47.3.0
+	Backend library: LWJGL version 3.3.1 build 7
+	Backend API: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 4.6.0 NVIDIA 546.33, NVIDIA Corporation
+	Window size: 1600x900
+	GL Caps: Using framebuffer using OpenGL 3.2
+	GL debug messages:
+	Using VBOs: Yes
+	Is Modded: Definitely; Client brand changed to 'forge'; Server brand changed to 'forge'
+	Type: Integrated Server (map_client.txt)
+	Graphics mode: fancy
+	Resource Packs: vanilla, mod_resources
+	Current Language: en_us
+	CPU: 16x AMD Ryzen 7 5800X 8-Core Processor 
+	ModLauncher: 10.0.9+10.0.9+main.dcd20f30
+	ModLauncher launch target: forgeclient
+	ModLauncher naming: srg
+	ModLauncher services:
+		mixin-0.8.5.jar mixin PLUGINSERVICE 
+		eventbus-6.0.5.jar eventbus PLUGINSERVICE 
+		fmlloader-1.20.1-47.3.0.jar slf4jfixer PLUGINSERVICE 
+		fmlloader-1.20.1-47.3.0.jar object_holder_definalize PLUGINSERVICE 
+		fmlloader-1.20.1-47.3.0.jar runtime_enum_extender PLUGINSERVICE 
+		fmlloader-1.20.1-47.3.0.jar capability_token_subclass PLUGINSERVICE 
+		accesstransformers-8.0.4.jar accesstransformer PLUGINSERVICE 
+		fmlloader-1.20.1-47.3.0.jar runtimedistcleaner PLUGINSERVICE 
+		modlauncher-10.0.9.jar mixin TRANSFORMATIONSERVICE 
+		modlauncher-10.0.9.jar fml TRANSFORMATIONSERVICE 
+	FML Language Providers:
+		minecraft@1.0
+		lowcodefml@null
+		javafml@null
+	Mod List:
+		client-1.20.1-20230612.114412-srg.jar             |Minecraft                     |minecraft                     |1.20.1              |DONE      |Manifest: a1:d4:5e:04:4f:d3:d6:e0:7b:37:97:cf:77:b0:de:ad:4a:47:ce:8c:96:49:5f:0a:cf:8c:ae:b2:6d:4b:8a:3f
+		emberforge-1.20.1-2.4.0.jar                       |Emberforge                    |emberforge                    |2.4.0               |DONE      |Manifest: NOSIGNATURE
+		pipeworks-1.20.1-2.3.1.jar                        |Pipeworks                     |pipeworks                     |2.3.1               |DONE      |Manifest: NOSIGNATURE
+		memoryhint-forge-1.20.1-1.3.0.jar                 |Memory Hint                   |memoryhint                    |1.3.0               |DONE      |Manifest: NOSIGNATURE
+		jei-1.20.1-forge-15.2.0.27.jar                    |Just Enough Items             |jei                           |15.2.0.27           |DONE      |Manifest: NOSIGNATURE
+		cloth-config-11.1.106-forge.jar                   |Cloth Config v10 API          |cloth_config                  |11.1.106            |DONE      |Manifest: NOSIGNATURE
+		saplingsplus-forge-1.20.1-3.0.0.jar               |Saplings Plus                 |saplingsplus                  |3.0.0               |DONE      |Manifest: NOSIGNATURE
+		forge-1.20.1-47.3.0-universal.jar                 |Forge                         |forge                         |47.3.0              |DONE      |Manifest: 84:ce:76:e8:45:35:e4:0e:63:86:df:47:59:80:0f:67:6c:c1:5f:6e:5f:4d:b3:54:47:1a:9f:7f:ed:5e:f2:90
+	Crash Report UUID: 6c5b4a39-2817-4f06-9e5d-4c3b2a190807
+	FML: 47.3
+	Forge: net.minecraftforge:47.3.0

@@ -1,0 +1,107 @@
+{
+  "kind": "latestLog",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "emberforge-1.20.1-2.4.0.jar",
+      "modIds": [
+        "emberforge"
+      ],
+      "packages": [
+        "com.cinderwick.emberforge",
+        "com.cinderwick.emberforge.client",
+        "com.cinderwick.emberforge.mixin.client",
+        "com.cinderwick.emberforge.block"
+      ],
+      "mixinConfigs": [
+        "emberforge.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tidyterrain-1.20.1-1.8.2.jar",
+      "modIds": [
+        "tidyterrain"
+      ],
+      "packages": [
+        "dev.tidy.terrain",
+        "dev.tidy.terrain.mixin",
+        "dev.tidy.terrain.worldgen"
+      ],
+      "mixinConfigs": [
+        "tidyterrain.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quarrylib-1.20.1-3.1.0.jar",
+      "modIds": [
+        "quarrylib"
+      ],
+      "packages": [
+        "dev.quarry.lib",
+        "dev.quarry.lib.json",
+        "com.fasterxml.jackson.core",
+        "com.fasterxml.jackson.core.json"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "voxelkit-1.20.1-0.9.4.jar",
+      "modIds": [
+        "voxelkit"
+      ],
+      "packages": [
+        "net.voxelkit",
+        "net.voxelkit.mesh",
+        "com.fasterxml.jackson.core",
+        "com.fasterxml.jackson.core.json"
+      ],
+      "mixinConfigs": [
+        "voxelkit.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.20.1-forge-15.2.0.27.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.library",
+        "mezz.jei.common",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "cloth-config-11.1.106-forge.jar",
+      "modIds": [
+        "cloth_config"
+      ],
+      "packages": [
+        "me.shedaniel.clothconfig2",
+        "me.shedaniel.autoconfig",
+        "me.shedaniel.clothconfig2.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-RESOLUTION",
+      "culpritFileNames": [
+        "quarrylib-1.20.1-3.1.0.jar",
+        "voxelkit-1.20.1-0.9.4.jar"
+      ],
+      "lineContains": "Modules quarrylib and voxelkit export package com.fasterxml.jackson.core to module tidyterrain"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-NATIVE",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Both QuarryLib and VoxelKit shade com.fasterxml.jackson.core; tidyterrain (module C) is innocent. The game dies while ModLauncher builds the GAME layer, so there is no crash report; the raw stderr trace was captured at the end of latest.log by the launcher."
+}

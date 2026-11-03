@@ -1,0 +1,108 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "emberforge-1.20.1-2.4.0.jar",
+      "modIds": [
+        "emberforge"
+      ],
+      "packages": [
+        "com.cinderwick.emberforge",
+        "com.cinderwick.emberforge.client",
+        "com.cinderwick.emberforge.mixin.client",
+        "com.cinderwick.emberforge.block"
+      ],
+      "mixinConfigs": [
+        "emberforge.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pipeworks-1.20.1-2.3.1.jar",
+      "modIds": [
+        "pipeworks"
+      ],
+      "packages": [
+        "net.brassgear.pipeworks",
+        "net.brassgear.pipeworks.block.entity",
+        "net.brassgear.pipeworks.network"
+      ],
+      "mixinConfigs": [
+        "pipeworks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.20.1-forge-15.2.0.27.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.library",
+        "mezz.jei.common",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "cloth-config-11.1.106-forge.jar",
+      "modIds": [
+        "cloth_config"
+      ],
+      "packages": [
+        "me.shedaniel.clothconfig2",
+        "me.shedaniel.autoconfig",
+        "me.shedaniel.clothconfig2.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "saplingsplus-forge-1.20.1-3.0.0.jar",
+      "modIds": [
+        "saplingsplus"
+      ],
+      "packages": [
+        "org.grovekeep.saplings",
+        "org.grovekeep.saplings.common"
+      ],
+      "mixinConfigs": [
+        "saplingsplus.mixins.json"
+      ]
+    },
+    {
+      "fileName": "Larder-Forge-1.20.1-4.2.17.jar",
+      "modIds": [
+        "larder"
+      ],
+      "packages": [
+        "net.pantrydev.larder",
+        "net.pantrydev.larder.api"
+      ],
+      "mixinConfigs": [
+        "larder.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-SUSPECTED",
+      "culpritFileNames": [
+        "pipeworks-1.20.1-2.3.1.jar"
+      ],
+      "culpritModIds": [
+        "pipeworks"
+      ],
+      "lineContains": "Pipeworks (pipeworks), Version: 2.3.1"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-RESOLUTION",
+    "C-NOCLASSDEF",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Ticking block entity NPE inside Pipeworks; Forge 47.3.0 prints a single \"Suspected Mod:\" entry between Thread: and Stacktrace:."
+}

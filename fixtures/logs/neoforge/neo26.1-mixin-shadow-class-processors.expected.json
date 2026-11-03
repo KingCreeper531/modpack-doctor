@@ -1,0 +1,63 @@
+{
+  "kind": "crashReport",
+  "loader": "neoforge",
+  "mcVersion": "26.1.2",
+  "jars": [
+    {
+      "fileName": "rainshadow-26.1.2-1.0.1.jar",
+      "modIds": [
+        "rainshadow"
+      ],
+      "packages": [
+        "org.cloudline.rainshadow",
+        "org.cloudline.rainshadow.mixin"
+      ],
+      "mixinConfigs": [
+        "rainshadow.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferrolib-neoforge-26.1-4.0.0.jar",
+      "modIds": [
+        "ferrolib"
+      ],
+      "packages": [
+        "dev.ferro.lib"
+      ],
+      "mixinConfigs": [
+        "ferrolib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-26.1.2-neoforge-28.0.0.12.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-MIXIN",
+      "culpritFileNames": [
+        "rainshadow-26.1.2-1.0.1.jar"
+      ],
+      "culpritModIds": [
+        "rainshadow"
+      ],
+      "lineContains": "@Shadow field rainLevelOld was not located in the target class net.minecraft.world.level.Level"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-RESOLUTION",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "MixinTransformerError -> MixinApplyError (\"from mod rainshadow\") -> InvalidMixinException @Shadow. FerroLib only appears in an unrelated neoforge:mixin[...] audit entry on a frame and is not the culprit."
+}

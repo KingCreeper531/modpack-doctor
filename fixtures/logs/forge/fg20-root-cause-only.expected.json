@@ -1,0 +1,103 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "emberforge-1.20.1-2.4.0.jar",
+      "modIds": [
+        "emberforge"
+      ],
+      "packages": [
+        "com.cinderwick.emberforge",
+        "com.cinderwick.emberforge.client",
+        "com.cinderwick.emberforge.mixin.client",
+        "com.cinderwick.emberforge.block"
+      ],
+      "mixinConfigs": [
+        "emberforge.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.20.1-forge-15.2.0.27.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.library",
+        "mezz.jei.common",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "cloth-config-11.1.106-forge.jar",
+      "modIds": [
+        "cloth_config"
+      ],
+      "packages": [
+        "me.shedaniel.clothconfig2",
+        "me.shedaniel.autoconfig",
+        "me.shedaniel.clothconfig2.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "lanternlight-1.20.1-1.0.3.jar",
+      "modIds": [
+        "lanternlight"
+      ],
+      "packages": [
+        "io.github.lumenworks.lanternlight",
+        "io.github.lumenworks.lanternlight.mixin"
+      ],
+      "mixinConfigs": [
+        "lanternlight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "saplingsplus-forge-1.20.1-3.0.0.jar",
+      "modIds": [
+        "saplingsplus"
+      ],
+      "packages": [
+        "org.grovekeep.saplings",
+        "org.grovekeep.saplings.common"
+      ],
+      "mixinConfigs": [
+        "saplingsplus.mixins.json"
+      ]
+    },
+    {
+      "fileName": "Larder-Forge-1.20.1-4.2.17.jar",
+      "modIds": [
+        "larder"
+      ],
+      "packages": [
+        "net.pantrydev.larder",
+        "net.pantrydev.larder.api"
+      ],
+      "mixinConfigs": [
+        "larder.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-ROOT-CAUSE",
+      "lineContains": "Caused by: java.lang.IllegalArgumentException: bound must be positive"
+    }
+  ],
+  "forbid": [
+    "C-SUSPECTED",
+    "C-MIXIN",
+    "C-OOM",
+    "C-NOCLASSDEF",
+    "C-NATIVE",
+    "C-RESOLUTION",
+    "C-MISSING-MANDATORY",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Only signal is a RuntimeException -> ExecutionException -> IllegalArgumentException chain inside vanilla worldgen (likely a bad datapack tree config). The innermost Caused by is the root cause; Suspected Mods: NONE."
+}

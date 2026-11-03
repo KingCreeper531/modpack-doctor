@@ -1,0 +1,49 @@
+---- Quilt Loader: Load Error Report ----
+Date/Time: 2024/03/21 18:44:22.1635
+Quilt Loader Version: 0.26.0
+
+-- Error 1 --
+Glintful requires any version of Quilted Fabric API, which is missing!
+
+Glintful requires any version of quilted_fabric_api, which is missing!
+	- Glintful 3.2.0 is loaded from <mods>/glintful-1.20.1-quilt-3.2.0.jar
+	- You should install any version of Quilted Fabric API for Glintful to work.
+
+-- Error 2 --
+oωo requires at least version 0.83.0 or any newer version of Fabric API, which is missing!
+
+oωo requires at least version 0.83.0 or any newer version of fabric-api, which is missing!
+	- oωo 0.11.2+1.20 is loaded from <mods>/owo-lib-0.11.2+1.20.jar
+
+-- Plugin State --
+Plugins:
+ - quilt_loader (builtin)
+
+-- Mod Table --
+
+| Index | Mod                      | ID           | Version     | Plugin  | File(s)                                                                     |
+|------:|--------------------------|--------------|-------------|---------|-----------------------------------------------------------------------------|
+|     0 | Minecraft                | minecraft    | 1.20.1      | builtin | <game>/../versions/1.20.1/1.20.1.jar                                        |
+|     1 | Quilt Loader             | quilt_loader | 0.26.0      | builtin | <game>/../libraries/org/quiltmc/quilt-loader/0.26.0/quilt-loader-0.26.0.jar |
+|     2 | OpenJDK 64-Bit Server VM | java         | 17          | builtin | !missing!                                                                   |
+|     3 | Glintful                 | glintful     | 3.2.0       | quilt   | <mods>/glintful-1.20.1-quilt-3.2.0.jar                                      |
+|     4 | oωo                      | owo          | 0.11.2+1.20 | fabric  | <mods>/owo-lib-0.11.2+1.20.jar                                              |
+|     5 | Mod Menu                 | modmenu      | 7.2.2       | fabric  | <mods>/modmenu-7.2.2.jar                                                    |
+
+-- Mod Details --
+
+Glintful (glintful) 3.2.0
+	File: <mods>/glintful-1.20.1-quilt-3.2.0.jar
+	Depends on: quilted_fabric_api *, minecraft 1.20.x, quilt_loader >=0.19.0
+oωo (owo) 0.11.2+1.20
+	File: <mods>/owo-lib-0.11.2+1.20.jar
+	Depends on: fabric-api >=0.83.0, minecraft 1.20.x
+
+-- System Details --
+Details:
+	Operating System: Windows 10 (amd64) version 10.0
+	Java Version: 17.0.10, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	JVM Flags: 2 total; -Xmx4G -Xms1G
+
+---- end of report ----

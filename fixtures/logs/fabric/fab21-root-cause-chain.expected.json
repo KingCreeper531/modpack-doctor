@@ -1,0 +1,79 @@
+{
+  "kind": "crashReport",
+  "loader": "fabric",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.115.0+1.21.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "trinketry-1.21.1-1.4.0.jar",
+      "modIds": [
+        "trinketry"
+      ],
+      "packages": [
+        "com.pebble.trinketry",
+        "com.pebble.trinketry.slot",
+        "com.pebble.trinketry.client"
+      ],
+      "mixinConfigs": [
+        "trinketry.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-11.0.3.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    },
+    {
+      "fileName": "stackcount-1.21.1-1.0.2.jar",
+      "modIds": [
+        "stackcount"
+      ],
+      "packages": [
+        "io.github.tallyho.stackcount"
+      ],
+      "mixinConfigs": [
+        "stackcount.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-ROOT-CAUSE",
+      "culpritFileNames": [
+        "trinketry-1.21.1-1.4.0.jar"
+      ],
+      "culpritModIds": [
+        "trinketry"
+      ],
+      "lineContains": "Caused by: java.lang.NullPointerException: Cannot invoke \"com.pebble.trinketry.slot.SlotType.getGroup()\""
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-FABRIC-INCOMPAT",
+    "C-SUSPECTED"
+  ],
+  "notes": "CompletionException -> IllegalStateException -> NullPointerException. The innermost cause is the root; its knot// frames carry no jar names, so the culprit is found by mapping package com.pebble.trinketry.slot to the Trinketry jar."
+}

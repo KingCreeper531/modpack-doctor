@@ -1,0 +1,60 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.18.1",
+  "jars": [
+    {
+      "fileName": "hollowlogs-1.18.1-1.1.0.jar",
+      "modIds": [
+        "hollowlogs"
+      ],
+      "packages": [
+        "net.woodland.hollowlogs"
+      ],
+      "mixinConfigs": [
+        "hollowlogs.mixins.json"
+      ]
+    },
+    {
+      "fileName": "fabric-api-0.43.1+1.18.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "modmenu-3.0.1.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-FABRIC-INCOMPAT",
+      "culpritModIds": [
+        "hollowlogs"
+      ],
+      "culpritFileNames": [
+        "hollowlogs-1.18.1-1.1.0.jar"
+      ],
+      "lineContains": "Mod resolution encountered an incompatible mod set!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Older loader wording (\"Incompatible mod set!\", \"Mod resolution encountered an incompatible mod set!\", \"Unmet dependency listing:\"). crash-formats.md Uncertain #3: reconstructed from memory, not re-verified in source."
+}

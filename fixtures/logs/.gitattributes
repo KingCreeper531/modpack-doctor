@@ -1,0 +1,2 @@
+# Keep fixture bytes exact (CRLF case, UTF-8 names): no EOL normalisation.
+* -text
