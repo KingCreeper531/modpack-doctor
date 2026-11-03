@@ -1,0 +1,34 @@
+/* Running-op bar (DESIGN.md §6.4, §8): a 6px bar whose segment sweeps while an op runs.
+   Reduced motion: a static full bar. Colours come from tokens only. */
+@keyframes md-op-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.md-op-bar {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 32px;
+  height: 6px;
+  background: var(--c-line);
+}
+
+.md-op-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  background: var(--c-signal);
+  animation: md-op-sweep 1200ms var(--ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-op-bar > span {
+    width: 100%;
+    animation: none;
+  }
+}
