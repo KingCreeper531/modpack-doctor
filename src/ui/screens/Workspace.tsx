@@ -43,6 +43,7 @@ function Summary({ instance }: { instance: Instance }) {
       {...(s.status === 'done' ? { counts } : {})}
       {...(s.status === 'done' && s.finishedAt !== null ? { scannedAgoMs: now - s.finishedAt } : {})}
       scanning={s.status === 'scanning' ? { done: s.done, total: s.total } : null}
+      failed={s.status === 'error'}
       offline={!modrinthEnabled}
       offlineNotice="Modrinth off — static checks only"
     />

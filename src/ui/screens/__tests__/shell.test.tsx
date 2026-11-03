@@ -129,6 +129,7 @@ describe('shell', () => {
     });
     const alert = screen.getByRole('alert');
     expect(within(alert).getByText('permission')).toBeTruthy();
+    expect(screen.getByText('scan failed')).toBeTruthy();
     const scan = vi.spyOn(m.backend.commands, 'scanInstance');
     await act(async () => {
       fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));

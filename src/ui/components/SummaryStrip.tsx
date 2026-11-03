@@ -19,6 +19,8 @@ export interface SummaryStripProps {
   counts?: { error: number; warning: number; info: number };
   /** ms since the last scan finished; omitted when never scanned. */
   scannedAgoMs?: number;
+  /** The last scan failed (its error row explains why). */
+  failed?: boolean;
   scanning?: { done: number; total: number } | null;
   /** Modrinth unreachable: static checks only. */
   offline?: boolean;
@@ -33,6 +35,7 @@ export function SummaryStrip({
   modCount,
   counts,
   scannedAgoMs,
+  failed = false,
   scanning = null,
   offline = false,
   offlineNotice = 'Modrinth unreachable — static checks only',
@@ -65,7 +68,10 @@ export function SummaryStrip({
   } else if (scannedAgoMs !== undefined) {
     segments.push({ key: 'ago', node: <span className="text-fg-faint">scanned {formatAgo(scannedAgoMs)}</span> });
   } else {
-    segments.push({ key: 'ago', node: <span className="text-fg-faint">not scanned</span> });
+    segments.push({
+      key: 'ago',
+      node: failed ? <span className="text-err-text">scan failed</span> : <span className="text-fg-faint">not scanned</span>,
+    });
   }
 
   return (
