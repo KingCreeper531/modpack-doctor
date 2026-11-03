@@ -19,6 +19,7 @@ import {
   hatchSegments,
   hitTest,
   isFocusKey,
+  keepsOutline,
   layoutGrid,
   mixColor,
   moveFocus,
@@ -73,6 +74,8 @@ type Palette = Record<TileToken, Rgba>;
 interface Anim {
   from: Rgba;
   start: number;
+  /** Keep the unscanned outline until the fade ends (a half-faded hollow tile is near invisible). */
+  outline: boolean;
 }
 
 interface Engine {
@@ -210,7 +213,7 @@ export function TileGrid({ tiles, selectedId = null, previewHoverId = null, prev
     ctx.beginPath();
     let outlined = false;
     for (let i = 0; i < n; i++) {
-      if (e.shown[i] !== 'unscanned') continue;
+      if (e.shown[i] !== 'unscanned' && !e.anims.get(i)?.outline) continue;
       const { x, y } = tileOrigin(i, cols);
       frame(ctx, x, y, 0, 1);
       outlined = true;
@@ -337,7 +340,7 @@ export function TileGrid({ tiles, selectedId = null, previewHoverId = null, prev
         const a = e.anims.get(i);
         const prevFill = p[tileVisual(prev).fill];
         const from = a ? mixColor(a.from, prevFill, easeOut(Math.min(1, (now - a.start) / FADE_MS))) : prevFill;
-        e.anims.set(i, { from, start: now });
+        e.anims.set(i, { from, start: now, outline: keepsOutline(prev, a) });
       }
       e.shown[i] = next;
     }

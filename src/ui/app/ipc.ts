@@ -40,7 +40,8 @@ export interface AppEvents {
 export type AppCommands = typeof commands;
 
 export interface Backend {
-  kind: 'tauri' | 'mock';
+  /** `none`: production build without the Tauri bridge; every command fails with `NO_BACKEND`. */
+  kind: 'tauri' | 'mock' | 'none';
   commands: AppCommands;
   events: AppEvents;
 }
@@ -72,10 +73,38 @@ export function tauriBackend(): Backend {
   };
 }
 
-/** Real Tauri when available, otherwise the mock configured from the URL (`?scenario=`). */
-export function createBackend(w: (object & { location?: { search: string } }) | undefined = typeof window === 'undefined' ? undefined : window): Backend {
+/** Shown when a production build runs without the Tauri bridge (e.g. opened in a browser). */
+export const NO_BACKEND: AppError = {
+  kind: 'internal',
+  message: "Modpack Doctor's backend is not running, so nothing can be scanned. Start Modpack Doctor from its installed app, not from a web browser.",
+  path: null,
+};
+
+/** A backend that answers every command with `NO_BACKEND` and never emits events. */
+export function missingBackend(): Backend {
+  const fail = async () => ({ status: 'error' as const, error: NO_BACKEND });
+  const commandsProxy = new Proxy({}, { get: () => fail }) as AppCommands;
+  const silent: EventChannel<never> = { listen: async () => () => undefined };
+  return {
+    kind: 'none',
+    commands: commandsProxy,
+    events: { scanStarted: silent, scanProgress: silent, instanceAdded: silent, dropRejected: silent, crashDetected: silent, opStatus: silent },
+  };
+}
+
+/**
+ * Real Tauri when the bridge exists. Otherwise, in dev builds only, the browser mock configured
+ * from the URL (`?scenario=`); production builds get `missingBackend()` and never show mock
+ * data. `import.meta.env.DEV` is a compile-time constant, so the mock modules are dropped from
+ * production bundles. `allowMock: false` lets tests exercise the production path.
+ */
+export function createBackend(
+  w: (object & { location?: { search: string } }) | undefined = typeof window === 'undefined' ? undefined : window,
+  allowMock = true,
+): Backend {
   if (isTauri(w)) return tauriBackend();
-  return createMockBackend(mockOptionsFromSearch(w?.location?.search ?? ''));
+  if (import.meta.env.DEV && allowMock) return createMockBackend(mockOptionsFromSearch(w?.location?.search ?? ''));
+  return missingBackend();
 }
 
 /**

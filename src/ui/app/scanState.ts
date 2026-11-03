@@ -14,6 +14,8 @@ export interface InstanceScan {
   total: number;
   result: ScanResult | null;
   pack: PackContext | null;
+  /** The pack identity without any override (the override editor shows it as placeholders). */
+  detected: PackContext | null;
   findings: Finding[];
   /** UI clock (ms since epoch) when the scan was requested / when checks finished. */
   startedAt: number | null;
@@ -33,6 +35,7 @@ export function emptyScan(): InstanceScan {
     total: 0,
     result: null,
     pack: null,
+    detected: null,
     findings: [],
     startedAt: null,
     finishedAt: null,

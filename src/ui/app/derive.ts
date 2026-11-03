@@ -167,7 +167,8 @@ export function deriveModRows(scan: InstanceScan): ModRow[] {
 /** Rail pip from the last scan. A failed scan shows as an error; a running one as hollow. */
 export function instanceStatus(scan: InstanceScan | undefined): ScanStatus {
   if (!scan) return 'unscanned';
-  if (scan.status === 'error') return 'error';
+  // A feature this build lacks (e.g. .mrpack scanning) is not a failed scan.
+  if (scan.status === 'error') return scan.error?.kind === 'unavailable' ? 'unscanned' : 'error';
   if (scan.status !== 'done') return 'unscanned';
   const w = worstOf(severityCounts(scan.findings));
   return w === 'error' ? 'error' : w === 'warning' ? 'warning' : 'ok';

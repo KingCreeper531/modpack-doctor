@@ -42,7 +42,9 @@ import { packIdentity, topLevelId } from './derive';
 import { call, type Backend, type Unlisten } from './ipc';
 import { emptyScan, type InstanceScan } from './scanState';
 
-export type Selection = { kind: 'jar'; id: string } | { kind: 'finding'; id: string };
+export type FixOrigin = 'triage' | 'inspector' | 'mods';
+
+export type Selection ={ kind: 'jar'; id: string } | { kind: 'finding'; id: string };
 
 export interface OpenOrder {
   instanceId: string;
@@ -103,6 +105,14 @@ export interface AppState {
   modSort: Readonly<Record<string, SortState<ModSortKey> | null>>;
   /** Fix errors keyed by finding id (or `jar:<id>` for the enable toggle). */
   fixErrors: Readonly<Record<string, AppError>>;
+  /** Where each fix error was triggered, so it renders once, next to the button pressed. */
+  fixErrorFrom: Readonly<Record<string, FixOrigin>>;
+  /** Instances with a rescan queued behind the running one. */
+  rescanQueued: Readonly<Record<string, true>>;
+  /** Which backend answers: Tauri, the dev-only browser mock, or nothing (bridge missing). */
+  backendKind: Backend['kind'];
+  /** Narrow windows show the inspector as a drawer; this is whether it is open. */
+  inspectorOpen: boolean;
   /** Keys with a `plan_work_order` call in flight. */
   fixPending: Readonly<Record<string, true>>;
   overrideError: AppError | null;
@@ -122,7 +132,8 @@ export interface AppState {
   setInspectorWidth(width: number): void;
   commitInspectorWidth(width: number): void;
   setOverride(instanceId: string, override: PackOverride | null): Promise<void>;
-  fix(key: string, action: FixAction): Promise<void>;
+  fix(key: string, action: FixAction, from?: FixOrigin): Promise<void>;
+  setInspectorOpen(open: boolean): void;
   setJarEnabled(jarId: string, enabled: boolean): Promise<void>;
   executeOrder(): Promise<void>;
   cancelOrder(): Promise<void>;
@@ -167,6 +178,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
   let flushQueued = false;
   /** Latest scan request per instance; stale results are dropped. */
   const tokens = new Map<string, number>();
+  /** Instances with one rescan requested while they were scanning. */
+  const queued = new Set<string>();
 
   const store = createStore<AppState>()((set, get) => {
     const patchScan = (id: string, fn: (s: InstanceScan) => InstanceScan) =>
@@ -194,6 +207,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
     };
 
     const onStarted = (e: ScanStarted) => {
+      // A late ScanStarted (after the result, or for a scan we never asked for) must not wipe
+      // the finished state.
+      if (get().scans[e.instanceId]?.status !== 'scanning') return;
       pending = pending.filter((p) => p.instanceId !== e.instanceId);
       patchScan(e.instanceId, (s) => ({ ...s, stubs: e.jars, progress: {}, done: 0, total: e.jars.length }));
     };
@@ -212,12 +228,15 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const inst = instanceById(id);
       if (!sc?.result || !inst) return {};
       try {
-        const pack = core.resolvePack(inst, sc.result, get().settings.overrides[id] ?? null);
+        const override = get().settings.overrides[id] ?? null;
+        const pack = core.resolvePack(inst, sc.result, override);
+        // What the pack would be without the override: the override editor's placeholders.
+        const detected = override ? core.resolvePack(inst, sc.result, null) : pack;
         const findings = core.runChecks({ instance: inst, scan: sc.result, pack });
-        return { pack, findings, checksError: null };
+        return { pack, detected, findings, checksError: null };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        return { pack: null, findings: [], checksError: { kind: 'internal', message: `The checks stopped with an error: ${message}`, path: null } };
+        return { pack: null, detected: null, findings: [], checksError: { kind: 'internal', message: `The checks stopped with an error: ${message}`, path: null } };
       }
     };
 
@@ -229,16 +248,27 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (!exists) set({ selection: null });
     };
 
+    /** Start the one rescan queued while `id` was scanning, if any. */
+    const runQueued = (id: string) => {
+      if (!queued.delete(id)) return;
+      set((st) => {
+        const rescanQueued = { ...st.rescanQueued };
+        delete rescanQueued[id];
+        return { rescanQueued };
+      });
+      void get().scan(id);
+    };
+
     const applyInitialSelect = (id: string) => {
       const want = initialSelect;
       const sc = get().scans[id];
       if (!want || !sc) return;
       if (sc.findings.some((f) => f.id === want)) {
         initialSelect = null;
-        set({ selection: { kind: 'finding', id: want }, expandFindingId: want });
+        set({ selection: { kind: 'finding', id: want }, expandFindingId: want, inspectorOpen: true });
       } else if (sc.result?.jars.some((j) => j.id === want)) {
         initialSelect = null;
-        set({ selection: { kind: 'jar', id: want }, revealJarId: topLevelId(want) });
+        set({ selection: { kind: 'jar', id: want }, revealJarId: topLevelId(want), inspectorOpen: true });
       }
     };
 
@@ -293,6 +323,10 @@ export function createAppStore(deps: StoreDeps): AppStore {
       expandFindingId: null,
       modSort: {},
       fixErrors: {},
+      fixErrorFrom: {},
+      rescanQueued: {},
+      backendKind: backend.kind,
+      inspectorOpen: false,
       fixPending: {},
       overrideError: null,
       order: null,
@@ -318,7 +352,12 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       async scan(id) {
-        if (get().scans[id]?.status === 'scanning') return;
+        if (get().scans[id]?.status === 'scanning') {
+          // Something changed mid-scan (a fix, a Rescan click): run once more when this ends.
+          queued.add(id);
+          set((st) => ({ rescanQueued: { ...st.rescanQueued, [id]: true } }));
+          return;
+        }
         const token = (tokens.get(id) ?? 0) + 1;
         tokens.set(id, token);
         // Keep the previous stubs (the grid keeps its shape until ScanStarted replaces them) and
@@ -329,6 +368,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         flush();
         if (res.status === 'error') {
           patchScan(id, (s) => ({ ...s, status: 'error', error: res.error, finishedAt: now() }));
+          runQueued(id);
           return;
         }
         const result = res.data;
@@ -343,14 +383,16 @@ export function createAppStore(deps: StoreDeps): AppStore {
         patchScan(id, (s) => ({ ...s, ...checked, status: 'done', finishedAt: now() }));
         keepSelection(id);
         applyInitialSelect(id);
+        runQueued(id);
       },
 
       select(sel) {
-        set({ selection: sel });
+        // Selecting something opens the inspector drawer on narrow windows (ignored when docked).
+        set(sel ? { selection: sel, inspectorOpen: true } : { selection: null });
       },
 
       revealJar(jarId) {
-        set({ selection: { kind: 'jar', id: jarId }, revealJarId: topLevelId(jarId) });
+        set({ selection: { kind: 'jar', id: jarId }, revealJarId: topLevelId(jarId), inspectorOpen: true });
       },
 
       setGridSort(gridSort) {
@@ -400,7 +442,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         }
       },
 
-      async fix(key, action) {
+      async fix(key, action, from = key.startsWith('jar:') ? 'mods' : 'triage') {
         const id = get().selectedInstanceId;
         // Manual fixes are advice only: their steps are already on screen, nothing to plan.
         if (!id || action.kind === 'manual') return;
@@ -408,11 +450,17 @@ export function createAppStore(deps: StoreDeps): AppStore {
         const setErr = (e: AppError | null) =>
           set((st) => {
             const fixErrors = { ...st.fixErrors };
-            if (e) fixErrors[key] = e;
-            else delete fixErrors[key];
+            const fixErrorFrom = { ...st.fixErrorFrom };
+            if (e) {
+              fixErrors[key] = e;
+              fixErrorFrom[key] = from;
+            } else {
+              delete fixErrors[key];
+              delete fixErrorFrom[key];
+            }
             const fixPending = { ...st.fixPending };
             delete fixPending[key];
-            return { fixErrors, fixPending };
+            return { fixErrors, fixErrorFrom, fixPending };
           });
         if (!identity) {
           setErr(UNKNOWN_PACK);
@@ -491,9 +539,15 @@ export function createAppStore(deps: StoreDeps): AppStore {
       dismissFixError(key) {
         set((st) => {
           const fixErrors = { ...st.fixErrors };
+          const fixErrorFrom = { ...st.fixErrorFrom };
           delete fixErrors[key];
-          return { fixErrors };
+          delete fixErrorFrom[key];
+          return { fixErrors, fixErrorFrom };
         });
+      },
+
+      setInspectorOpen(open) {
+        set({ inspectorOpen: open });
       },
     };
   });

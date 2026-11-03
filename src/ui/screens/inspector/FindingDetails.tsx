@@ -6,15 +6,16 @@ import { Chip } from '../../components/Chip';
 import { cx } from '../../components/cx';
 import { ErrorRow } from '../../components/ErrorRow';
 import { EvidenceView } from '../../components/EvidenceView';
-import { fixLabel, SEVERITY_WORD } from '../../components/labels';
-import { RAIL_BG, SEVERITY_TEXT } from '../../components/Severity';
+import { fixLabel } from '../../components/labels';
+import { FindingCode, RAIL_BG } from '../../components/Severity';
 import { useActions, useApp } from '../../app/StoreContext';
 import { SubLegend } from './Plate';
 
 export function FindingDetails({ instanceId, findingId }: { instanceId: string; findingId: string }) {
   const finding = useApp((s) => s.scans[instanceId]?.findings.find((f) => f.id === findingId) ?? null);
   const result = useApp((s) => s.scans[instanceId]?.result ?? null);
-  const fixError = useApp((s) => s.fixErrors[findingId] ?? null);
+  // Only errors from the inspector's own buttons; the triage row shows the ones it triggered.
+  const fixError = useApp((s) => (s.fixErrorFrom[findingId] === 'inspector' ? (s.fixErrors[findingId] ?? null) : null));
   const pending = useApp((s) => !!s.fixPending[findingId]);
   const orderOpen = useApp((s) => s.order !== null);
   const selectedJar = useApp((s) => (s.selection?.kind === 'jar' ? s.selection.id : null));
@@ -34,9 +35,7 @@ export function FindingDetails({ instanceId, findingId }: { instanceId: string; 
     <div className="flex flex-col">
       <div className="relative flex flex-col gap-1 py-2 pr-4 pl-4">
         <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1', RAIL_BG[finding.severity])} />
-        <span className={cx('t-mono', SEVERITY_TEXT[finding.severity])}>
-          {finding.code} · {SEVERITY_WORD[finding.severity]}
-        </span>
+        <FindingCode code={finding.code} severity={finding.severity} />
         <h3 className="t-title text-fg">{finding.title}</h3>
       </div>
       <p className="border-t border-line px-4 py-2 t-body text-fg">{finding.explanation}</p>
@@ -68,7 +67,7 @@ export function FindingDetails({ instanceId, findingId }: { instanceId: string; 
           {plannable.length ? (
             <div className="flex flex-wrap gap-2 px-4 py-2">
               {plannable.map((fix, i) => (
-                <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={pending || orderOpen} onClick={() => void a.fix(findingId, fix)}>
+                <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={pending || orderOpen} onClick={() => void a.fix(findingId, fix, 'inspector')}>
                   {fixLabel(fix, names)}
                 </Button>
               ))}

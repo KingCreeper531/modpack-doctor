@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../components/Button';
-import { ErrorRow } from '../components/ErrorRow';
+import { ErrorRow, isUnavailable } from '../components/ErrorRow';
 import { formatInt, plural } from '../components/format';
 import { Panel } from '../components/Panel';
 import { TriageRow } from '../components/TriageRow';
@@ -27,6 +27,7 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
   });
   const selection = useApp((st) => st.selection);
   const fixErrors = useApp((st) => st.fixErrors);
+  const fixErrorFrom = useApp((st) => st.fixErrorFrom);
   const fixPending = useApp((st) => st.fixPending);
   const orderOpen = useApp((st) => st.order !== null);
   const a = useActions();
@@ -68,9 +69,11 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
         <ErrorRow
           error={s.error}
           action={
-            <Button size={24} onClick={() => void a.scan(instanceId)}>
-              Retry
-            </Button>
+            isUnavailable(s.error) ? undefined : (
+              <Button size={24} onClick={() => void a.scan(instanceId)}>
+                Retry
+              </Button>
+            )
           }
         />
       ) : null}
@@ -99,9 +102,10 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
                 jarNames={jarNames}
                 selectedJarId={selection?.kind === 'jar' ? selection.id : null}
                 onJarClick={a.revealJar}
-                onFix={(fix) => void a.fix(f.id, fix)}
+                onFix={(fix) => void a.fix(f.id, fix, 'triage')}
                 fixesDisabled={orderOpen || !!fixPending[f.id]}
-                fixError={fixErrors[f.id] ?? null}
+                // Shown once, next to the button that was pressed (the inspector shows its own).
+                fixError={fixErrorFrom[f.id] === 'triage' ? (fixErrors[f.id] ?? null) : null}
               />
             </div>
           ))}

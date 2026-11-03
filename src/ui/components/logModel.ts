@@ -46,3 +46,15 @@ export function gutterChars(rows: readonly LogRow[]): number {
   for (const r of rows) if (r.kind === 'line' && r.n > max) max = r.n;
   return Math.max(3, String(max).length);
 }
+
+/**
+ * A window of at most `max` excerpt lines for a collapsed view: it starts a few lines above the
+ * first highlighted line (or at the top) so the culprit stays visible. Returns every line, with
+ * `clipped: false`, when the excerpt already fits.
+ */
+export function clipExcerpt(lines: readonly LogLine[], max: number, lead = 2): { lines: LogLine[]; clipped: boolean } {
+  if (lines.length <= max) return { lines: [...lines], clipped: false };
+  const first = lines.findIndex((l) => l.role === 'culprit');
+  const start = Math.max(0, Math.min(first < 0 ? 0 : first - lead, lines.length - max));
+  return { lines: lines.slice(start, start + max), clipped: true };
+}

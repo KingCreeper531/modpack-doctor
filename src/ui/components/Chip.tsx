@@ -13,17 +13,20 @@ export interface ChipProps {
   title?: string;
   /** Selected chip (its mod is open in the inspector). */
   selected?: boolean;
+  /** Let the chip shrink and ellipsize in a crowded row instead of keeping its full width. */
+  shrinkable?: boolean;
   className?: string;
 }
 
 const BASE =
-  'inline-flex h-4 max-w-full shrink-0 items-center rounded-1 border px-1 font-mono text-[11px] leading-4 whitespace-nowrap tabular-nums';
+  'inline-flex h-4 max-w-full items-center rounded-1 border px-1 font-mono text-[11px] leading-4 whitespace-nowrap tabular-nums';
 
-export function Chip({ children, onClick, title, selected = false, className }: ChipProps) {
+export function Chip({ children, onClick, title, selected = false, shrinkable = false, className }: ChipProps) {
+  const fit = shrinkable ? 'min-w-0 shrink' : 'shrink-0';
   const tone = selected ? 'border-signal bg-raised text-fg' : 'border-line-strong bg-panel text-fg-dim';
   if (!onClick) {
     return (
-      <span className={cx(BASE, tone, className)} title={title}>
+      <span className={cx(BASE, fit, tone, className)} title={title}>
         <span className="truncate">{children}</span>
       </span>
     );
@@ -37,7 +40,7 @@ export function Chip({ children, onClick, title, selected = false, className }: 
         e.stopPropagation();
         onClick();
       }}
-      className={cx(BASE, tone, 'cursor-pointer hover:border-fg-faint hover:bg-raised hover:text-fg', className)}
+      className={cx(BASE, fit, tone, 'cursor-pointer hover:border-fg-faint hover:bg-raised hover:text-fg', className)}
     >
       <span className="truncate">{children}</span>
     </button>

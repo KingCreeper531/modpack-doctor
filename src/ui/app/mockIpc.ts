@@ -60,7 +60,8 @@ export function mockOptionsFromSearch(search: string): MockOptions {
 
 const ok = <T>(data: T): Result<T> => ({ status: 'ok', data });
 const err = (kind: AppError['kind'], message: string, path: string | null = null): Result<never> => ({ status: 'error', error: { kind, message, path } });
-const notYet = (what: string, milestone: string) => err('internal', `${what} is not implemented yet (${milestone})`);
+/** Same shape as Rust's `not_yet` (commands/mod.rs): a neutral `unavailable` error. */
+const notYet = (feature: string) => err('unavailable', `${feature} isn't available in this version of Modpack Doctor yet.`);
 
 function emitter<T>() {
   const subs = new Set<(p: T) => void>();
@@ -123,6 +124,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     await lag();
     const inst = instances().find((i) => i.id === instanceId);
     if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
+    // As in Rust (commands/mod.rs): .mrpack scanning arrives in M7.
+    if (inst.launcher === 'mrpack') return notYet('Scanning .mrpack files');
     const first = scans++ === 0;
     if (opts.scenario === 'errors' && instanceId === discovery.instances[0]?.id) {
       return err(
@@ -209,24 +212,24 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       await lag();
       return ok(null);
     },
-    pickMrpack: async () => notYet('pick_mrpack', 'M7'),
+    pickMrpack: async () => notYet('Opening .mrpack files'),
     scanInstance,
-    listLogSources: async () => notYet('list_log_sources', 'M4'),
-    readLogDigest: async () => notYet('read_log_digest', 'M4'),
-    setWatch: async () => notYet('set_watch', 'M4'),
-    modrinthIdentify: async () => notYet('modrinth_identify', 'M5'),
-    modrinthFindUpdates: async () => notYet('modrinth_find_updates', 'M5'),
-    modrinthProjects: async () => notYet('modrinth_projects', 'M5'),
-    modrinthProjectVersions: async () => notYet('modrinth_project_versions', 'M5'),
+    listLogSources: async () => notYet('Crash and log analysis'),
+    readLogDigest: async () => notYet('Crash and log analysis'),
+    setWatch: async () => notYet('Watching for crashes'),
+    modrinthIdentify: async () => notYet('Modrinth lookups'),
+    modrinthFindUpdates: async () => notYet('Modrinth update suggestions'),
+    modrinthProjects: async () => notYet('Modrinth project details'),
+    modrinthProjectVersions: async () => notYet('Modrinth version lookups'),
     planWorkOrder: async () => {
       await lag();
-      return notYet('plan_work_order', 'M6');
+      return notYet('Applying fixes');
     },
-    executeWorkOrder: async () => notYet('execute_work_order', 'M6'),
-    discardWorkOrder: async () => notYet('discard_work_order', 'M6'),
-    listBackups: async () => notYet('list_backups', 'M6'),
-    planUndo: async () => notYet('plan_undo', 'M6'),
-    gameRunning: async () => ok({ running: false, pids: [], reason: null }),
+    executeWorkOrder: async () => notYet('Applying fixes'),
+    discardWorkOrder: async () => notYet('Applying fixes'),
+    listBackups: async () => notYet('Backup history'),
+    planUndo: async () => notYet('Undo'),
+    gameRunning: async () => notYet('Detecting a running game'),
     getSettings: async () => {
       await lag();
       return ok(settings);
@@ -235,10 +238,10 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       await lag();
       return ok(applyPatch(patch));
     },
-    saveReport: async () => notYet('save_report', 'M7'),
+    saveReport: async () => notYet('Saving reports'),
     setWindowTheme: async () => ok(null),
-    checkUpdate: async () => notYet('check_update', 'M8'),
-    installUpdate: async () => notYet('install_update', 'M8'),
+    checkUpdate: async () => notYet('Update checks'),
+    installUpdate: async () => notYet('Installing updates'),
   };
 
   return {

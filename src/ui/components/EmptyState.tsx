@@ -64,7 +64,7 @@ export function EmptyState({ probes, onAddFolder, onAddLauncherRoot, className }
   return (
     <Panel legend="No instances found" meta={`checked ${probes.length} locations`} flush className={className}>
       <p className="flex h-8 items-center border-b border-line px-4 t-body text-fg-dim">
-        No Minecraft instances in the places below. Add the folder that contains your mods folder, or a .mrpack file.
+        No Minecraft instances in the places below. Add the folder that contains your mods folder.
       </p>
       <Table label="Launcher locations checked" columns={COLUMNS} rows={probes} rowKey={(p) => `${p.launcher}:${p.path}`} />
       <div className="flex items-center gap-2 px-4 py-4">

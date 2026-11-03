@@ -4,7 +4,13 @@
  * Expanded (click / Enter): explanation (≤ 72ch), evidence, fix buttons; height animates 160ms
  * ease-out via a 0fr → 1fr grid track (`--dur` is 0ms under reduced motion).
  * Focused (J/K, owned by the list): `raised` plus an inset 1px `signal` outline.
+ *
+ * The code carries a small severity word when a check lowered it (`E-DUP-ID warn`). Culprit
+ * chips ellipsize and collapse past `MAX_CHIPS` into `+N`. Metadata evidence is clipped to
+ * `EVIDENCE_LINES` with a Show all toggle; the inspector shows it in full.
  */
+import type { ReactNode } from 'react';
+
 import type { AppError, FixAction } from '../../bindings';
 import type { Finding } from '../../core/model';
 import { Button } from './Button';
@@ -14,7 +20,12 @@ import { ErrorRow } from './ErrorRow';
 import { EvidenceView } from './EvidenceView';
 import { basename } from './format';
 import { fixLabel } from './labels';
-import { RAIL_BG, SEVERITY_TEXT } from './Severity';
+import { FindingCode, RAIL_BG } from './Severity';
+
+/** Chips shown before the rest collapse into `+N`. */
+export const MAX_CHIPS = 2;
+/** Metadata excerpt lines shown in an expanded row before "Show all". */
+export const EVIDENCE_LINES = 12;
 
 export interface TriageRowProps {
   finding: Finding;
@@ -33,6 +44,8 @@ export interface TriageRowProps {
   fixesDisabled?: boolean;
   /** Why the last fix could not be planned (`plan_work_order` error), shown under the buttons. */
   fixError?: AppError | null;
+  /** Note beside the fix buttons (e.g. how work orders behave), once fixes can run. */
+  fixHint?: ReactNode;
 }
 
 export function TriageRow({
@@ -47,9 +60,13 @@ export function TriageRow({
   onFix,
   fixesDisabled = false,
   fixError = null,
+  fixHint = null,
 }: TriageRowProps) {
   const name = (id: string) => jarNames[id] ?? basename(id);
   const bodyId = `triage-${finding.id}`;
+  const shown = finding.culprits.slice(0, MAX_CHIPS);
+  const hidden = finding.culprits.slice(MAX_CHIPS);
+  const steps = finding.fixes.flatMap((f) => (f.kind === 'manual' ? f.steps : []));
   return (
     <div
       className={cx(
@@ -69,22 +86,26 @@ export function TriageRow({
           onClick={onToggle}
           className="flex h-8 min-w-0 flex-1 items-center text-left focus-visible:outline-1 focus-visible:-outline-offset-1"
         >
-          <span className={cx('w-36 shrink-0 truncate pl-1 t-mono', SEVERITY_TEXT[finding.severity])} title={finding.code}>
-            {finding.code}
-          </span>
+          <FindingCode code={finding.code} severity={finding.severity} className="w-36 shrink-0 truncate pl-1" />
           <span className="min-w-0 flex-1 truncate pl-1 t-body text-fg">{finding.title}</span>
         </button>
-        <div className="flex max-w-[45%] shrink-0 items-center gap-1 overflow-hidden pr-4 pl-2">
-          {finding.culprits.map((c) => (
+        <div className="flex max-w-[45%] min-w-0 shrink-0 items-center gap-1 pr-4 pl-2" data-testid="culprits">
+          {shown.map((c) => (
             <Chip
               key={c.jarId}
               title={c.jarId}
               selected={selectedJarId === c.jarId}
+              shrinkable
               {...(onJarClick ? { onClick: () => onJarClick(c.jarId) } : {})}
             >
               {c.fileName}
             </Chip>
           ))}
+          {hidden.length ? (
+            <span className="shrink-0 t-mono text-fg-faint" title={hidden.map((c) => c.fileName).join('\n')}>
+              +{hidden.length}
+            </span>
+          ) : null}
         </div>
       </div>
       <div
@@ -96,38 +117,39 @@ export function TriageRow({
         <div className="min-h-0 overflow-hidden">
           <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-38">
             <p className="max-w-[72ch] t-body text-fg">{finding.explanation}</p>
-            {finding.evidence.map((ev, i) => (
-              <EvidenceView key={i} evidence={ev} jarLabel={name} {...(onJarClick ? { onJarClick } : {})} />
-            ))}
-            {finding.fixes.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {finding.fixes.map((fix, i) => (
-                  <Button
-                    key={i}
-                    size={24}
-                    variant={i === 0 ? 'primary' : 'default'}
-                    disabled={fixesDisabled}
-                    onClick={() => onFix?.(fix, i)}
-                  >
-                    {fixLabel(fix, jarNames)}
-                  </Button>
+            {hidden.length ? (
+              <div className="flex flex-wrap gap-1" aria-label="All culprits">
+                {finding.culprits.map((c) => (
+                  <Chip key={c.jarId} title={c.jarId} selected={selectedJarId === c.jarId} {...(onJarClick ? { onClick: () => onJarClick(c.jarId) } : {})}>
+                    {c.fileName}
+                  </Chip>
                 ))}
-                {finding.fixes[0]?.kind !== 'manual' ? (
-                  <span className="t-small text-fg-faint">opens a work order; nothing changes until you execute it</span>
-                ) : null}
+              </div>
+            ) : null}
+            {finding.evidence.map((ev, i) => (
+              <EvidenceView key={i} evidence={ev} jarLabel={name} clipLines={EVIDENCE_LINES} {...(onJarClick ? { onJarClick } : {})} />
+            ))}
+            {finding.fixes.some((f) => f.kind !== 'manual') ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {finding.fixes.map((fix, i) =>
+                  fix.kind === 'manual' ? null : (
+                    <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={fixesDisabled} onClick={() => onFix?.(fix, i)}>
+                      {fixLabel(fix, jarNames)}
+                    </Button>
+                  ),
+                )}
+                {fixHint ? <span className="t-small text-fg-faint">{fixHint}</span> : null}
               </div>
             ) : null}
             {fixError ? <ErrorRow error={fixError} className="border-t" /> : null}
-            {finding.fixes.flatMap((f) => (f.kind === 'manual' ? f.steps : [])).length > 0 ? (
+            {steps.length > 0 ? (
               <ol className="flex flex-col gap-1 t-mono text-fg-dim">
-                {finding.fixes
-                  .flatMap((f) => (f.kind === 'manual' ? f.steps : []))
-                  .map((s, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span className="text-fg-faint">{String(i + 1).padStart(2, '0')}</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
+                {steps.map((s, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-fg-faint">{String(i + 1).padStart(2, '0')}</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
               </ol>
             ) : null}
           </div>

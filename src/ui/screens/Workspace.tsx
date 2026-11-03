@@ -2,7 +2,7 @@
  * Workspace (DESIGN.md §5): instance heading + summary strip, then the scan grid, the triage
  * list and the mod table (or an open work order in its place, §6.4).
  */
-import { ArrowClockwise } from '@phosphor-icons/react';
+import { ArrowClockwise, SidebarSimple } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import type { Instance } from '../../bindings';
@@ -12,6 +12,7 @@ import { SummaryStrip } from '../components/SummaryStrip';
 import { WorkOrderPanel } from '../components/WorkOrderPanel';
 import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import { useInspectorIsDrawer } from './drawer';
 import { useNow } from './hooks';
 import { ModsPanel } from './ModsPanel';
 import { ScanPanel } from './ScanPanel';
@@ -29,6 +30,7 @@ function Summary({ instance }: { instance: Instance }) {
       finishedAt: sc?.finishedAt ?? null,
       result: sc?.result ?? null,
       stubCount: sc?.stubs.length ?? 0,
+      unavailable: sc?.error?.kind === 'unavailable',
     };
   });
   const modrinthEnabled = useApp((st) => st.settings.modrinthEnabled);
@@ -43,7 +45,7 @@ function Summary({ instance }: { instance: Instance }) {
       {...(s.status === 'done' ? { counts } : {})}
       {...(s.status === 'done' && s.finishedAt !== null ? { scannedAgoMs: now - s.finishedAt } : {})}
       scanning={s.status === 'scanning' ? { done: s.done, total: s.total } : null}
-      failed={s.status === 'error'}
+      failed={s.status === 'error' && !s.unavailable}
       offline={!modrinthEnabled}
       offlineNotice="Modrinth off — static checks only"
     />
@@ -52,17 +54,31 @@ function Summary({ instance }: { instance: Instance }) {
 
 function Header({ instance }: { instance: Instance }) {
   const scanning = useApp((s) => s.scans[instance.id]?.status === 'scanning');
+  const queued = useApp((s) => !!s.rescanQueued[instance.id]);
+  const drawer = useInspectorIsDrawer();
+  const inspectorOpen = useApp((s) => s.inspectorOpen);
   const a = useActions();
   return (
     <header className="shrink-0 border-b border-line bg-panel px-4 pt-2">
       <div className="flex h-6 min-w-0 items-center gap-4">
-        <h1 className="shrink-0 truncate t-head text-fg">{instance.name}</h1>
-        <span className="min-w-0 truncate t-mono text-fg-faint" title={instance.root}>
+        <h1 className="min-w-0 shrink truncate t-head text-fg">{instance.name}</h1>
+        <span className="min-w-0 flex-1 truncate t-mono text-fg-faint" title={instance.root}>
           {instance.root}
         </span>
-        <Button size={24} icon={<ArrowClockwise size={16} />} className="ml-auto" disabled={scanning} onClick={() => void a.scan(instance.id)}>
-          Rescan
+        {/* While a scan runs, a click queues exactly one more (it would otherwise be dropped). */}
+        <Button size={24} icon={<ArrowClockwise size={16} />} disabled={queued} onClick={() => void a.scan(instance.id)}>
+          {queued ? 'Rescan queued' : scanning ? 'Rescan after this' : 'Rescan'}
         </Button>
+        {drawer ? (
+          <Button
+            size={24}
+            icon={<SidebarSimple size={16} mirrored />}
+            aria-expanded={inspectorOpen}
+            onClick={() => a.setInspectorOpen(!inspectorOpen)}
+          >
+            Inspector
+          </Button>
+        ) : null}
       </div>
       <Summary instance={instance} />
     </header>

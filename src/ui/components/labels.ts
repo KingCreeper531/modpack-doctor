@@ -65,3 +65,21 @@ export function fixLabel(fix: FixAction, names: Readonly<Record<string, string>>
       return 'Show steps';
   }
 }
+
+/** Severity a finding code's prefix implies (`E-` error, `W-` warning, `I-` info); `C-` implies none. */
+export function codeSeverity(code: string): Severity | null {
+  return code.startsWith('E-') ? 'error' : code.startsWith('W-') ? 'warning' : code.startsWith('I-') ? 'info' : null;
+}
+
+/** Short lowercase word shown after a code whose prefix disagrees with the finding's severity. */
+export const SEVERITY_SHORT: Record<Severity, string> = { error: 'error', warning: 'warn', info: 'info' };
+
+/**
+ * The word to show after `code`, or null when the prefix already says it (or says nothing, as
+ * `C-` codes don't). Checks may lower an `E-` code to warning or info (E-MC-RANGE on an
+ * optional mod, E-DUP-ID between identical copies), which must not read as an error.
+ */
+export function severityQualifier(code: string, severity: Severity): string | null {
+  const implied = codeSeverity(code);
+  return implied === null || implied === severity ? null : SEVERITY_SHORT[severity];
+}
