@@ -60,3 +60,47 @@ mod is softened by an environment-disabled dependency.
 
 Sources are linked in the report preserved in the M3 commit message history, and in the research
 agent's notes (FML 44982c69, Forge 1.20.1 d13dd327, fabric-loader cb9523bc, quilt-loader 35a644ed).
+
+## Follow-up (M3 real-pack smoke scan): older FML branches, legacy FML, Sinytra Connector
+
+### `VersionSupportMatrix` on every branch (Forge source + changelogs)
+| Branch | Active on MC | Also accepts |
+|---|---|---|
+| Forge 1.16.x (35.x/36.x, all 36 builds) | `[1.16.4,1.16.5]` | minecraft `1.16.3`, `1.16.4`; forge `34.1.42`, `35.1.37`; javafml `34`, `35` |
+| Forge 1.17.x, 1.18.x | — | nothing (block commented out) |
+| Forge 1.19.2 | `[1.19.2]` | minecraft `1.19.1`; forge `42.0.9`; javafml `42` |
+| Forge 1.19.3–1.20.4 (except 1.20.1) | — | nothing (1.19.2-only block) |
+| Forge 1.20.1 from **47.2.16** | `1.20.1` | forge `47.1.79` (minecraft strict) |
+| NeoForge 47.1, 20.2–20.6, 21.0, 21.3–21.5 | — | nothing |
+| NeoForge 21.1 | `1.21.1` | minecraft `1.21`; neoforge `21.0.166` |
+| NeoForge 1.21.8 / main | `1.21.8` | minecraft `1.21.7`; neoforge `21.7.26-beta` |
+
+### Legacy FML (Forge 1.12.2, 1.7.10)
+- **`META-INF/mods.toml` is never read.** A 1.13+ jar is detected through `@Mod(value=)` and rejected
+  as wrong-MC.
+- **mcmod.info `mcversion`** is not a field FML reads, so it is never enforced.
+- **mcmod.info `requiredMods` / `dependencies` / `dependants`** are enforced **only** when
+  `"useDependencyInformation": true` (default false).
+- **What FML actually enforces** is the `@Mod(dependencies="required-after:id@[range];…",
+  acceptedMinecraftVersions=…)` annotation strings, read with ASM. If empty, the MC default is exactly
+  `[<mc>]`. On 1.12, `[1.12]` / `[1.12.1]` mean `[1.12,1.12.2]`. Failures read "Mod X (id) requires Y"
+  and "The mod X does not wish to run in Minecraft version …".
+- **Duplicate ids** are a hard error (`DuplicateModsFoundException`).
+- **Checker gap:** parsing `@Mod` annotations needs a class-file reader (constant pool +
+  `RuntimeVisibleAnnotations`). Until that exists, legacy dependency and MC checks report nothing.
+
+### Sinytra Connector (Fabric mods on Forge 1.20.1 / NeoForge 1.21.x)
+- **How it's identified:** mod id `connector` (NeoForge 1.21.x) or `connectormod` (Forge 1.20.1).
+- **Which jars count as Fabric mods:** Fabric-only jars, meaning `fabric.mod.json` and no real
+  (neo)forge `mods.toml`. Ids are normalised `-` → `_`.
+- **Skipped silently:**
+  - the upstream Fabric API jar (`fabric_api`) and, on 1.21.x, `mixinextras`;
+  - ids already loaded as native mods;
+  - `hiddenMods` in `config/connector.json`.
+- **Fabric `depends`:** resolved by Fabric's own solver against Fabric jars plus every FML mod. FFAPI
+  `x_y` ids satisfy `x-y`.
+  - `fabricloader` dependencies are dropped.
+  - `minecraft` is matched strictly with Fabric semantics; FML's table does not apply.
+  - Aliased ids (cloth_config ↔ cloth-config2, playeranimator ↔ player-animator) are widened to `*`.
+  - `breaks` is enforced unless it targets an aliased id.
+- **Mixin conflicts:** a runtime safeguard can still reject a mod; static checks can't predict it.
