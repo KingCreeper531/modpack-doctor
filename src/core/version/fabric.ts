@@ -186,10 +186,13 @@ export function parsePredicateGroup(entry: string): FabricPredicate[] | string {
     if (typeof sem !== 'string') {
       if (hasWildcard(sem)) {
         if (op !== '=') return `"${s0}": wildcard versions (.x) cannot be combined with "${op}"`;
+        // fabric-loader rewrites `1.21.x` to SemanticVersionImpl([1, 21], "", build): an *empty*
+        // pre-release, which sorts below every pre-release of 1.21, so `1.21-rc.1` and
+        // `1.21-alpha.24.18.a` (snapshots) match `1.21.x` too.
         const prefix = sem.comps.slice(0, sem.wildcardAt);
         out.push({
           kind: 'prefix',
-          v: { comps: prefix, pre: null, build: sem.build, wildcardAt: -1, raw: prefix.join('.') },
+          v: { comps: prefix, pre: '', build: sem.build, wildcardAt: -1, raw: prefix.join('.') },
           written: s,
         });
       } else {

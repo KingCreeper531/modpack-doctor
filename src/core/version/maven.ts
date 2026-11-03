@@ -191,8 +191,13 @@ function parseRestriction(spec: string, cmp: Comparator, whole: string): Restric
   if (upperRaw.includes(',')) return `"${spec}" in "${whole}" has more than two bounds`;
   const lower = lowerRaw.length === 0 ? null : lowerRaw;
   const upper = upperRaw.length === 0 ? null : upperRaw;
-  if (lower !== null && upper !== null && cmp(upper, lower) < 0) {
-    return `"${spec}" in "${whole}": the upper bound is below the lower bound`;
+  if (lower !== null && upper !== null) {
+    const c = cmp(upper, lower);
+    if (c < 0) return `"${spec}" in "${whole}": the upper bound is below the lower bound`;
+    // Maven accepts `[1.0,1.0)` / `(1.0,1.0)`, but they contain no version at all.
+    if (c === 0 && !(lowerInclusive && upperInclusive)) {
+      return `"${spec}" in "${whole}" is empty: no version can satisfy it`;
+    }
   }
   return { lower, lowerInclusive, upper, upperInclusive };
 }
