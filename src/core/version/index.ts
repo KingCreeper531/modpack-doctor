@@ -11,15 +11,17 @@
  * - Empty `raw`, an empty entry or a `*` entry means "any version". `unrepresentable` set →
  *   `{ ok: false }` (the range could not be flattened, so it cannot be evaluated).
  *
- * Subject `minecraft`: the version being tested is first normalised with
- * `normalizeMinecraft` (fabric-loader `McVersionLookup` rules, ./minecraft.ts).
- * - Maven: bounds are normalised too and MC versions are ordered as semantic versions, so
- *   `1.20.5-pre1` (→ `1.20.5-beta.1`) sorts before `1.20.5` and `[1.20,1.21)` behaves as expected.
- *   (Plain Maven ordering would put the unknown qualifier `pre1` *after* the release.)
- * - Fabric: predicate versions are used as written, exactly as fabric-loader does (it only
- *   normalises the game version). So `>=1.20.5-pre1` does NOT match game `1.20.5-pre1` there either
- *   (`beta.1` < `pre1`); reporting that matches what the loader will do.
- * - A tested MC version that does not normalise makes `satisfies` return null.
+ * Subject `minecraft` — we mirror what each loader actually does, so findings match real crashes:
+ * - Maven (Forge/NeoForge): NO MC normalisation. FML compares the raw MC version string with
+ *   Maven `ComparableVersion`, where the unknown qualifier `pre` sorts *above* the release:
+ *   `1.21-pre1` > `1.21`, so it is outside `[1.20,1.21)` and inside `[1.21,)`. `rc` is a known
+ *   qualifier and sorts below the release (`1.21-rc1` is inside `[1.20,1.21)`). `compare(…, 'maven',
+ *   'minecraft')` uses the same raw ordering so it agrees with range evaluation; use
+ *   `syntax: 'fabric'` to order MC versions chronologically.
+ * - Fabric/Quilt: the tested version is normalised with `normalizeMinecraft` (fabric-loader
+ *   `McVersionLookup`, ./minecraft.ts); predicate versions are used as written, exactly as the
+ *   loader does. So `>=1.20.5-pre1` does NOT match game `1.20.5-pre1` (`beta.1` < `pre1`), as in
+ *   the loader. A tested MC version that does not normalise makes `satisfies` return null.
  *
  * The public functions never throw. Parsed ranges and versions are memoised.
  */
@@ -69,7 +71,7 @@ function memo<V>(fn: (key: string) => V): (key: string) => V {
 const mavenOf = memo<MavenItem>(parseMaven);
 const fabricOf = memo<FabricVersion | null>((s) => parseFabricVersion(s, false));
 const mcOf = memo<string | null>(normalizeMinecraftVersion);
-const mcSemverOf = memo<SemVer | null>((s) => {
+const mcFabricOf = memo<SemVer | null>((s) => {
   const n = mcOf(s);
   if (n === null) return null;
   const v = parseSemVer(n, false);
@@ -95,57 +97,52 @@ function compareFabric(a: string, b: string): number {
   return compareFabricVersions(x, y);
 }
 
-/** MC-aware ordering: normalise, compare as semver; fall back to the syntax's own ordering. */
-function compareMinecraft(a: string, b: string, syntax: Syntax): number {
-  const x = mcSemverOf(a);
-  const y = mcSemverOf(b);
+/** Fabric MC ordering: normalise, compare as semver; fall back to Fabric ordering. */
+function compareFabricMinecraft(a: string, b: string): number {
+  const x = mcFabricOf(a);
+  const y = mcFabricOf(b);
   if (x !== null && y !== null) return compareSemVer(x, y);
-  const na = mcOf(a) ?? a;
-  const nb = mcOf(b) ?? b;
-  return syntax === 'maven' ? compareMaven(na, nb) : compareFabric(na, nb);
+  return compareFabric(mcOf(a) ?? a, mcOf(b) ?? b);
 }
 
-function comparatorFor(syntax: Syntax, subject: VersionSubject): Comparator {
-  if (subject === 'minecraft') return (a, b) => compareMinecraft(a, b, syntax);
-  return syntax === 'maven' ? compareMaven : compareFabric;
-}
-
-/** Whether `version` can be evaluated at all (non-empty, and a known MC version for MC). */
-function versionUsable(version: string, subject: VersionSubject): boolean {
+/** Whether `version` can be evaluated at all (non-empty; a known MC version if `requireMc`). */
+function versionUsable(version: string, requireMc: boolean): boolean {
   if (version.length === 0) return false;
-  return subject !== 'minecraft' || mcOf(version) !== null;
+  return !requireMc || mcOf(version) !== null;
 }
 
 interface Compiled {
   readonly matchesAll: boolean;
-  readonly subject: VersionSubject;
+  /** The tested version must normalise as a Minecraft version (Fabric syntax, MC subject). */
+  readonly requireMc: boolean;
   /** Assumes a usable (trimmed) version. */
   test(version: string): boolean;
   describe(): string;
 }
 
-function all(subject: VersionSubject, text = 'any version'): Compiled {
-  return { matchesAll: true, subject, test: () => true, describe: () => text };
+function all(text = 'any version'): Compiled {
+  return { matchesAll: true, requireMc: false, test: () => true, describe: () => text };
 }
 
-function compileMaven(raw: readonly string[], subject: VersionSubject): Compiled | string {
-  const cmp = comparatorFor('maven', subject);
+/** Maven ranges ignore the subject: FML compares raw strings with ComparableVersion. */
+function compileMaven(raw: readonly string[]): Compiled | string {
+  const cmp: Comparator = compareMaven;
   const specs: MavenSpec[] = [];
   for (const entry of raw) {
     const spec = parseMavenSpec(entry, cmp);
     if (typeof spec === 'string') return spec;
-    if (spec.kind === 'all') return all(subject);
+    if (spec.kind === 'all') return all();
     specs.push(spec);
   }
-  if (specs.length === 0) return all(subject);
+  if (specs.length === 0) return all();
   const soft = specs.flatMap((s) => (s.kind === 'soft' ? [s.version] : []));
   // A soft requirement matches everything, and so does an OR that contains one.
-  if (soft.length > 0) return all(subject, `any version (recommends ${soft.join(', ')})`);
+  if (soft.length > 0) return all(`any version (recommends ${soft.join(', ')})`);
   const restrictions = specs.flatMap((s) => (s.kind === 'set' ? s.restrictions : []));
   const text = restrictions.length === 0 ? 'no version' : restrictions.map((r) => describeRestriction(r, cmp)).join(' or ');
   return {
     matchesAll: false,
-    subject,
+    requireMc: false,
     test: (version) => restrictions.some((r) => restrictionContains(r, version, cmp)),
     describe: () => text,
   };
@@ -156,16 +153,16 @@ function compileFabric(raw: readonly string[], subject: VersionSubject): Compile
   for (const entry of raw) {
     const group = parsePredicateGroup(entry);
     if (typeof group === 'string') return `Invalid Fabric version predicate "${entry}": ${group}`;
-    if (group.length === 0) return all(subject);
+    if (group.length === 0) return all();
     groups.push(group);
   }
-  if (groups.length === 0) return all(subject);
+  if (groups.length === 0) return all();
   const toVersion = (version: string): FabricVersion | null =>
     fabricOf(subject === 'minecraft' ? (mcOf(version) ?? version) : version);
   const text = groups.map((g) => g.map(describePredicate).join(' and ')).join(' or ');
   return {
     matchesAll: false,
-    subject,
+    requireMc: subject === 'minecraft',
     test: (version) => {
       const v = toVersion(version);
       return v !== null && groups.some((g) => g.every((p) => testPredicate(p, v)));
@@ -183,7 +180,7 @@ function compile(range: RawRange, subject: VersionSubject): Compiled | string {
     return 'Version range is not a list of strings.';
   }
   if (range.syntax === 'maven') {
-    const c = compileMaven(range.raw, subject);
+    const c = compileMaven(range.raw);
     return typeof c === 'string' ? `Invalid Maven version range: ${c}` : c;
   }
   if (range.syntax === 'fabric') return compileFabric(range.raw, subject);
@@ -199,7 +196,7 @@ function toParse(c: Compiled | string): RangeParse {
         if (c.matchesAll) return true;
         if (typeof version !== 'string') return false;
         const v = version.trim();
-        return versionUsable(v, c.subject) && c.test(v);
+        return versionUsable(v, c.requireMc) && c.test(v);
       } catch {
         return false;
       }
@@ -242,7 +239,7 @@ export function satisfies(version: string, range: RawRange, subject: VersionSubj
     if (compiled.matchesAll) return true;
     if (typeof version !== 'string') return null;
     const v = version.trim();
-    if (!versionUsable(v, subject)) return null;
+    if (!versionUsable(v, compiled.requireMc)) return null;
     return compiled.test(v);
   } catch {
     return null;
@@ -253,8 +250,8 @@ export function compare(a: string, b: string, syntax: Syntax, subject: VersionSu
   try {
     const x = a.trim();
     const y = b.trim();
-    if (subject === 'minecraft') return sign(compareMinecraft(x, y, syntax));
-    return sign(syntax === 'maven' ? compareMaven(x, y) : compareFabric(x, y));
+    if (syntax === 'maven') return sign(compareMaven(x, y));
+    return sign(subject === 'minecraft' ? compareFabricMinecraft(x, y) : compareFabric(x, y));
   } catch {
     return a < b ? -1 : a > b ? 1 : 0;
   }

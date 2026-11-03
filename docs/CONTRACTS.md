@@ -45,8 +45,17 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    Range semantics are settled in `src/core/version`, so checks must not handle these cases
    again:
    - A bare Maven version (`47.1.0`) is a *soft* requirement and matches everything, as in FML.
+     An empty restriction (equal bounds, at least one exclusive, e.g. `[1.0,1.0)`) is a parse
+     error.
+   - **Maven ranges are evaluated exactly like FML.** They use `ComparableVersion` on the raw
+     strings, with **no** MC normalisation for either subject. So `pre` sorts *above* the release
+     (`1.21-pre1` > `1.21`), while `rc` and `snapshot` sort below it. `compare(…, 'maven', …)` uses
+     the same order. To order MC versions chronologically use `syntax: 'fabric'` with subject
+     `minecraft`.
    - In Fabric ranges only the tested version is MC-normalised. Predicate versions stay as written,
-     as in fabric-loader, so `>=1.20.5-pre1` does not match game `1.20.5-pre1`.
+     as in fabric-loader, so `>=1.20.5-pre1` does not match game `1.20.5-pre1`. A wildcard `X.Y.x`
+     admits pre-releases, RCs and snapshots of `X.Y`.
+   - Old-style `YYwWWx` snapshots after 2025, other than `26w14a`, don't normalise (`null`).
    - `satisfies` returns `null` (unknown, never a guess) for unparseable or unrepresentable input.
    - `Instance.loader = null` together with `metadataSource: 'launcher'` means a **vanilla**
      instance. `LoaderKind` has no vanilla member.
@@ -122,6 +131,13 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - `languageRange` (`loaderVersion`) is an FML/language-loader range and is never compared with
       the Forge or NeoForge version. `loaderRange` is the range of the dependency on the loader mod.
     - NeoForge 1.20.1 counts as Forge 47.x-compatible.
+    - A jar that ships both `neoforge.mods.toml` and `mods.toml` yields two `ModMeta` with the
+      same `modId` and different `loader`. E-DUP-ID must ignore duplicates within one jar.
+13. **Known model gaps** (accepted for now; revisit when a check needs them):
+    - Quilt "any of" dependency arrays become individually Optional dependencies, so a missing
+      "one of A, B" is not reported.
+    - `JarRecord.moduleName` comes from `module-info` or `Automatic-Module-Name` only. `src/core`
+      derives the JDK automatic name from the file name when it is absent.
 
 ## Commands
 

@@ -16,6 +16,10 @@
     "expected": "forge/fg20-clean-benign-cnfe-long.expected.json"
   },
   {
+    "file": "forge/fg20-distance-early-noclassdef-late-crash.log",
+    "expected": "forge/fg20-distance-early-noclassdef-late-crash.expected.json"
+  },
+  {
     "file": "forge/fg20-java-version-mod-class.txt",
     "expected": "forge/fg20-java-version-mod-class.expected.json"
   },
@@ -60,6 +64,10 @@
     "expected": "forge/fg20-suspected-mods-mixin.expected.json"
   },
   {
+    "file": "forge/fg20-sysdetails-cnfe-diagnostic.txt",
+    "expected": "forge/fg20-sysdetails-cnfe-diagnostic.expected.json"
+  },
+  {
     "file": "forge/fgboot-1.20.4-noclassdef-missing-dep.txt",
     "expected": "forge/fgboot-1.20.4-noclassdef-missing-dep.expected.json"
   },
@@ -74,6 +82,10 @@
   {
     "file": "neoforge/neo21.0-errorduringevent-key.txt",
     "expected": "neoforge/neo21.0-errorduringevent-key.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.1-info-mentions-oom-clean-exit.log",
+    "expected": "neoforge/neo21.1-info-mentions-oom-clean-exit.expected.json"
   },
   {
     "file": "neoforge/neo21.1-mod-loading-issue.txt",

@@ -140,6 +140,38 @@ describe('Fabric predicates', () => {
     });
   }
 
+  // fabric-loader rewrites `1.21.x` to 1.21 with an EMPTY pre-release, which sorts below every
+  // pre-release of 1.21: pre-releases, RCs and snapshots of 1.21 are inside `1.21.x`.
+  const wildcardMc: Array<[string, string, boolean]> = [
+    ['1.21.x', '1.21-rc1', true],
+    ['1.21.x', '1.21-pre1', true],
+    ['1.21.x', '1.21 Pre-Release 2', true],
+    ['1.21.x', '24w18a', true],
+    ['1.21.x', '24w14a', false],
+    ['1.21.x', '1.20.6', false],
+    ['1.21.x', '1.22-rc1', false],
+    ['1.20.x', '1.20-pre1', true],
+    ['1.20.x', '23w12a', true],
+    ['1.20.x', '1.20.5-pre1', true],
+    ['1.20.x', '1.21-rc1', false],
+    ['1.x', '1.0-rc1', true],
+    ['1.x', '26.1', false],
+    ['26.4.x', '26.4-snapshot-6', true],
+    ['26.4.x', '26.4-pre-1', true],
+    ['26.4.x', '26.3', false],
+    ['=1.21.x', '1.21-rc1', true],
+  ];
+  for (const [pred, version, expected] of wildcardMc) {
+    it(`MC ${version} in ${pred} → ${String(expected)}`, () => {
+      expect(satisfies(version, fabric(pred), 'minecraft')).toBe(expected);
+    });
+  }
+
+  it('wildcards admit pre-releases for non-MC versions too', () => {
+    expect(satisfies('0.16.0-beta.1', fabric('0.16.x'), 'other')).toBe(true);
+    expect(satisfies('0.17.0-beta.1', fabric('0.16.x'), 'other')).toBe(false);
+  });
+
   const malformed: string[][] = [
     ['>= 0.15'],
     ['>'],

@@ -1,0 +1,65 @@
+{
+  "kind": "latestLog",
+  "loader": "neoforge",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "memoryhint-neoforge-1.21.1-1.4.2.jar",
+      "modIds": [
+        "memoryhint"
+      ],
+      "packages": [
+        "org.lowram.memoryhint",
+        "org.lowram.memoryhint.client"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quietcaves-neoforge-1.21.1-1.1.0.jar",
+      "modIds": [
+        "quietcaves"
+      ],
+      "packages": [
+        "org.quietcaves"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "emberlantern-1.21.1-0.8.2.jar",
+      "modIds": [
+        "emberlantern"
+      ],
+      "packages": [
+        "io.emberlantern"
+      ],
+      "mixinConfigs": [
+        "emberlantern.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.21.1-neoforge-19.21.0.247.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [],
+  "forbid": [
+    "C-MIXIN",
+    "C-RESOLUTION",
+    "C-MISSING-MANDATORY",
+    "C-FABRIC-INCOMPAT",
+    "C-NOCLASSDEF",
+    "C-OOM",
+    "C-JAVA-VERSION",
+    "C-SUSPECTED",
+    "C-ROOT-CAUSE",
+    "C-NATIVE"
+  ],
+  "notes": "Level trap: INFO lines from a memory-watchdog mod mention java.lang.OutOfMemoryError, one unrelated ERROR reports a missing block model, and the game shuts down cleanly with \"Stopping!\". Nothing crashed, so no finding at all."
+}

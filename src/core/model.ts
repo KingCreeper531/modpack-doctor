@@ -179,9 +179,11 @@ export interface CrashPattern {
 }
 
 /**
- * What a version string denotes. `minecraft` enables MC-aware normalisation before comparison
- * (Fabric-style: `23w51a`, `1.20.5-pre1`, `1.21-rc1`, year-based `26.1`, `26.4-snapshot-6`);
- * `other` treats it as a plain Maven/semver version.
+ * What a version string denotes. With Fabric syntax, `minecraft` enables MC-aware normalisation
+ * of the tested version (as fabric-loader does: `23w51a`, `1.20.5-pre1`, `1.21-rc1`, year-based
+ * `26.1`, `26.4-snapshot-6`). Maven syntax ignores the subject and compares raw strings with
+ * ComparableVersion, exactly as FML does (CONTRACTS invariant 4). `normalizeMinecraft` always
+ * normalises.
  */
 export type VersionSubject = 'minecraft' | 'other';
 
