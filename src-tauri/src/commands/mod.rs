@@ -4,11 +4,25 @@
 //! `Error` → `AppError`. Bodies marked `not_yet` are filled in by later milestones;
 //! signatures do not change without an approved contract proposal.
 
+mod instances;
+mod scanning;
+
+#[cfg(test)]
+mod tests;
+
 use tauri::{AppHandle, State};
 
 use crate::error::{AppError, Error};
 use crate::model::*;
 use crate::state::AppState;
+
+pub use instances::{
+    add_launcher_root, add_manual_folder, canonical_dir, manual_folder_id, manual_game_dir, remove_manual_folders_for,
+    remove_stored_path,
+};
+pub use scanning::{scan_registered, EventSink, ScanSink};
+
+use instances::{blocking, discover_blocking, pick_folder, remove_manual_blocking};
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -21,22 +35,41 @@ fn not_yet<T>(what: &str, milestone: &str) -> Cmd<T> {
 /// Probe every launcher location + manual folders; registers roots with the PathGuard.
 #[tauri::command]
 #[specta::specta]
-pub async fn discover_instances(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<DiscoveryReport> {
-    not_yet("discover_instances", "M3")
+pub async fn discover_instances(_app: AppHandle, state: State<'_, AppState>) -> Cmd<DiscoveryReport> {
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().lock_owned().await;
+    Ok(blocking(move || discover_blocking(&st)).await?)
 }
 
 /// Opens a native folder picker (Rust side); adds the folder as a Manual instance.
 /// Ok(None) when the user cancels.
 #[tauri::command]
 #[specta::specta]
-pub async fn pick_and_add_folder(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<Option<Instance>> {
-    not_yet("pick_and_add_folder", "M3")
+pub async fn pick_and_add_folder(app: AppHandle, state: State<'_, AppState>) -> Cmd<Option<Instance>> {
+    let Some(picked) = pick_folder(&app, "Add an instance folder").await? else {
+        return Ok(None);
+    };
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().lock_owned().await;
+    let instance = blocking(move || {
+        let folder = canonical_dir(&picked)?;
+        let shown = folder.display().to_string();
+        st.settings.update(|s| Ok(add_manual_folder(s, &shown)))?;
+        let report = discover_blocking(&st)?;
+        // The instance for this folder: the launcher's entry if it merged into one.
+        let id = manual_folder_id(&folder);
+        report.instances.into_iter().find(|i| i.id == id).ok_or(Error::NotFound { path: shown })
+    })
+    .await?;
+    Ok(Some(instance))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_manual_instance(_state: State<'_, AppState>, _instance_id: String) -> Cmd<()> {
-    not_yet("remove_manual_instance", "M3")
+pub async fn remove_manual_instance(state: State<'_, AppState>, instance_id: String) -> Cmd<()> {
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().lock_owned().await;
+    Ok(blocking(move || remove_manual_blocking(&st, &instance_id)).await?)
 }
 
 /// Native folder picker for an extra launcher data root (portable Prism/MultiMC, custom
@@ -44,18 +77,44 @@ pub async fn remove_manual_instance(_state: State<'_, AppState>, _instance_id: S
 #[tauri::command]
 #[specta::specta]
 pub async fn pick_launcher_root(
-    _app: AppHandle,
-    _state: State<'_, AppState>,
-    _launcher: Launcher,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    launcher: Launcher,
 ) -> Cmd<Option<DiscoveryReport>> {
-    not_yet("pick_launcher_root", "M3")
+    if !crate::settings::is_launcher_root_kind(launcher) {
+        let msg = "only Modrinth App, Prism, MultiMC, CurseForge or Minecraft Launcher folders can be added as launcher folders";
+        return Err(Error::Invalid(msg.into()).into());
+    }
+    let Some(picked) = pick_folder(&app, "Choose a launcher folder").await? else {
+        return Ok(None);
+    };
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().lock_owned().await;
+    let report = blocking(move || {
+        let folder = canonical_dir(&picked)?;
+        let shown = folder.display().to_string();
+        st.settings.update(|s| Ok(add_launcher_root(s, launcher, &shown)))?;
+        discover_blocking(&st)
+    })
+    .await?;
+    Ok(Some(report))
 }
 
 /// Removes a launcher root (narrows scope only; `path` must equal a stored entry exactly).
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_launcher_root(_state: State<'_, AppState>, _path: String) -> Cmd<()> {
-    not_yet("remove_launcher_root", "M3")
+pub async fn remove_launcher_root(state: State<'_, AppState>, path: String) -> Cmd<()> {
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().lock_owned().await;
+    Ok(blocking(move || {
+        let (_, removed) = st.settings.update(|s| Ok(remove_stored_path(s, &path)))?;
+        if !removed {
+            return Err(Error::Invalid(format!("no stored launcher folder is exactly \"{path}\"")));
+        }
+        // Rediscover so instances from that folder (and the roots only they needed) disappear.
+        discover_blocking(&st).map(|_| ())
+    })
+    .await?)
 }
 
 /// Opens a native file picker filtered to `.mrpack`; registers it as an Mrpack instance.
@@ -70,8 +129,14 @@ pub async fn pick_mrpack(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<Op
 /// Scans `mods/` (or the .mrpack). Emits `ScanProgress` per top-level jar; never blocks the UI.
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_instance(_app: AppHandle, _state: State<'_, AppState>, _instance_id: String) -> Cmd<ScanResult> {
-    not_yet("scan_instance", "M3")
+pub async fn scan_instance(app: AppHandle, state: State<'_, AppState>, instance_id: String) -> Cmd<ScanResult> {
+    let st = AppState::clone(&state);
+    let inst = st.instance(&instance_id)?;
+    if inst.instance.launcher == Launcher::Mrpack {
+        return not_yet("Scanning a .mrpack file", "M7");
+    }
+    let sink = EventSink::new(app);
+    Ok(blocking(move || scan_registered(&st.guard, &st.scan_cache, &st.scans, &inst, &sink)).await?)
 }
 
 // ── Logs & crashes ───────────────────────────────────────────────────────────
@@ -230,16 +295,19 @@ pub async fn game_running(_state: State<'_, AppState>, _instance_id: String) -> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_settings(_state: State<'_, AppState>) -> Cmd<Settings> {
-    not_yet("get_settings", "M3")
+pub async fn get_settings(state: State<'_, AppState>) -> Cmd<Settings> {
+    Ok(state.settings.get())
 }
 
 /// Applies a partial update, persists, returns the full settings. Cannot change scope
 /// (manual folders / launcher roots) or watch mode — see `SettingsPatch`.
 #[tauri::command]
 #[specta::specta]
-pub async fn set_settings(_app: AppHandle, _state: State<'_, AppState>, _patch: SettingsPatch) -> Cmd<Settings> {
-    not_yet("set_settings", "M3")
+pub async fn set_settings(_app: AppHandle, state: State<'_, AppState>, patch: SettingsPatch) -> Cmd<Settings> {
+    let st = AppState::clone(&state);
+    let known = st.known_ids();
+    let (settings, ()) = blocking(move || st.settings.update(|s| crate::settings::apply_patch(s, patch, &known))).await?;
+    Ok(settings)
 }
 
 /// Rust opens the save dialog; returns the saved path, or None if cancelled.

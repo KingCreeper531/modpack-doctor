@@ -100,15 +100,21 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         // tauri-plugin-updater is registered in M8, together with the signing pubkey.
-        .manage(state::AppState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
-            // Theme the native title bar before the webview's first `set_window_theme` call.
+            // Settings (store plugin) + PathGuard app data root; managed before any command runs.
+            let state = state::init(app.handle());
+            let theme_pref = state.settings.get().theme;
+            app.manage(state);
+            // Theme the native title bar before the webview's first `set_window_theme` call:
+            // the saved preference, else the system theme.
             if let Some(window) = app.get_webview_window("main") {
-                let theme = match window.theme() {
-                    Ok(tauri::Theme::Light) => model::ResolvedTheme::Light,
-                    _ => model::ResolvedTheme::Dark,
+                let theme = match (theme_pref, window.theme()) {
+                    (model::ThemePref::Dark, _) => model::ResolvedTheme::Dark,
+                    (model::ThemePref::Light, _) => model::ResolvedTheme::Light,
+                    (model::ThemePref::System, Ok(tauri::Theme::Light)) => model::ResolvedTheme::Light,
+                    (model::ThemePref::System, _) => model::ResolvedTheme::Dark,
                 };
                 if let Err(e) = window_theme::apply(&window, theme) {
                     eprintln!("could not theme the title bar: {e}");
