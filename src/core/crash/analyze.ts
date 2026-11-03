@@ -8,7 +8,7 @@ import { nativePattern } from './patterns/native';
 import { noClassDefPattern } from './patterns/noClassDef';
 import { oomPattern } from './patterns/oom';
 import { resolutionPattern } from './patterns/resolution';
-import { rootCausePattern } from './patterns/rootCause';
+import { crashTraceSpan, rootCausePattern } from './patterns/rootCause';
 import { suspectedPattern } from './patterns/suspected';
 
 export { digestFromText } from './text';
@@ -52,11 +52,20 @@ function firstLine(f: Finding): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
+/** The finding cites (has a culprit line inside) the crash's own trace. */
+function cites(f: Finding, span: readonly [number, number] | null): boolean {
+  if (!span) return false;
+  return f.evidence.some(
+    (e) => e.kind === 'log' && e.lines.some((l) => l.role === 'culprit' && l.n >= span[0] && l.n <= span[1]),
+  );
+}
+
 /**
  * Classifies a crash report / log digest. Findings are de-duplicated by id and ordered by
- * severity, then specificity (wrong Java, memory, native, dependencies, mixin, missing class,
- * suspected mods), then position in the log. C-ROOT-CAUSE is added only when no other
- * error-severity finding exists.
+ * severity, then whether they explain the crash's own trace, then specificity (wrong Java,
+ * memory, native, dependencies, mixin, missing class, suspected mods), then position in the log.
+ * C-ROOT-CAUSE is added when no other error-severity finding exists, or when none of them cites
+ * the crash's own stack trace (an earlier, unrelated error must not hide the real culprit).
  */
 export function analyzeCrash(input: CrashInput): Finding[] {
   const byId = new Map<string, Finding>();
@@ -64,13 +73,16 @@ export function analyzeCrash(input: CrashInput): Finding[] {
     if (pattern === rootCausePattern) continue;
     for (const f of pattern.match(input)) if (!byId.has(f.id)) byId.set(f.id, f);
   }
-  if (![...byId.values()].some((f) => f.severity === 'error')) {
+  const span = crashTraceSpan(input);
+  const errors = [...byId.values()].filter((f) => f.severity === 'error');
+  if (errors.length === 0 || (span && !errors.some((f) => cites(f, span)))) {
     for (const f of rootCausePattern.match(input)) if (!byId.has(f.id)) byId.set(f.id, f);
   }
-  const ranked = [...byId.values()].map((f) => ({ f, line: firstLine(f) }));
+  const ranked = [...byId.values()].map((f) => ({ f, line: firstLine(f), tied: cites(f, span) ? 0 : 1 }));
   ranked.sort(
     (a, b) =>
       SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] ||
+      a.tied - b.tied ||
       (CODE_RANK[a.f.code] ?? 99) - (CODE_RANK[b.f.code] ?? 99) ||
       a.line - b.line ||
       a.f.id.localeCompare(b.f.id),

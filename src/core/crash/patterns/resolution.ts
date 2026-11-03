@@ -7,6 +7,7 @@ import type { JarRecord } from '../../../bindings';
 import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, finding, gate, listText, logEvidence, manual, refs, worst, type Ctx } from '../context';
 import { jarLabel, jarsForModule, jarsForPackage, uniqueTopLevel } from '../jars';
+import { fatal } from '../tiers';
 
 interface Conflict {
   /** Package, or `module:<name>` for duplicate modules. */
@@ -64,7 +65,8 @@ function jarsFor(ctx: Ctx, c: Conflict): { jars: JarRecord[]; unresolved: string
     // A duplicate-module error names one module twice: keep every copy.
     found.push(...(c.pkg ? js.slice(0, 1) : js));
   }
-  return { jars: uniqueTopLevel(found, index), unresolved: found.length > 0 ? [] : unresolved };
+  // Modules that map to no jar stay named (in a note) even when the other side resolved.
+  return { jars: uniqueTopLevel(found, index), unresolved };
 }
 
 function toFinding(ctx: Ctx, c: Conflict): Finding | null {
@@ -100,7 +102,9 @@ function toFinding(ctx: Ctx, c: Conflict): Finding | null {
 export const resolutionPattern: CrashPattern = {
   id: 'jpms-resolution',
   codes: ['C-RESOLUTION'],
-  anchors: [
+  // All fatal (owner's list): the module layer cannot be built, so the game never starts. The
+  // phrasings are JDK Resolver / module-loader messages that only appear in that failure.
+  anchors: fatal(
     'java.lang.module.ResolutionException',
     'LayerInstantiationException',
     'export package ',
@@ -110,7 +114,7 @@ export const resolutionPattern: CrashPattern = {
     'reads another module named',
     'in more than one module',
     'cannot be imported from multiple loaders',
-  ],
+  ),
   match(input) {
     const ctx = ctxOf(input);
     const conflicts = new Map<string, Conflict>();

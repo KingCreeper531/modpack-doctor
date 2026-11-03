@@ -3,47 +3,103 @@
  * pattern uses to gate severity, build evidence and assemble findings.
  */
 import type { FixAction, JarRecord } from '../../bindings';
-import type { CrashInput, Evidence, FindingCode, Finding, JarIndex, JarRef, LogLine, Severity } from '../model';
+import type { CrashAnchor, CrashInput, Evidence, FindingCode, Finding, JarIndex, JarRef, LogLine, Severity } from '../model';
 import { blameFrame, parseFrame, type FrameHit } from './frames';
+import { contextual, fatal } from './tiers';
 import { findingId } from './id';
 import { jarRef, topLevel } from './jars';
 import { contiguous, findTraces, flatten, isFrameLine, logLevel, type Level, type Line, type Trace } from './text';
 
 /**
- * Lines that mean the game (or loading) actually failed. Kept in the anchor list so the digest
- * and watch mode see them.
+ * Lines that mean the game (or loading) actually failed, with their watch-mode tier. They are in
+ * the anchor list so the digest and watch mode see them. Fatal = the game cannot continue.
  */
-export const CRASH_SIGNALS: readonly string[] = [
-  '---- Minecraft Crash Report ----',
-  '#@!@# Game crashed!',
-  'Crash report saved to',
-  'Preparing crash report with UUID',
-  'Exception in thread "main"',
-  'A critical error occurred',
-  'Mod Loading has failed',
-  'Mod loading has failed',
-  'Mod loading error has occurred',
-  'Mod loading failures have occurred',
-  'Loading errors encountered',
-  'Missing or unsupported mandatory dependencies',
-  'Incompatible mods found!',
-  'Incompatible mod set!',
-  'Some of your mods are incompatible',
-  'Mod resolution encountered an incompatible mod set',
-  'Failed to start Minecraft',
-  'Minecraft has crashed',
-  'A mod crashed on startup',
-  'Could not execute entrypoint stage',
-  'Encountered an unexpected exception',
-  'Unreported exception thrown',
-  '---- Quilt Loader',
-  '---- Crashed! ----',
-  'A fatal error has been detected by the Java Runtime Environment',
-  'There is insufficient memory for the Java Runtime Environment',
-  'java.lang.OutOfMemoryError',
-  'java.lang.module.ResolutionException',
-  'UnsupportedClassVersionError',
+export const CRASH_SIGNALS: readonly CrashAnchor[] = [
+  // Owner's fatal list: a crash report is only written for a crash.
+  ...fatal('---- Minecraft Crash Report ----', '#@!@# Game crashed!'),
+  // Forge/NeoForge log this (at FATAL) right after writing a crash report; vanilla prepares one
+  // only when crashing.
+  ...fatal('Crash report saved to', 'Preparing crash report with UUID'),
+  // The JVM's main thread died: nothing else keeps the game running.
+  ...fatal('Exception in thread "main"'),
+  // Fabric loader's top-level failure handler (FabricLoaderImpl/FabricGuiEntry): it exits.
+  ...fatal('A critical error occurred'),
+  // FML mod-loading failure and the NeoForge loading-error screen (owner's list).
+  ...fatal(
+    'Mod Loading has failed',
+    'Mod loading has failed',
+    'Mod loading error has occurred',
+    'Mod loading failures have occurred',
+    'Loading errors encountered',
+  ),
+  ...fatal('Missing or unsupported mandatory dependencies'),
+  // Fabric/Quilt incompatible-mod-set headers, all wordings (owner's list).
+  ...fatal('Incompatible mods found!', 'Incompatible mod set!', 'Some of your mods are incompatible', 'Mod resolution encountered an incompatible mod set'),
+  // Fabric loader GUI titles; each is shown only when the game is stopping.
+  ...fatal('Failed to start Minecraft', 'Minecraft has crashed', 'A mod crashed on startup'),
+  // A Fabric/Quilt entrypoint threw: the loader aborts the launch.
+  ...fatal('Could not execute entrypoint stage'),
+  // Vanilla server/client crash handlers (each is followed by a crash report).
+  ...fatal('Encountered an unexpected exception', 'Unreported exception thrown'),
+  // Quilt loader-phase failure report (header, its `Crashed!` title, and the report file name
+  // Quilt logs to latest.log): the Quilt equivalents of the incompatible-mod-set header.
+  ...fatal('---- Quilt Loader', '---- Crashed! ----', '-quilt_loader.txt'),
+  // hs_err: the JVM is dead (owner's list), also when it could not even reserve memory.
+  ...fatal('A fatal error has been detected by the Java Runtime Environment', 'There is insufficient memory for the Java Runtime Environment'),
+  // Owner's list: ResolutionException means the module layer could not be built.
+  ...fatal('java.lang.module.ResolutionException'),
+  // Mentions of these are common in healthy logs (heap-dump flags, optional class probes).
+  ...contextual('java.lang.OutOfMemoryError', 'UnsupportedClassVersionError'),
 ];
+
+/** Signals that are exception class names: they count only where the exception is thrown. */
+const THROWN_SIGNAL = /^[\w$.]*(?:OutOfMemoryError|ResolutionException|UnsupportedClassVersionError)\b/;
+const THROWN_PREFIX = /^\s*(?:Exception in thread "[^"]*" |Caused by(?: \d+)?: |Exception message: )?/;
+const TEXT_SIGNALS = CRASH_SIGNALS.map((s) => s.text).filter((s) => !THROWN_SIGNAL.test(s));
+
+/** A normal shutdown: a crash marker on the far side of it belongs to another part of the session. */
+const CLEAN_SHUTDOWN = /\bStopping!|\bStopping server\b/;
+
+function isSignal(text: string): boolean {
+  if (logLevel(text) === 'FATAL') return true;
+  if (TEXT_SIGNALS.some((s) => text.includes(s))) return true;
+  return THROWN_SIGNAL.test(text.replace(THROWN_PREFIX, ''));
+}
+
+/** Crash-report categories whose `\tKey: value` lines the loader itself writes about the failure. */
+const LOADER_SECTION = /^-- (?:MOD |Mod loading issue|NO MOD INFO|Head --)/;
+const SECTION_HEADER = /^-- .+ --\s*$/;
+const DETAIL_VALUE = /^\t[A-Za-z][^\t:]*: /;
+
+/**
+ * Indices of crash-report details values: `\tKey: value` lines (and their `\t\t` continuations) in
+ * `-- System Details --` and every other non-loader category. They describe the environment, so an
+ * exception name inside one (a mod's config dump, `lastError=…`) is not a thrown exception.
+ */
+function detailLines(lines: readonly Line[]): Set<number> {
+  const out = new Set<number>();
+  let inSection = false;
+  let inValue = false;
+  lines.forEach((l, i) => {
+    const t = l.text;
+    if (i > 0 && !contiguous(lines, i - 1, i)) inSection = inValue = false;
+    if (SECTION_HEADER.test(t) || t.startsWith('----')) {
+      inSection = SECTION_HEADER.test(t) && !LOADER_SECTION.test(t);
+      inValue = false;
+      return;
+    }
+    if (!inSection) return;
+    if (DETAIL_VALUE.test(t)) {
+      out.add(i);
+      inValue = true;
+    } else if (inValue && t.startsWith('\t\t')) {
+      out.add(i);
+    } else {
+      inValue = false;
+    }
+  });
+  return out;
+}
 
 export interface Ctx {
   input: CrashInput;
@@ -54,6 +110,10 @@ export interface Ctx {
   crashFile: boolean;
   /** Indices of lines carrying a crash signal (or FATAL level). */
   signalIdx: number[];
+  /** Indices of normal-shutdown lines (`Stopping!`). */
+  shutdownIdx: number[];
+  /** Crash-report details values (see `detailLines`); never read as occurrences. */
+  details: ReadonlySet<number>;
   mcVersion: string | null;
 }
 
@@ -63,9 +123,13 @@ export function ctxOf(input: CrashInput): Ctx {
   const cached = cache.get(input);
   if (cached) return cached;
   const lines = flatten(input.digest);
+  const details = detailLines(lines);
   const signalIdx: number[] = [];
+  const shutdownIdx: number[] = [];
   lines.forEach((l, i) => {
-    if (logLevel(l.text) === 'FATAL' || CRASH_SIGNALS.some((s) => l.text.includes(s))) signalIdx.push(i);
+    if (details.has(i)) return;
+    if (isSignal(l.text)) signalIdx.push(i);
+    else if (CLEAN_SHUTDOWN.test(l.text)) shutdownIdx.push(i);
   });
   const kind = input.digest.source.kind;
   const ctx: Ctx = {
@@ -75,6 +139,8 @@ export function ctxOf(input: CrashInput): Ctx {
     traces: findTraces(lines),
     crashFile: kind === 'crashReport' || kind === 'hsErr',
     signalIdx,
+    shutdownIdx,
+    details,
     mcVersion: input.pack?.mcVersion ?? mcVersionFromLines(lines),
   };
   cache.set(input, ctx);
@@ -82,9 +148,15 @@ export function ctxOf(input: CrashInput): Ctx {
 }
 
 function mcVersionFromLines(lines: readonly Line[]): string | null {
+  // `Minecraft Version ID: 1.20.5-pre1` is the canonical id; `Minecraft Version:` is the display
+  // name ("1.20.5 Pre-Release 1"), so it is only a fallback and is kept whole.
+  for (const { text } of lines) {
+    const id = /^\tMinecraft Version ID: (\S+)/.exec(text);
+    if (id?.[1]) return id[1];
+  }
   for (const { text } of lines) {
     const m =
-      /^\tMinecraft Version: (\S+)/.exec(text) ??
+      /^\tMinecraft Version: (.+?)\s*$/.exec(text) ??
       /Loading Minecraft (\S+) with (?:Fabric|Quilt) Loader/.exec(text) ??
       /--fml\.mcVersion, ([\w.-]+)/.exec(text);
     if (m?.[1]) return m[1];
@@ -127,15 +199,48 @@ export interface GateOptions {
  * else warning.
  */
 export function gate(ctx: Ctx, i: number, opts: GateOptions = {}): Severity | null {
+  if (ctx.details.has(i)) return null;
   const lvl = levelAt(ctx, i);
   if (lvl === 'TRACE' || lvl === 'DEBUG' || lvl === 'INFO') return null;
   if (lvl === 'WARN') return opts.warn === 'warning' ? 'warning' : null;
   if (ctx.crashFile || opts.fatal) return 'error';
-  // "Followed by a crash": a signal after the line, or just before it (a header such as
-  // `A critical error occurred` precedes its trace).
-  return ctx.signalIdx.some((s) => s >= i - 40) ? 'error' : 'warning';
+  if (ctx.signalIdx.some((s) => signalCovers(ctx, s, i))) return 'error';
+  // An ERROR the game survived: worth a warning in a log that did not crash, but noise next to
+  // a real crash elsewhere in the same log (that crash gets its own finding).
+  return ctx.signalIdx.length > 0 ? null : 'warning';
 }
 
+function startsRecord(text: string): boolean {
+  return logLevel(text) !== null || text.startsWith('Exception in thread "');
+}
+
+/** Index range [start, end) of the log record (header line + continuation lines) containing `i`. */
+export function recordRange(ctx: Ctx, i: number): [number, number] {
+  let start = i;
+  while (start > 0 && !startsRecord(ctx.lines[start]?.text ?? '') && contiguous(ctx.lines, start - 1, start)) start--;
+  let end = i + 1;
+  while (end < ctx.lines.length && contiguous(ctx.lines, end - 1, end) && !startsRecord(ctx.lines[end]?.text ?? '')) end++;
+  return [start, end];
+}
+
+/** Max distance (lines) between an occurrence and a crash marker in another record. */
+export const SIGNAL_REACH = 50;
+
+/**
+ * Crash marker `s` explains an occurrence at `i` when it is in the same record or stack trace,
+ * or close by (`A critical error occurred` right before its trace, `Crash report saved` right
+ * after) with no normal shutdown in between.
+ */
+export function signalCovers(ctx: Ctx, s: number, i: number): boolean {
+  const [start, end] = recordRange(ctx, i);
+  if (s >= start && s < end) return true;
+  const trace = traceAt(ctx, i);
+  if (trace && s >= trace.start && s < trace.end) return true;
+  if (Math.abs(s - i) > SIGNAL_REACH) return false;
+  const lo = Math.min(s, i);
+  const hi = Math.max(s, i);
+  return !ctx.shutdownIdx.some((d) => d > lo && d < hi);
+}
 export function worst(a: Severity | null, b: Severity | null): Severity | null {
   const rank = (s: Severity | null): number => (s === 'error' ? 3 : s === 'warning' ? 2 : s === 'info' ? 1 : 0);
   return rank(a) >= rank(b) ? a : b;

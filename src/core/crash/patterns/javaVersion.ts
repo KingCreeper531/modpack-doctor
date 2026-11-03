@@ -13,6 +13,7 @@ import { ctxOf, disable, finding, gate, logEvidence, manual, refs, worst, type C
 import { jarLabel, jarsForModId, jarsForPackage, topLevel } from '../jars';
 import { javaFeatureForClassMajor, minJavaForMinecraft } from '../javaVersions';
 import { normalizeClassName, packageOf } from '../text';
+import { contextual, fatal } from '../tiers';
 
 const CLASS_VERSION = /UnsupportedClassVersionError: ([\w$/.]+) has been compiled by a more recent version of the Java Runtime \(class file version (\d+)(?:\.\d+)?\), this version of the Java Runtime only recognizes class file versions up to (\d+)(?:\.\d+)?/;
 const OLD_MAJOR = /UnsupportedClassVersionError: ([\w$/.]+) : Unsupported major\.minor version (\d+)\.\d+|Unsupported major\.minor version (\d+)\.\d+/;
@@ -103,12 +104,17 @@ export const javaVersionPattern: CrashPattern = {
   id: 'java-version',
   codes: ['C-JAVA-VERSION'],
   anchors: [
-    'UnsupportedClassVersionError',
-    'class file version',
-    'Unsupported major.minor version',
-    'cannot be cast to class java.net.URLClassLoader',
-    ' (java), but only the wrong version',
-    'requires Java ',
+    // The Java launcher could not load the game's main class (too-new class file): the game
+    // never starts. LaunchWrapper (≤1.12.2) on Java 9+ fails this cast in its main method.
+    ...fatal('Error: LinkageError occurred while loading main class', 'cannot be cast to class java.net.URLClassLoader'),
+    // A mod's class can also be probed (and the error caught) by a running game.
+    ...contextual(
+      'UnsupportedClassVersionError',
+      'class file version',
+      'Unsupported major.minor version',
+      ' (java), but only the wrong version',
+      'requires Java ',
+    ),
   ],
   match(input) {
     const ctx = ctxOf(input);

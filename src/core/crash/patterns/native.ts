@@ -7,6 +7,7 @@ import type { CrashPattern, Finding } from '../../model';
 import { ctxOf, finding, gate, logEvidence, manual, refs } from '../context';
 import { jarsForPackage, topLevel, jarLabel } from '../jars';
 import { packageOf } from '../text';
+import { contextual, fatal } from '../tiers';
 
 const PROBLEMATIC = /^#\s*Problematic frame:/;
 const NATIVE_FRAME = /^#\s+([CVJjv])\s+(?:\[([^+\]\s]+)(?:\+0x[0-9a-fA-F]+)?\]|(?:\d+\s+)?(?:c[12]\s+|jvmci\s+)?([\w$.]+)\.[\w$<>]+)/;
@@ -62,10 +63,9 @@ export const nativePattern: CrashPattern = {
   id: 'native-crash',
   codes: ['C-NATIVE'],
   anchors: [
-    'A fatal error has been detected by the Java Runtime Environment',
-    '# Problematic frame:',
-    'EXCEPTION_ACCESS_VIOLATION',
-    'SIGSEGV',
+    // hs_err header (owner's list): the JVM crashed.
+    ...fatal('A fatal error has been detected by the Java Runtime Environment'),
+    ...contextual('# Problematic frame:', 'EXCEPTION_ACCESS_VIOLATION', 'SIGSEGV'),
   ],
   match(input) {
     const ctx = ctxOf(input);

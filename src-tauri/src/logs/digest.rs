@@ -14,7 +14,11 @@
 //! - selected lines are merged into non-overlapping chunks sorted by start line; each chunk
 //!   carries the de-duplicated reasons of every window that touched it;
 //! - `max_lines` is a hard cap: `head` and `tail` are reserved first, anchors and blocks share
-//!   the rest first-come first-served, and `truncated` is set when anything had to be dropped.
+//!   the rest. Matching never stops; when the budget is full the oldest anchor-only window is
+//!   evicted (the oldest block window only when no anchor-only window is left; head never), so
+//!   a crash near the end of a noisy log keeps its blocks. `truncated` is set when anything
+//!   had to be dropped;
+//! - options are clamped ([`clamp_options`]) because they arrive from the webview.
 //!
 //! Lines longer than `max_line_chars` are cut and suffixed with ` …[+N chars]`. A single line
 //! longer than [`MAX_RAW_LINE_BYTES`] is only matched on its first 8 MiB; the remainder is
@@ -347,18 +351,58 @@ fn is_loading_mods_line(line: &[u8]) -> bool {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Option clamping
+
+/// Upper bounds for options coming from the webview; they keep memory constant whatever the UI
+/// sends (the ring holds `max(tail, context)` lines of up to `4 * max_line_chars` bytes).
+pub const MAX_HEAD: u32 = 2_000;
+pub const MAX_TAIL: u32 = 2_000;
+pub const MAX_CONTEXT: u32 = 100;
+pub const MAX_MAX_LINES: u32 = 20_000;
+pub const MAX_LINE_CHARS: u32 = 8_000;
+
+/// `opts` with every field clamped to the bounds above.
+pub fn clamp_options(opts: &DigestOptions) -> DigestOptions {
+    DigestOptions {
+        head: opts.head.min(MAX_HEAD),
+        tail: opts.tail.min(MAX_TAIL),
+        context: opts.context.min(MAX_CONTEXT),
+        max_lines: opts.max_lines.min(MAX_MAX_LINES),
+        max_line_chars: opts.max_line_chars.min(MAX_LINE_CHARS),
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Selection
 
 struct ActiveBlock {
     shape: Shape,
     remaining: u32,
-    interval: usize,
 }
 
-struct Interval {
+/// A run of consecutive selected lines and the reasons that selected them.
+struct Window {
     start: u32,
-    end: u32,
-    reason: ChunkReason,
+    lines: Vec<String>,
+    reasons: Vec<ChunkReason>,
+    /// Holds head lines: never evicted.
+    head: bool,
+    /// Holds structural-block lines: evicted only when no anchor-only window is left.
+    block: bool,
+    /// Lines counted against the middle budget.
+    middle: u32,
+}
+
+impl Window {
+    fn end(&self) -> u32 {
+        self.start + self.lines.len() as u32 - 1
+    }
+}
+
+fn add_reason(reasons: &mut Vec<ChunkReason>, reason: &ChunkReason) {
+    if !reasons.contains(reason) {
+        reasons.push(reason.clone());
+    }
 }
 
 #[derive(Default)]
@@ -379,29 +423,26 @@ struct Digester {
     middle_budget: u32,
     middle_used: u32,
     head_tail_clipped: bool,
-    exhausted: bool,
     truncated: bool,
     line_no: u32,
     ring: VecDeque<RingLine>,
     ring_cap: usize,
-    selected: Vec<(u32, String)>,
+    windows: VecDeque<Window>,
     last_selected: u32,
-    intervals: Vec<Interval>,
     blocks: Vec<ActiveBlock>,
     countdown: u32,
-    open_anchors: Vec<usize>,
+    /// Anchor reasons of the window currently being extended (hit line + countdown).
+    open_anchors: Vec<ChunkReason>,
     hits: Vec<usize>,
 }
 
 impl Digester {
     fn new(anchors: &[String], opts: &DigestOptions) -> Self {
+        let requested = opts;
+        let opts = clamp_options(opts);
         let head = opts.head.min(opts.max_lines);
         let tail = opts.tail.min(opts.max_lines - head);
         let max_line_chars = opts.max_line_chars as usize;
-        let mut intervals = Vec::new();
-        if head > 0 {
-            intervals.push(Interval { start: 1, end: head, reason: ChunkReason::Head });
-        }
         Self {
             matcher: AnchorMatcher::new(anchors),
             head,
@@ -411,15 +452,13 @@ impl Digester {
             ring_keep: max_line_chars.saturating_mul(4).saturating_add(4),
             middle_budget: opts.max_lines - head - tail,
             middle_used: 0,
-            head_tail_clipped: head < opts.head || tail < opts.tail,
-            exhausted: false,
+            head_tail_clipped: head < requested.head || tail < requested.tail,
             truncated: false,
             line_no: 0,
             ring: VecDeque::new(),
             ring_cap: tail.max(opts.context) as usize,
-            selected: Vec::new(),
+            windows: VecDeque::new(),
             last_selected: 0,
-            intervals,
             blocks: Vec::new(),
             countdown: 0,
             open_anchors: Vec::new(),
@@ -427,23 +466,75 @@ impl Digester {
         }
     }
 
-    /// Adds a line (in file order). Returns false when the budget is exhausted.
-    fn select(&mut self, no: u32, text: String) -> bool {
+    /// Frees budget by dropping the oldest window that is not the one being built: an anchor-only
+    /// window if there is one, else the oldest block window (head windows are never dropped). So
+    /// benign hits early in a long log cannot starve the crash near its end.
+    fn evict(&mut self) -> bool {
+        self.truncated = true;
+        let candidates = self.windows.len().saturating_sub(1);
+        let pick = self
+            .windows
+            .iter()
+            .take(candidates)
+            .position(|w| !w.head && !w.block && w.middle > 0)
+            .or_else(|| self.windows.iter().take(candidates).position(|w| !w.head && w.middle > 0));
+        match pick.and_then(|i| self.windows.remove(i)) {
+            Some(w) => {
+                self.middle_used -= w.middle;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Adds a line (in file order) with the reasons that selected it. Returns false when there is
+    /// no budget left even after eviction.
+    fn select(&mut self, no: u32, text: String, reasons: &[ChunkReason], block: bool) -> bool {
         if no <= self.last_selected {
+            if let Some(w) = self.windows.back_mut().filter(|w| no >= w.start) {
+                for r in reasons {
+                    add_reason(&mut w.reasons, r);
+                }
+                w.block |= block;
+            }
             return true;
         }
-        if no > self.head {
-            if self.middle_used >= self.middle_budget {
-                self.exhausted = true;
-                self.truncated = true;
-                self.blocks.clear();
-                self.countdown = 0;
-                self.open_anchors.clear();
-                return false;
+        let middle = no > self.head;
+        if middle {
+            while self.middle_used >= self.middle_budget {
+                if !self.evict() {
+                    return false;
+                }
             }
             self.middle_used += 1;
         }
-        self.selected.push((no, text));
+        let extend = self.windows.back().is_some_and(|w| w.end() + 1 == no);
+        if !extend {
+            self.windows.push_back(Window {
+                start: no,
+                lines: Vec::new(),
+                reasons: Vec::new(),
+                head: false,
+                block: false,
+                middle: 0,
+            });
+        }
+        let head = self.head;
+        let Some(w) = self.windows.back_mut() else {
+            return false;
+        };
+        w.lines.push(text);
+        if no <= head {
+            w.head = true;
+            add_reason(&mut w.reasons, &ChunkReason::Head);
+        }
+        for r in reasons {
+            add_reason(&mut w.reasons, r);
+        }
+        w.block |= block;
+        if middle {
+            w.middle += 1;
+        }
         self.last_selected = no;
         true
     }
@@ -453,71 +544,56 @@ impl Digester {
         let no = self.line_no;
         let mut want = no <= self.head;
 
-        if !self.exhausted {
-            // Structural blocks.
-            self.blocks.retain(|b| !b.shape.ends_before(raw));
-            if let Some(shape) = Shape::starts(raw) {
-                if !self.blocks.iter().any(|b| b.shape == shape) {
-                    self.intervals.push(Interval {
-                        start: no,
-                        end: no,
-                        reason: ChunkReason::Block { block: shape.block() },
-                    });
-                    let interval = self.intervals.len() - 1;
-                    self.blocks.push(ActiveBlock { shape, remaining: shape.cap(), interval });
-                }
+        // Structural blocks.
+        self.blocks.retain(|b| !b.shape.ends_before(raw));
+        if let Some(shape) = Shape::starts(raw) {
+            if !self.blocks.iter().any(|b| b.shape == shape) {
+                self.blocks.push(ActiveBlock { shape, remaining: shape.cap() });
             }
-            want |= !self.blocks.is_empty();
-
-            // Anchors.
-            let mut hits = std::mem::take(&mut self.hits);
-            self.matcher.find(raw, &mut hits);
-            if hits.is_empty() {
-                if self.countdown > 0 {
-                    self.countdown -= 1;
-                    want = true;
-                }
-            } else {
-                let from = no.saturating_sub(self.context).max(1);
-                // Record the reasons first: context lines selected below must never end up in
-                // a chunk without one, even if the budget runs out halfway through the window.
-                for &h in &hits {
-                    self.intervals.push(Interval {
-                        start: from,
-                        end: no,
-                        reason: ChunkReason::Anchor { anchor: self.matcher.anchors[h].clone() },
-                    });
-                    self.open_anchors.push(self.intervals.len() - 1);
-                }
-                self.countdown = self.context;
-                want = true;
-                let skip = self.ring.len().saturating_sub(self.context as usize);
-                let before: Vec<(u32, String)> = self
-                    .ring
-                    .iter()
-                    .skip(skip)
-                    .filter(|r| r.no >= from && r.no > self.last_selected)
-                    .map(|r| (r.no, clip(decode(&r.raw), self.max_line_chars, r.dropped)))
-                    .collect();
-                for (n, text) in before {
-                    if !self.select(n, text) {
-                        break;
-                    }
-                }
-            }
-            self.hits = hits;
         }
+        let in_block = !self.blocks.is_empty();
+        want |= in_block;
+
+        // Anchors (matched on every line: eviction keeps the budget for the newest windows).
+        let mut hits = std::mem::take(&mut self.hits);
+        self.matcher.find(raw, &mut hits);
+        if hits.is_empty() {
+            if self.countdown > 0 {
+                self.countdown -= 1;
+                want = true;
+            }
+        } else {
+            for &h in &hits {
+                let reason = ChunkReason::Anchor { anchor: self.matcher.anchors[h].clone() };
+                add_reason(&mut self.open_anchors, &reason);
+            }
+            self.countdown = self.context;
+            want = true;
+            let from = no.saturating_sub(self.context).max(1);
+            let skip = self.ring.len().saturating_sub(self.context as usize);
+            let before: Vec<(u32, String)> = self
+                .ring
+                .iter()
+                .skip(skip)
+                .filter(|r| r.no >= from && r.no > self.last_selected)
+                .map(|r| (r.no, clip(decode(&r.raw), self.max_line_chars, r.dropped)))
+                .collect();
+            let reasons = self.open_anchors.clone();
+            for (n, text) in before {
+                if !self.select(n, text, &reasons, false) {
+                    break;
+                }
+            }
+        }
+        self.hits = hits;
 
         if want {
-            let text = clip(decode(raw), self.max_line_chars, dropped);
-            if self.select(no, text) {
-                for b in &self.blocks {
-                    self.intervals[b.interval].end = no;
-                }
-                for &i in &self.open_anchors {
-                    self.intervals[i].end = no;
-                }
+            let mut reasons = self.open_anchors.clone();
+            for b in &self.blocks {
+                add_reason(&mut reasons, &ChunkReason::Block { block: b.shape.block() });
             }
+            let text = clip(decode(raw), self.max_line_chars, dropped);
+            self.select(no, text, &reasons, in_block);
         }
 
         for b in &mut self.blocks {
@@ -543,51 +619,57 @@ impl Digester {
         }
     }
 
-    fn finish(mut self, source: LogSource) -> LogDigest {
+    fn finish(self, source: LogSource) -> LogDigest {
         let total = self.line_no;
-        if self.tail > 0 && total > 0 {
-            let tail_from = total.saturating_sub(self.tail) + 1;
-            let first = self.selected.partition_point(|(n, _)| *n < tail_from);
-            let already: Vec<u32> = self.selected[first..].iter().map(|(n, _)| *n).collect();
-            let mut added = false;
+        let mut truncated = self.truncated;
+        let mut windows: Vec<Window> = self.windows.into_iter().collect();
+        let tail_from = (self.tail > 0 && total > 0).then(|| total.saturating_sub(self.tail) + 1);
+        if let Some(tail_from) = tail_from {
+            let ranges: Vec<(u32, u32)> = windows.iter().map(|w| (w.start, w.end())).collect();
             for r in self.ring.iter().filter(|r| r.no >= tail_from) {
-                if already.binary_search(&r.no).is_err() {
+                let i = ranges.partition_point(|&(_, end)| end < r.no);
+                let covered = ranges.get(i).is_some_and(|&(start, _)| start <= r.no);
+                if !covered {
                     let text = clip(decode(&r.raw), self.max_line_chars, r.dropped);
-                    self.selected.push((r.no, text));
-                    added = true;
+                    windows.push(Window {
+                        start: r.no,
+                        lines: vec![text],
+                        reasons: Vec::new(),
+                        head: false,
+                        block: false,
+                        middle: 0,
+                    });
                 }
             }
-            if added {
-                self.selected.sort_by_key(|(n, _)| *n);
-            }
-            self.intervals.push(Interval { start: tail_from, end: total, reason: ChunkReason::Tail });
-        }
-        // Requested head/tail were shortened to fit max_lines and lines were left out.
-        if self.head_tail_clipped && (self.selected.len() as u64) < u64::from(total) {
-            self.truncated = true;
+            windows.sort_by_key(|w| w.start);
         }
 
         let mut chunks: Vec<LogChunk> = Vec::new();
-        for (n, text) in self.selected {
+        for w in windows {
             match chunks.last_mut() {
-                Some(c) if c.start_line + c.lines.len() as u32 == n => c.lines.push(text),
-                _ => chunks.push(LogChunk { start_line: n, lines: vec![text], reasons: Vec::new() }),
+                Some(c) if c.start_line + c.lines.len() as u32 == w.start => {
+                    c.lines.extend(w.lines);
+                    for r in &w.reasons {
+                        add_reason(&mut c.reasons, r);
+                    }
+                }
+                _ => chunks.push(LogChunk { start_line: w.start, lines: w.lines, reasons: w.reasons }),
             }
         }
-        for iv in self.intervals {
-            let first =
-                chunks.partition_point(|c| c.start_line + (c.lines.len() as u32) <= iv.start);
-            for c in chunks[first..].iter_mut() {
-                if c.start_line > iv.end {
+        if let Some(tail_from) = tail_from {
+            for c in chunks.iter_mut().rev() {
+                if c.start_line + (c.lines.len() as u32) <= tail_from {
                     break;
                 }
-                if !c.reasons.contains(&iv.reason) {
-                    c.reasons.push(iv.reason.clone());
-                }
+                add_reason(&mut c.reasons, &ChunkReason::Tail);
             }
         }
-
-        LogDigest { source, total_lines: total, truncated: self.truncated, chunks }
+        let kept: usize = chunks.iter().map(|c| c.lines.len()).sum();
+        // Requested head/tail were shortened to fit max_lines and lines were left out.
+        if self.head_tail_clipped && (kept as u64) < u64::from(total) {
+            truncated = true;
+        }
+        LogDigest { source, total_lines: total, truncated, chunks }
     }
 }
 
@@ -866,6 +948,68 @@ filler e
         assert_eq!(ranges(&d), vec![(5, 7)]);
         assert_eq!(d.chunks[0].reasons, vec![ChunkReason::Anchor { anchor: "boom".into() }]);
         assert_invariants(&d, 3);
+    }
+
+    #[test]
+    fn benign_hits_do_not_starve_a_crash_near_the_end() {
+        // 300 benign WARN traces (anchor hits plus CausedBy blocks), then a crash with Suspected
+        // Mods and a Caused-by chain 1000 lines before EOF (outside the 400-line tail).
+        let mut s = String::new();
+        let mut n = 0u32;
+        let mut add = |s: &mut String, text: &str| {
+            s.push_str(text);
+            s.push('\n');
+            n += 1;
+            n
+        };
+        for i in 0..300 {
+            add(&mut s, &format!("[12:00:00] [Worker-Main-2/WARN] [compat/]: optional integration {i} missing"));
+            add(&mut s, "java.lang.ClassNotFoundException: org.optional.Api");
+            add(&mut s, "\tat dev.example.Compat.load(Compat.java:10)");
+            add(&mut s, "Caused by: java.lang.ClassNotFoundException: org.optional.Api");
+            add(&mut s, "\t... 4 more");
+            for k in 0..35 {
+                add(&mut s, &format!("[12:00:01] [Render thread/INFO] [x/]: filler {i}.{k}"));
+            }
+        }
+        add(&mut s, "Suspected Mods: ");
+        let suspect = add(&mut s, "\tCrate Logic (crates), Version: 2.2");
+        add(&mut s, "Stacktrace:");
+        add(&mut s, "java.lang.IllegalStateException: crate lost its owner");
+        let cause = add(&mut s, "Caused by: java.lang.NullPointerException: owner");
+        add(&mut s, "\tat org.crates.logic.Crate.tick(Crate.java:42)");
+        for k in 0..1000 {
+            add(&mut s, &format!("[12:10:00] [Render thread/INFO] [x/]: after {k}"));
+        }
+        let list = ["ClassNotFoundException", "Caused by: ", "Suspected Mods: "];
+        let o = default_options();
+        let d = digest(s.as_bytes(), &list, &o);
+        assert!(d.truncated);
+        assert_invariants(&d, o.max_lines);
+        assert_eq!(line(&d, cause), Some("Caused by: java.lang.NullPointerException: owner"));
+        assert!(chunk_of(&d, cause).is_some_and(|c| c.reasons.contains(&block(LogBlock::CausedByChain))));
+        assert!(chunk_of(&d, suspect).is_some_and(|c| c.reasons.contains(&block(LogBlock::SuspectedMods))));
+        // Head survives eviction.
+        assert!(line(&d, 1).is_some());
+    }
+
+    #[test]
+    fn options_from_the_ui_are_clamped() {
+        let huge = DigestOptions { head: u32::MAX, tail: u32::MAX, context: u32::MAX, max_lines: u32::MAX, max_line_chars: u32::MAX };
+        let c = clamp_options(&huge);
+        assert_eq!((c.head, c.tail, c.context, c.max_lines, c.max_line_chars), (MAX_HEAD, MAX_TAIL, MAX_CONTEXT, MAX_MAX_LINES, MAX_LINE_CHARS));
+        assert_eq!(clamp_options(&default_options()), default_options());
+        let mut s = String::new();
+        for i in 1..=30_000u32 {
+            s.push_str(&format!("Caused by: x{i} {}\n", "y".repeat(50)));
+        }
+        let d = digest(s.as_bytes(), &["Caused by"], &huge);
+        assert!(d.truncated);
+        assert!(line_count(&d) <= MAX_MAX_LINES as usize);
+        assert_eq!(d.total_lines, 30_000);
+        let long = "z".repeat(20_000);
+        let d = digest(format!("{long}\n").as_bytes(), &[], &huge);
+        assert!(line(&d, 1).is_some_and(|l| l.ends_with(&format!(" …[+{} chars]", 20_000 - MAX_LINE_CHARS))));
     }
 
     #[test]

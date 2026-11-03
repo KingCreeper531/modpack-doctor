@@ -8,6 +8,7 @@ import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, disable, finding, gate, listText, logEvidence, manual, refs, traceAt, worst, type Ctx } from '../context';
 import { jarByFileName, jarsForModId, jarsForPackage, jarLabel, uniqueTopLevel } from '../jars';
 import { basename, normalizeClassName, packageOf, simpleName, truncate } from '../text';
+import { contextual } from '../tiers';
 
 const CFG = String.raw`([\w.$-]+\.json)`;
 const MOD = String.raw`([\w.()-]+)`;
@@ -190,7 +191,9 @@ function addInnermostCause(ctx: Ctx, g: Group): void {
 export const mixinPattern: CrashPattern = {
   id: 'mixin',
   codes: ['C-MIXIN'],
-  anchors: [
+  // All contextual: non-required mixins fail with the same wording and the game carries on; a
+  // fatal one is followed by a crash report / main-thread death, which are fatal anchors.
+  anchors: contextual(
     'Mixin apply failed',
     'Mixin apply for mod ',
     'Mixin prepare failed',
@@ -207,7 +210,7 @@ export const mixinPattern: CrashPattern = {
     'was not located in the target class',
     'Error encountered whilst initialising mixin config',
     'is provided by both',
-  ],
+  ),
   match(input) {
     const ctx = ctxOf(input);
     const groups = new Map<string, Group>();
