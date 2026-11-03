@@ -122,6 +122,13 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - `languageRange` (`loaderVersion`) is an FML/language-loader range and is never compared with
       the Forge or NeoForge version. `loaderRange` is the range of the dependency on the loader mod.
     - NeoForge 1.20.1 counts as Forge 47.x-compatible.
+    - A jar that ships both `neoforge.mods.toml` and `mods.toml` yields two `ModMeta` with the
+      same `modId` and different `loader`. E-DUP-ID must ignore duplicates within one jar.
+13. **Known model gaps** (accepted for now; revisit when a check needs them):
+    - Quilt "any of" dependency arrays become individually Optional dependencies, so a missing
+      "one of A, B" is not reported.
+    - `JarRecord.moduleName` comes from `module-info` or `Automatic-Module-Name` only. `src/core`
+      derives the JDK automatic name from the file name when it is absent.
 
 ## Commands
 

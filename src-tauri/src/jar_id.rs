@@ -24,17 +24,26 @@ pub fn strip_disabled(path: &str) -> Option<&str> {
 /// Ids for a set of top-level jar paths (relative to the scan root, any separator).
 /// Returns `(id, normalized path)` in input order.
 pub fn top_level_ids(paths: &[String]) -> Vec<(String, String)> {
+    top_level_ids_with(paths, CASE_INSENSITIVE_FS)
+}
+
+/// Windows and macOS (APFS/HFS+ default) resolve file names case-insensitively, so `X.jar` and
+/// `x.jar.disabled` are twins there and the disabled one must get the `#disabled` marker.
+pub const CASE_INSENSITIVE_FS: bool = cfg!(any(windows, target_os = "macos"));
+
+fn top_level_ids_with(paths: &[String], case_insensitive: bool) -> Vec<(String, String)> {
+    let fold = |s: &str| if case_insensitive { s.to_lowercase() } else { s.to_string() };
     let normalized: Vec<String> = paths.iter().map(|p| normalize(p)).collect();
-    let enabled: HashSet<&str> = normalized
+    let enabled: HashSet<String> = normalized
         .iter()
         .filter(|p| strip_disabled(p).is_none())
-        .map(String::as_str)
+        .map(|p| fold(p))
         .collect();
     normalized
         .iter()
         .map(|path| {
             let id = match strip_disabled(path) {
-                Some(base) if enabled.contains(base) => format!("{base}{DISABLED_MARKER}"),
+                Some(base) if enabled.contains(&fold(base)) => format!("{base}{DISABLED_MARKER}"),
                 Some(base) => base.to_string(),
                 None => path.clone(),
             };
@@ -120,6 +129,15 @@ mod tests {
         assert_eq!(strip_disabled("x.jar"), None);
         assert_eq!(strip_disabled("ü.disabled"), Some("ü"));
         assert_eq!(strip_disabled("ab"), None);
+    }
+
+    #[test]
+    fn case_insensitive_twins_get_marker() {
+        let paths: Vec<String> = vec!["mods/X.jar".into(), "mods/x.jar.disabled".into()];
+        let ci: Vec<String> = top_level_ids_with(&paths, true).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ci, vec!["mods/X.jar", "mods/x.jar#disabled"]);
+        let cs: Vec<String> = top_level_ids_with(&paths, false).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(cs, vec!["mods/X.jar", "mods/x.jar"]);
     }
 
     #[test]
