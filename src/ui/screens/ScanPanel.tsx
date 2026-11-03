@@ -76,7 +76,7 @@ export function ScanPanel({ instanceId, className }: { instanceId: string; class
         </>
       }
       className={className}
-      bodyClassName="max-h-[240px] overflow-y-auto px-4 py-2"
+      bodyClassName="max-h-[min(240px,25vh)] overflow-y-auto px-4 py-2"
       flush
     >
       {tiles.length ? (

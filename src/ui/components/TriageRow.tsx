@@ -92,12 +92,12 @@ export function TriageRow({
           <FindingCode code={finding.code} severity={finding.severity} className="w-36 shrink-0 truncate pl-1" />
           <span className={cx('min-w-0 flex-1 truncate pl-1 t-body text-fg', origin && 'min-w-[40%]')}>{finding.title}</span>
           {origin ? (
-            <span className="max-w-[30%] min-w-0 shrink truncate pl-2 t-mono text-fg-faint" title={origin} data-testid="origin">
+            <span className="max-w-[30%] min-w-0 shrink truncate pl-2 t-mono text-fg-faint @max-[560px]:hidden" title={origin} data-testid="origin">
               from {origin}
             </span>
           ) : null}
         </button>
-        <div className="flex max-w-[45%] min-w-0 shrink-0 items-center gap-1 pr-4 pl-2" data-testid="culprits">
+        <div className="flex max-w-[45%] min-w-0 shrink-0 items-center gap-1 pr-4 pl-2 @max-[560px]:max-w-[28%]" data-testid="culprits">
           {shown.map((c) => (
             <Chip
               key={c.jarId}
