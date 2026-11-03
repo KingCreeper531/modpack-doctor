@@ -104,3 +104,23 @@ agent's notes (FML 44982c69, Forge 1.20.1 d13dd327, fabric-loader cb9523bc, quil
   - Aliased ids (cloth_config ↔ cloth-config2, playeranimator ↔ player-animator) are widened to `*`.
   - `breaks` is enforced unless it targets an aliased id.
 - **Mixin conflicts:** a runtime safeguard can still reject a mod; static checks can't predict it.
+
+## Third round (M3 review): jars for another loader, metadata-less jars, `FMLModType`
+
+| Situation | Forge 1.17–1.20.1 · NeoForge 47.1 / 20.2–20.4 / 20.6 before FML 3.0.19 | NeoForge 20.6 (FML ≥ 3.0.19) / 21.x | Fabric | Quilt | Forge 1.12 |
+|---|---|---|---|---|---|
+| (a) Fabric-only jar | ignored silently (DEBUG) | skipped + WARN screen `brokenfile.fabric` | — | — | put on classpath (INFO) |
+| (b) neoforge.mods.toml-only jar on Forge | ignored silently | — | — | — | — |
+| (c) mods.toml-only jar on NeoForge ≥ 20.5 | ignored silently | skipped + WARN `brokenfile.minecraft_forge` | — | — | — |
+| (d) a read toml *requires* the other loader | **ERROR** (missing dependency) | **ERROR** | — | — | — |
+| (e) Forge/NeoForge jar | — | — | ignored, one WARN log line | blocking WARN prompt (Exit/Continue) | — |
+| No metadata, no `FMLModType` | ignored silently | skipped + WARN `brokenfile.unknown` | ignored | WARN | classpath |
+| `FMLModType` present | loaded: MOD/GAMELIBRARY → GAME layer, LIBRARY/LANGPROVIDER → PLUGIN layer | same; `LANGPROVIDER` → WARN `unknownfmlmodtype`, skipped | — | — | — |
+
+- **Jar-in-jar:** nested jars without metadata become `LIBRARY` on NeoForge 21.x. On Forge 1.20.1
+  they default to `GAMELIBRARY`, or `LIBRARY` under a library parent. So nested libraries **are**
+  loaded into module layers.
+- **Split packages:** they are plain JPMS. Two jars in the same layer (or one visible from the other)
+  sharing a package give a `ResolutionException`.
+- **Corrupt zip:** ERROR on NeoForge 20.6+/21.x (`brokenfile.invalidzip`).
+- **Uncertain:** the exact NeoForge 20.6 build that switched to FML 3.0.19.

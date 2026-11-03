@@ -68,6 +68,7 @@ function jarRecord(j: CorpusJar): JarRecord {
     mixinConfigs: j.mixinConfigs,
     maxClassMajor: null,
     moduleName: null,
+    fmlModType: null,
     jarjar: null,
     nested: [],
   };

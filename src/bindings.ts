@@ -411,6 +411,12 @@ export type JarRecord = {
 	 *  otherwise; `src/core` derives the JDK automatic name from the file name itself.
 	 */
 	moduleName: string | null,
+	/**
+	 *  MANIFEST `FMLModType` attribute verbatim (`MOD`, `LIBRARY`, `GAMELIBRARY`, `LANGPROVIDER`),
+	 *  trimmed; None if absent. FML 1.17+ loads a jar without mods metadata only if this is set
+	 *  (docs/research/loader-enforcement.md, third round).
+	 */
+	fmlModType: string | null,
 	/**  Set for nested jars declared in `META-INF/jarjar/metadata.json`. */
 	jarjar: JarJarInfo | null,
 	/**  Ids of directly nested jars. */

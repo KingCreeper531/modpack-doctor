@@ -125,6 +125,7 @@ pub(crate) fn empty_record(ctx: &JarCtx, size: u64, status: JarStatus) -> JarRec
         mixin_configs: Vec::new(),
         max_class_major: None,
         module_name: None,
+        fml_mod_type: None,
         jarjar: None,
         nested: Vec::new(),
     }
@@ -269,6 +270,8 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
     rec.module_name = mi_name.or_else(|| {
         manifest.get("Automatic-Module-Name").map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
     });
+    // Main-section attribute, verbatim but trimmed (`MOD`, `LIBRARY`, `GAMELIBRARY`, …).
+    rec.fml_mod_type = manifest.get("FMLModType").map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
 
     type ParseFn = fn(&str, &Manifest) -> Result<Parsed, String>;
     let formats: [(&str, ParseFn); 5] = [
