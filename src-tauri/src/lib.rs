@@ -10,6 +10,7 @@ pub mod model;
 pub mod modrinth;
 pub mod paths;
 pub mod scan;
+pub mod settings;
 pub mod state;
 pub mod window_theme;
 

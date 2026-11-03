@@ -203,3 +203,20 @@ Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `
 | `C-MIXIN` … `C-SUSPECTED` | from the log | mixin, resolution, missing mandatory deps, Fabric incompatibility, NoClassDef, OOM, Java version, suspected mods |
 | `C-ROOT-CAUSE` | error | fallback when nothing specific matched: the innermost `Caused by:`, mapped to a jar when possible |
 | `C-NATIVE` | error | hs_err native crash; names the problematic frame and library (e.g. a GPU driver) |
+
+## Rules-core entry points (frozen in M3)
+
+The UI calls only these from `src/core` for static checks:
+
+| Function | File | Contract |
+|---|---|---|
+| `resolvePack(instance, scan, override?)` | `src/core/pack/index.ts` | → `PackContext`. Precedence: override, then launcher/mrpack metadata, then the majority across active jars. Never throws. |
+| `buildJarIndex(scan)` | `src/core/pack/index.ts` | → `JarIndex` over active jars, as described on the type. |
+| `runChecks(input)` / `CHECKS` | `src/core/checks/index.ts` | → `Finding[]`. Deterministic, with stable ids. Sorted by severity (error, then warning, then info), then code, then the first culprit's file name. |
+| `analyzeCrash(input)` / `CRASH_ANCHORS` / `CRASH_ANCHOR_TEXTS` | `src/core/crash/index.ts` | Crash analysis (M4 wires it). |
+
+Scan flow (M3):
+1. The UI calls `scan_instance`. Rust emits `ScanStarted` and then `ScanProgress`.
+2. Rust returns the `ScanResult`.
+3. The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously. Checks are pure and fast.
+4. The UI paints tile states from the findings' culprits.
