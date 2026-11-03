@@ -1,11 +1,15 @@
 //! Modpack Doctor backend. Rust owns all I/O; see docs/CONTRACTS.md.
 
 pub mod commands;
+pub mod discovery;
 pub mod error;
 pub mod guard;
 pub mod jar_id;
+pub mod logs;
 pub mod model;
+pub mod modrinth;
 pub mod paths;
+pub mod scan;
 pub mod state;
 pub mod window_theme;
 
