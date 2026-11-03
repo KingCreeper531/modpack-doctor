@@ -123,7 +123,18 @@ describe('crash corpus (fixtures/logs)', () => {
       const findings = analyzeCrash({ digest: digestFromText(text, source), index });
       const summary = findings.map((f) => `${f.code}[${f.culprits.map((x) => x.fileName).join(',')}]`).join(' ');
 
+      // Ranking: the analyzer's first finding (what the UI and the crash notification lead with)
+      // must be one of the expected diagnoses, not a side effect elsewhere in the log.
+      if (exp.expect.length > 0) {
+        const wanted = new Set(exp.expect.map((e) => e.code));
+        expect(wanted.has(findings[0]?.code ?? ('none' as Finding['code'])), `top finding should be one of ${[...wanted].join(', ')}; got: ${summary}`).toBe(true);
+      }
+
       for (const e of exp.expect) {
+        expect(
+          findings.some((f) => f.code === e.code && f.severity === 'error'),
+          `${e.code} should be reported at error severity; got: ${findings.map((f) => `${f.code}:${f.severity}`).join(' ')}`,
+        ).toBe(true);
         // The analyzer may split one failure into a finding per culprit (one triage row and fix
         // each). An expectation is met by the union of all findings carrying its code: every
         // expected jar must be blamed and the expected line marked as culprit evidence.
