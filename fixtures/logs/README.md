@@ -54,19 +54,26 @@ stays CRLF despite the repo-wide `eol=lf`).
 
 All keys are required except the three optional fields inside an `expect` entry.
 
-How a harness should evaluate a case:
+How the harness (`src/core/__tests__/crash-corpus.test.ts`) evaluates a case:
 
 - Build the digest from the log file with `kind` as the `LogKind`, and a `JarIndex` from `jars`
   (each entry is one top-level jar; `packages` feed `byPackage`/`byPackageAnyDepth`,
   `mixinConfigs` feed `byMixinConfig`, `modIds` feed `byModId`).
-- **expect**: for every entry, at least one finding with that `code` must exist such that
-  - every name in `culpritFileNames` is among that finding's `culprits[].fileName` (subset, not
-    equality: an analyzer may name additional jars);
-  - every id in `culpritModIds` is among the culprits' `modId` (or among the `modIds` of the
-    culprit jars in `jars`);
-  - if `lineContains` is given, one of the finding's `log` evidence lines with
-    `role: 'culprit'` contains it. Lines are compared without their line terminator (`\r` is
-    stripped for the CRLF case); the substring is matched against the full, uncut line.
+- **Ranking**: when `expect` is non-empty, the analyzer's **first** (top-ranked) finding must carry
+  one of the expected codes. A side effect elsewhere in the log must not outrank the diagnosis.
+- **Severity**: every expected code must appear on at least one finding with `severity: 'error'`.
+- **expect**, judged against the **union of all findings carrying that code**. The analyzer emits one
+  finding per culprit (one triage row and fix each), so the culprits and evidence of a failure may be
+  spread over several findings with the same code:
+  - at least one finding with `code` must exist;
+  - every name in `culpritFileNames` must be among the `culprits[].fileName` of those findings
+    (subset, not equality: additional jars are allowed);
+  - every id in `culpritModIds` must be among those culprits' `modId` (or among the `modIds` of
+    the culprit jars in `jars`);
+  - if `lineContains` is given, at least one `log` evidence line with `role: 'culprit'` in any of
+    those findings must contain it. Lines are compared without their line terminator (`\r` is
+    stripped for the CRLF case). Every `lineContains` lies within the first 2000 characters of its
+    line, so it survives the digest's long-line cut.
 - **forbid**: no finding may have any of these codes.
 - An empty `expect` with a populated `forbid` is a negative case.
 - Codes not mentioned in either list are unconstrained (for example, a `C-ROOT-CAUSE` fallback next
@@ -92,7 +99,7 @@ Conventions used when writing expectations:
 
 ## Cases
 
-### Forge (16)
+### Forge (18)
 
 | File | Kind | Era imitated | Expect | What it represents |
 |---|---|---|---|---|
@@ -100,6 +107,7 @@ Conventions used when writing expectations:
 | `forge/fg17-resolution-reads-package.log` | latestLog | FG-ML9 early (Forge 37.1.1, MC 1.17.1, Java 16) | `C-RESOLUTION` | Short latest.log ending in `ResolutionException: Module X reads package Y from both A and B` (both suppliers are mod jars that bundle org.joml). The "reads package ... from both" phrasing named in SPEC.md. crash-formats.md Uncertain #1 says it is not in JDK 11/17/21 source; it is kept here as the soft anchor the spec asks for. |
 | `forge/fg19-suspected-crlf.txt` | crashReport | FG-ML9 (Forge 43.3.5, MC 1.19.2, backported Suspected Mod) | `C-SUSPECTED` | CRLF-encoded in-game crash with single `Suspected Mod:` entry and EventBus `ASMEventHandler_NNN_...` frames. lineContains is matched per line after stripping \r. Robustness: the whole file uses CRLF line endings (as when a crash report is copied off Windows). NPE in an event handler; ASMEventHandler frames from the Forge EventBus. |
 | `forge/fg20-clean-benign-cnfe-long.log` | latestLog | FG-ML9 (Forge 47.3.0, MC 1.20.1) latest.log, ~1.8k lines | _none (negative)_ | Long benign log: Mixin `Error loading class: ... (java.lang.ClassNotFoundException: ...)` WARNs, a WARN-level ClassNotFoundException stack trace from a compat loader, RecipeManager parse errors, normal shutdown. Negative case: a successful session that ends with a clean "Stopping!". ClassNotFoundExceptions are logged at WARN for optional integrations (EMI, Jade, Patchouli are not installed), plus recipe parsing errors and "Can't keep up!" noise. |
+| `forge/fg20-distance-early-noclassdef-late-crash.log` | latestLog | FG-ML9 (Forge 47.3.0, MC 1.20.1) latest.log, ~2.3k lines (kept under 300 KB) | `C-ROOT-CAUSE` | Long client log: early `[.../ERROR]` + NoClassDefFoundError/ClassNotFoundException stack from an optional compat loader, gameplay noise, then `Encountered an unexpected exception` -> ReportedException -> `Caused by: IllegalStateException` in `pipeworks-...jar%23187!/` frames and the `#@!@# Game crashed!` marker. Distance trap: an ERROR-level NoClassDefFoundError for an optional Jade integration (Hearthstone HUD) near the top is harmless; ~2.2k lines later the game crashes on an unrelated IllegalStateException in Pipeworks code, whose jar is in the frames. Blame Pipeworks; do not report the early NoClassDefFoundError. |
 | `forge/fg20-java-version-mod-class.txt` | crashReport | FG-ML9 (Forge 47.3.0, MC 1.20.1, Java 17) | `C-JAVA-VERSION` | Forge `-fml.txt` with `has class loading errors` and UnsupportedClassVersionError naming class file versions 65.0 / 61.0. AuroraCraft was compiled for Java 21 (class file 65) but the game runs on Java 17 (61). Fix is a different AuroraCraft build or Java 21, not a missing class. |
 | `forge/fg20-missing-mandatory.log` | latestLog | FG-ML9 (Forge 47.2.0, MC 1.20.1) latest.log | `C-MISSING-MANDATORY` | `[net.minecraftforge.fml.loading.ModSorter/LOADING]` ERROR "Missing or unsupported mandatory dependencies:" with tab-indented `Mod ID:` lines, then "Skipping lifecycle event" FATAL lines. Client launch that ends on the loading-error screen (no crash report). cloth_config is not installed; Saplings Plus wants MC 1.20.2+. |
 | `forge/fg20-mixin-apply-failed.log` | latestLog | FG-ML9 (Forge 47.2.0, MC 1.20.1) latest.log | `C-MIXIN` | Full client latest.log: `[mixin/]` ERROR `Mixin apply failed <cfg>:<Mixin> -> <target>: ...InvalidInjectionException`, then ReportedException with MixinTransformerError/MixinApplyError causes and the `#@!@# Game crashed!` STDOUT line. Upstream Mixin wording (no "from mod"): the config tidyterrain.mixins.json must be mapped to its jar. A harmless "Reference map ... could not be read" WARN for hearthhud.mixins.json precedes it and must not be blamed. |
@@ -111,15 +119,17 @@ Conventions used when writing expectations:
 | `forge/fg20-server-missing-dep-fml.txt` | crashReport | FG-ML9 (Forge 47.2.20 dedicated server, MC 1.20.1, Linux) | `C-MISSING-MANDATORY` | Forge `-fml.txt` with `-- MOD <id> --` sections whose Failure message is the translated missing-dependency text; Mod List rows in ERROR state. Dedicated server mod-loading crash (-fml.txt). Emberforge needs cloth_config (not installed) and Saplings Plus needs MC 1.20.2+. No throwable; the wrapper "Mod Loading has failed" must not become a root-cause finding. |
 | `forge/fg20-suspected-mod.txt` | crashReport | FG-ML9 (Forge 47.3.0, MC 1.20.1, backported CrashReportAnalyser) | `C-SUSPECTED` | In-game "Ticking block entity" crash with a single `Suspected Mod:` entry, issue tracker URL and TRANSFORMER/ position line. Ticking block entity NPE inside Pipeworks; Forge 47.3.0 prints a single "Suspected Mod:" entry between Thread: and Stacktrace:. |
 | `forge/fg20-suspected-mods-mixin.txt` | crashReport | FG-ML9 (Forge 47.2.20, MC 1.20.1) | `C-SUSPECTED` | `Suspected Mods:` with two entries, the second attributed via `Mixin class:`/`Target:`; `pl:mixin:APP:` audit trail in frames. Two suspects: one from a direct frame, one from a mixin applied to Gui (Mixin class / Target lines). The crash is a runtime exception, not a mixin application failure, so C-MIXIN must not fire. |
+| `forge/fg20-sysdetails-cnfe-diagnostic.txt` | crashReport | FG-ML9 (Forge 47.3.0, MC 1.20.1) | `C-SUSPECTED` | In-game "Ticking block entity" NPE with a `Suspected Mod:` entry; System Details carries mod-added keys, one containing `java.lang.ClassNotFoundException: snownee.jade.api.IWailaPlugin`. System Details trap: a tab-indented `Hearthstone HUD Compat:` key in -- System Details -- quotes java.lang.ClassNotFoundException for an optional, absent mod. It is a diagnostic value, not a thrown exception; the crash is an NPE in Emberforge's block entity tick. |
 | `forge/fgboot-1.20.4-noclassdef-missing-dep.txt` | crashReport | FG-BOOT (Forge 49.0.30, MC 1.20.4, ForgeBootstrap) | `C-NOCLASSDEF` | Forge `-fml.txt`: `Caused by 0/1` (outermost first), `Exception message: ...ClassNotFoundException`; `~[jar!/:ver]` frames; ModLauncher services shown as `/`. Stormvane references dev.windlib.*, a package no installed jar provides: a missing dependency, not a broken jar. The finding should name Stormvane as the mod that needs it. |
 
-### NeoForge (9)
+### NeoForge (10)
 
 | File | Kind | Era imitated | Expect | What it represents |
 |---|---|---|---|---|
 | `neoforge/neo20.4-injection-check-failed.txt` | crashReport | NEO-ML (NeoForge 20.4.237, FML 2.0.17, MC 1.20.4, mods.toml era) | `C-MIXIN` | Crash report with `MC-BOOTSTRAP/` and `TRANSFORMER/minecraft@1.20.4/` frame prefixes plus `%23NNN!/` jars; Caused by `InjectionError: Critical injection failure: Redirector ... failed injection check, (0/1) succeeded`. No Suspected Mods block (NeoForge has none). InjectionError (post-injection check) wrapped in MixinTransformerError while GameRenderer loads. The mixin config skyward.mixins.json maps to the Skyward jar. atio6axx.dll in the modules list is not a native crash. |
 | `neoforge/neo20.4-missing-mandatory.log` | latestLog | NEO-ML (NeoForge 20.4.237, FML 2.0.17, MC 1.20.4) latest.log | `C-MISSING-MANDATORY` | NeoForge ModSorter ERROR block with `Mod ID:` lines (one `[MISSING]`, one version too old) and `fml.modloading.missingdependency` keys. NeoForge 20.4 client stops on the loading-error screen: FerroLib is missing for Skyward, and Mossy Paths wants a newer NeoForge than the one reported. Same line shape as Forge, but the logger is net.neoforged.fml.loading.ModSorter. |
 | `neoforge/neo21.0-errorduringevent-key.txt` | crashReport | NEO-ML (NeoForge 21.0.10-beta, FML 4.0.6, MC 1.21, pre-PR #1479 format) | `C-SUSPECTED` | `-fml.txt` with `-- MOD <id> --`, `Mod File:`, `Failure message: fml.modloading.errorduringevent` + `Failure message arg 1:`; NEO-ML frame prefixes `TRANSFORMER/glowgrove@0.5.0/`. Early NeoForge 21.0 mod-loading crash: the Failure message is the raw key fml.modloading.errorduringevent; the `-- MOD glowgrove --` section and its Mod File line name the culprit. |
+| `neoforge/neo21.1-info-mentions-oom-clean-exit.log` | latestLog | NEO-ML (NeoForge 21.1.77, MC 1.21.1) latest.log | _none (negative)_ | Short successful session: `[.../INFO] [org.lowram.memoryhint.MemoryHint/]: ... java.lang.OutOfMemoryError ...`, a ModelBakery `Unable to load model` ERROR with FileNotFoundException, normal shutdown. Level trap: INFO lines from a memory-watchdog mod mention java.lang.OutOfMemoryError, one unrelated ERROR reports a missing block model, and the game shuts down cleanly with "Stopping!". Nothing crashed, so no finding at all. |
 | `neoforge/neo21.1-mod-loading-issue.txt` | crashReport | NEO-ML (NeoForge 21.1.77, FML 4.0.31, MC 1.21.1, post-PR #1479 format) | `C-SUSPECTED` | `ModLoadingCrashException: Mod loading has failed`, `-- Mod loading issue for: <id> --`, `Mod file:`, `Mod issues URL: <No issues URL found>`, `TRANSFORMER/modid@ver/` frames. Current NeoForge mod-loading crash format: the issue section header and lower-case "Mod file:" name Ashen Realms, which threw an NPE in FMLCommonSetupEvent. |
 | `neoforge/neo21.1-resolution-contains-package.debug.log` | debugLog | NEO-ML (NeoForge 21.1.77, FML 4.0.31, MC 1.21.1) debug.log | `C-RESOLUTION` | debug.log (DEBUG/TRACE lines, mod discovery listing) ending in `ResolutionException: Module A contains package P, module B exports package P to A`. Ashen Realms shades part of CorvusLib (package com.corvus.lib.util) while CorvusLib is also installed. debug.log with DEBUG/TRACE discovery noise; the stderr trace was appended by the launcher. |
 | `neoforge/neo21.1-server-loading-errors.log` | latestLog | NEO-ML (NeoForge 21.1.77, FML 4.0.31, MC 1.21.1 dedicated server, Linux) latest.log | `C-MISSING-MANDATORY` | Full (short) server latest.log ending in `net.neoforged.fml.ModLoadingException: Loading errors encountered:` with three missing/unsupported dependency issues, including `Reason for the dependency:`. Load-time failure that appears only in latest.log: the dedicated server prints "Failed to start the minecraft server" and a ModLoadingException listing issues as "\t- " entries with "\t  " continuation lines. No crash report file is written. |
@@ -164,6 +174,17 @@ Conventions used when writing expectations:
 ## Negative and trap cases
 
 - `fabric/fab21-clean-session-long.log`: clean ~3.5k-line session; forbids every C-* code.
+- Review cases for three false-positive classes (M2 review):
+  - **Distance**, `forge/fg20-distance-early-noclassdef-late-crash.log`: an ERROR-level
+    NoClassDefFoundError from an optional compat loader near the top, ~2.2k lines of normal play (the 300 KB file cap limits it), then
+    the real crash, an IllegalStateException in another mod's frames. Expects C-ROOT-CAUSE on that jar;
+    forbids C-NOCLASSDEF.
+  - **Level**, `neoforge/neo21.1-info-mentions-oom-clean-exit.log`: INFO lines mention
+    `java.lang.OutOfMemoryError`, there is one unrelated ERROR, and the game shuts down cleanly.
+    Expects nothing; forbids every C-* code.
+  - **System Details**, `forge/fg20-sysdetails-cnfe-diagnostic.txt`: a mod-added `Key: value` line in
+    `-- System Details --` contains `java.lang.ClassNotFoundException: ...`, while the crash is an NPE.
+    Expects C-SUSPECTED on the NPE's jar; forbids C-NOCLASSDEF.
 - `forge/fg20-clean-benign-cnfe-long.log`: successful launch with ClassNotFoundExceptions logged at
   WARN (Mixin "Error loading class", a compat loader stack trace, a "not present" message), recipe
   parse errors and a normal shutdown; forbids C-NOCLASSDEF and C-ROOT-CAUSE among others.

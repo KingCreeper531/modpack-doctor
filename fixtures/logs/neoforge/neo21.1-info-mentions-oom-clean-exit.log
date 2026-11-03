@@ -1,0 +1,176 @@
+[22Jan2025 17:40:03.388] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.21.1, --gameDir, C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Quiet 1.21.1\minecraft, --assetsDir, C:\Users\Dev\AppData\Roaming\PrismLauncher\assets, --assetIndex, 17, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --userType, msa, --versionType, release, --launchTarget, forgeclient, --fml.neoForgeVersion, 21.1.77, --fml.fmlVersion, 4.0.31, --fml.mcVersion, 1.21.1, --fml.neoFormVersion, 20240808.144430]
+[22Jan2025 17:40:03.705] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 11.0.4+main.d2e20e43 starting: java version 21.0.5 by Eclipse Adoptium; OS Windows 11 arch amd64 version 10.0
+[22Jan2025 17:40:03.837] [main/INFO] [net.neoforged.fml.loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[22Jan2025 17:40:04.203] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[22Jan2025 17:40:04.576] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[22Jan2025 17:40:04.975] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=union:/C:/Users/Dev/AppData/Roaming/PrismLauncher/libraries/net/fabricmc/sponge-mixin/0.15.2+mixin.0.8.7/sponge-mixin-0.15.2+mixin.0.8.7.jar%23128!/ Service=ModLauncher Env=CLIENT
+[22Jan2025 17:40:05.134] [main/INFO] [net.neoforged.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 3 dependencies adding them to mods collection
+[22Jan2025 17:40:05.234] [main/INFO] [mixin/]: Compatibility level set to JAVA_21
+[22Jan2025 17:40:05.333] [main/INFO] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forgeclient' with arguments [--version, 1.21.1, --gameDir, C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Quiet 1.21.1\minecraft, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --username, Dev, --assetIndex, 17, --accessToken, ????????, --userType, msa, --versionType, release]
+[22Jan2025 17:40:05.377] [main/INFO] [MixinExtras|Service/]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.4.1).
+[22Jan2025 17:40:05.572] [Datafixer Bootstrap/INFO] [com.mojang.datafixers.DataFixerBuilder/]: 247 Datafixer optimizations took 498 milliseconds
+[22Jan2025 17:40:05.696] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Setting user: Dev
+[22Jan2025 17:40:05.979] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Backend library: LWJGL version 3.3.3+5
+[22Jan2025 17:40:06.351] [modloading-worker-0/INFO] [net.neoforged.neoforge.common.NeoForgeMod/NEOFORGEMOD]: NeoForge mod loading, version 21.1.77, for MC 1.21.1
+[22Jan2025 17:40:06.444] [modloading-worker-1/INFO] [org.lowram.memoryhint.MemoryHint/]: Memory Hint 1.4.2 initialising
+[22Jan2025 17:40:06.700] [modloading-worker-1/INFO] [org.quietcaves.QuietCaves/]: Quiet Caves 1.1.0 initialising
+[22Jan2025 17:40:07.002] [modloading-worker-1/INFO] [io.emberlantern.EmberLantern/]: Ember Lantern 0.8.2 initialising
+[22Jan2025 17:40:07.181] [modloading-worker-1/INFO] [mezz.jei.neoforge.JustEnoughItems/]: Just Enough Items 19.21.0.247 initialising
+[22Jan2025 17:40:07.515] [modloading-worker-0/INFO] [org.lowram.memoryhint.MemoryHint/]: Memory watchdog armed: warn at 90% heap, emergency world save on java.lang.OutOfMemoryError, heap dump on OOM disabled (max heap 6144 MiB)
+[22Jan2025 17:40:07.755] [Render thread/INFO] [net.minecraft.server.packs.resources.ReloadableResourceManager/]: Reloading ResourceManager: vanilla, mod_resources
+[22Jan2025 17:40:08.103] [Render thread/INFO] [com.mojang.blaze3d.audio.Library/]: OpenAL initialized on device OpenAL Soft on Speakers (Realtek(R) Audio)
+[22Jan2025 17:40:08.424] [Render thread/INFO] [net.minecraft.client.sounds.SoundEngine/SOUNDS]: Sound engine started
+[22Jan2025 17:40:08.509] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 2048x1024x4 minecraft:textures/atlas/blocks.png-atlas
+[22Jan2025 17:40:08.647] [Worker-Main-4/ERROR] [net.minecraft.client.resources.model.ModelBakery/]: Unable to load model: 'quietcaves:block/dripstone_lamp_lit' referenced from: quietcaves:dripstone_lamp#lit=true: java.io.FileNotFoundException: quietcaves:models/block/dripstone_lamp_lit.json
+[22Jan2025 17:40:08.875] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 1024x512x4 minecraft:textures/atlas/particles.png-atlas
+[22Jan2025 17:40:09.193] [Server thread/INFO] [net.minecraft.client.server.IntegratedServer/]: Starting integrated minecraft server version 1.21.1
+[22Jan2025 17:40:09.265] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Generating keypair
+[22Jan2025 17:40:09.515] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Preparing start region for dimension minecraft:overworld
+[22Jan2025 17:40:09.585] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Dev joined the game
+[22Jan2025 17:40:09.714] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2444ms or 44 ticks behind
+[22Jan2025 17:40:10.040] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:10.418] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2370ms or 43 ticks behind
+[22Jan2025 17:40:10.602] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:10.965] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:11.217] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:11.354] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:11.644] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:11.730] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:11.925] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2430ms or 52 ticks behind
+[22Jan2025 17:40:12.185] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:12.539] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2010ms or 51 ticks behind
+[22Jan2025 17:40:12.762] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:12.774] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:12.808] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:12.837] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2256ms or 47 ticks behind
+[22Jan2025 17:40:13.062] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2733ms or 42 ticks behind
+[22Jan2025 17:40:13.418] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2596ms or 49 ticks behind
+[22Jan2025 17:40:13.428] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:13.545] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:13.881] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2305ms or 54 ticks behind
+[22Jan2025 17:40:14.164] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2331ms or 45 ticks behind
+[22Jan2025 17:40:14.523] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:14.779] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:14.952] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2747ms or 51 ticks behind
+[22Jan2025 17:40:15.345] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2638ms or 46 ticks behind
+[22Jan2025 17:40:15.584] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2254ms or 41 ticks behind
+[22Jan2025 17:40:15.939] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:16.057] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2198ms or 55 ticks behind
+[22Jan2025 17:40:16.067] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:16.092] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:16.400] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2783ms or 44 ticks behind
+[22Jan2025 17:40:16.433] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:16.634] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:16.976] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:17.318] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:17.547] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:17.903] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:17.965] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:18.114] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:18.160] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:18.423] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2052ms or 53 ticks behind
+[22Jan2025 17:40:18.823] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:19.094] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:19.479] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:19.821] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:20.096] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:20.284] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2627ms or 56 ticks behind
+[22Jan2025 17:40:20.569] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2396ms or 57 ticks behind
+[22Jan2025 17:40:20.917] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2511ms or 43 ticks behind
+[22Jan2025 17:40:21.123] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:21.261] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:21.366] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:21.663] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:22.013] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:22.092] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:22.216] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2077ms or 45 ticks behind
+[22Jan2025 17:40:22.304] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:22.564] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:22.833] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:22.962] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2299ms or 49 ticks behind
+[22Jan2025 17:40:23.302] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:23.364] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:23.561] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2564ms or 53 ticks behind
+[22Jan2025 17:40:23.911] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:24.266] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:24.545] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:24.853] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:24.974] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2351ms or 54 ticks behind
+[22Jan2025 17:40:25.219] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:25.453] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:25.688] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2253ms or 46 ticks behind
+[22Jan2025 17:40:25.761] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:25.925] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2577ms or 41 ticks behind
+[22Jan2025 17:40:26.058] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:26.415] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:26.459] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:26.665] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:26.839] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:27.210] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:27.565] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:27.752] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:27.759] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2493ms or 44 ticks behind
+[22Jan2025 17:40:27.972] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:28.176] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:28.362] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:28.409] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:28.543] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:28.706] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:29.040] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:29.045] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:29.131] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:29.376] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:29.422] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:29.742] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:29.964] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2324ms or 50 ticks behind
+[22Jan2025 17:40:29.982] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:30.072] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2030ms or 40 ticks behind
+[22Jan2025 17:40:30.212] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:30.528] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:30.645] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:30.900] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:31.125] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:31.340] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:31.492] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:31.743] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:31.769] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:31.830] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:32.108] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2242ms or 43 ticks behind
+[22Jan2025 17:40:32.199] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2302ms or 52 ticks behind
+[22Jan2025 17:40:32.410] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2255ms or 43 ticks behind
+[22Jan2025 17:40:32.738] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:32.895] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:33.231] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2655ms or 48 ticks behind
+[22Jan2025 17:40:33.321] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:33.434] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2731ms or 40 ticks behind
+[22Jan2025 17:40:33.645] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:33.809] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:33.933] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:34.209] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:34.458] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> nice cave
+[22Jan2025 17:40:34.598] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:34.888] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:34.904] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:34.979] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2141ms or 54 ticks behind
+[22Jan2025 17:40:35.202] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:35.322] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2168ms or 46 ticks behind
+[22Jan2025 17:40:35.624] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:35.784] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:35.971] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:36.197] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:36.211] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> lamps are purple?
+[22Jan2025 17:40:36.512] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:36.551] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2304ms or 43 ticks behind
+[22Jan2025 17:40:36.662] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saved the game
+[22Jan2025 17:40:36.843] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:37.012] [Server thread/WARN] [net.minecraft.server.MinecraftServer/]: Can't keep up! Is the server overloaded? Running 2025ms or 50 ticks behind
+[22Jan2025 17:40:37.231] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> brb
+[22Jan2025 17:40:37.276] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving the game (this may take a moment!)
+[22Jan2025 17:40:37.370] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: <Dev> ok
+[22Jan2025 17:40:37.612] [Server thread/INFO] [net.minecraft.server.network.ServerGamePacketListenerImpl/]: Dev lost connection: Disconnected
+[22Jan2025 17:40:37.993] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Dev left the game
+[22Jan2025 17:40:38.242] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Stopping server
+[22Jan2025 17:40:38.575] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving players
+[22Jan2025 17:40:38.754] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving worlds
+[22Jan2025 17:40:38.772] [Render thread/INFO] [org.lowram.memoryhint.MemoryHint/]: Session peak heap 3120 MiB of 6144 MiB (51%), no OutOfMemoryError recorded
+[22Jan2025 17:40:38.981] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!
