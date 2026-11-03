@@ -159,7 +159,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `pick_and_add_folder` | — | `Instance \| null` | | M3 |
 | `remove_manual_instance` | `instanceId` | `null` | | M3 |
 | `pick_launcher_root` | `launcher` | `DiscoveryReport \| null` | | M3 |
-| `remove_launcher_root` | `path` (must equal a stored entry) | `null` | | M3 |
+| `remove_launcher_root` | `path` (must equal a stored launcher root, or else a stored manual folder, so a manual folder that no longer exists can still be dropped; narrows scope only) | `null` | | M3 |
 | `pick_mrpack` | — | `Instance \| null` | | M7 |
 | `scan_instance` | `instanceId` | `ScanResult` | `ScanStarted`, then `ScanProgress` | M3 |
 | `list_log_sources` | `instanceId` | `LogSource[]` | | M4 |
@@ -220,3 +220,7 @@ Scan flow (M3):
 2. Rust returns the `ScanResult`.
 3. The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously. Checks are pure and fast.
 4. The UI paints tile states from the findings' culprits.
+
+Scope notes (M3): launcher root folders added with `pick_launcher_root` are **not** PathGuard
+roots themselves. Only the instance roots discovered inside them are, so a Prism root's
+`accounts.json` stays out of reach. The app data dir is a pinned root.

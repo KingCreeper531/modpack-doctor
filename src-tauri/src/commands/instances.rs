@@ -48,23 +48,9 @@ pub fn canonical_dir(p: &Path) -> Result<PathBuf> {
     Ok(canon)
 }
 
-fn is_dir(p: &Path) -> bool {
-    std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
-}
-
-/// The game dir discovery uses for a manually added folder (mirrors
-/// `discovery::manual::locate_game_dir`, which is crate-private to discovery): the folder
-/// itself if it has `mods/`, else its `minecraft/` / `.minecraft/` (Prism layout), else itself.
+/// The game dir discovery uses for a manually added folder (same function, so they can't drift).
 pub fn manual_game_dir(folder: &Path) -> PathBuf {
-    if is_dir(&folder.join("mods")) {
-        return folder.to_path_buf();
-    }
-    let plain = folder.join("minecraft");
-    let dot = folder.join(".minecraft");
-    if is_dir(&plain) || is_dir(&dot) {
-        return if is_dir(&dot) && !is_dir(&plain) { dot } else { plain };
-    }
-    folder.to_path_buf()
+    discovery::locate_game_dir(folder)
 }
 
 /// Instance id discovery gives a manually added folder.

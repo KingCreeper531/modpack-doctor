@@ -29,6 +29,7 @@ use crate::model::{DiscoveryReport, Launcher, ProbeResult, Settings};
 use common::{canonical, is_dir, location_key, resolve, Outcome};
 
 pub use env::{Env, Os, ENV_VARS};
+pub use manual::locate_game_dir;
 pub use modrinth::DbOptions;
 
 /// User-configured inputs (from `Settings.manual_folders` / `Settings.launcher_roots`).

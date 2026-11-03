@@ -9,7 +9,7 @@ use super::env::Env;
 use super::{curseforge, prism, side};
 
 /// The game dir for a folder that may be an instance root or a game dir itself.
-pub(crate) fn locate_game_dir(folder: &Path) -> PathBuf {
+pub fn locate_game_dir(folder: &Path) -> PathBuf {
     if is_dir(&folder.join("mods")) {
         return folder.to_path_buf();
     }
