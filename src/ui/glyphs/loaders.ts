@@ -10,7 +10,7 @@ export const LOADER_NAME: Record<LoaderKind, string> = {
   unknown: 'Unknown loader',
 };
 
-/** Three-letter codes for the 64px mod-table loader column (DESIGN.md §6.6). */
+/** Three-letter codes for the 80px mod-table loader column (DESIGN.md §6.6). */
 export const LOADER_ABBR: Record<LoaderKind, string> = {
   forge: 'FRG',
   neoforge: 'NEO',
