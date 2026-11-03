@@ -39,8 +39,10 @@ export const CRASH_SIGNALS: readonly CrashAnchor[] = [
   ...fatal('Failed to start Minecraft', 'Minecraft has crashed', 'A mod crashed on startup'),
   // A Fabric/Quilt entrypoint threw: the loader aborts the launch.
   ...fatal('Could not execute entrypoint stage'),
-  // Vanilla server/client crash handlers (each is followed by a crash report).
-  ...fatal('Encountered an unexpected exception', 'Unreported exception thrown'),
+  // Vanilla server/client crash handlers. A real crash writes a crash report right after (fatal on
+  // its own), and an integrated-server failure can leave the client running, so these only
+  // count with an exit or a crash file.
+  ...contextual('Encountered an unexpected exception', 'Unreported exception thrown'),
   // Quilt loader-phase failure report (header, its `Crashed!` title, and the report file name
   // Quilt logs to latest.log): the Quilt equivalents of the incompatible-mod-set header.
   ...fatal('---- Quilt Loader', '---- Crashed! ----', '-quilt_loader.txt'),
