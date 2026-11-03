@@ -35,12 +35,13 @@ export const commands = {
 	 */
 	readLogDigest: (instanceId: string, sourceId: string, anchors: string[], options: DigestOptions | null) => typedError<LogDigest, AppError>(__TAURI_INVOKE("read_log_digest", { instanceId, sourceId, anchors, options })),
 	/**
-	 *  Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected`.
-	 *  `anchors` = `src/core/crash/anchors.ts`, matched against new `latest.log` lines. Rust never
-	 *  starts watchers on its own: at startup the UI re-arms every id in `Settings.watched` by
-	 *  calling this with `enabled = true` and the current anchors (ignored when disabling).
+	 *  Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
+	 *  episode rules in `model/logs.rs`. `anchors` = the tiered list from
+	 *  `src/core/crash/anchors.ts` (`CRASH_ANCHORS`), matched against new `latest.log` lines. Rust
+	 *  never starts watchers on its own: at startup the UI re-arms every id in `Settings.watched`
+	 *  by calling this with `enabled = true` and the current anchors (ignored when disabling).
 	 */
-	setWatch: (instanceId: string, enabled: boolean, anchors: string[]) => typedError<null, AppError>(__TAURI_INVOKE("set_watch", { instanceId, enabled, anchors })),
+	setWatch: (instanceId: string, enabled: boolean, anchors: WatchAnchor[]) => typedError<null, AppError>(__TAURI_INVOKE("set_watch", { instanceId, enabled, anchors })),
 	/**  `POST /v2/version_files` (sha1), batched + cached. `refresh` bypasses the disk cache. */
 	modrinthIdentify: (sha1s: string[], refresh: boolean) => typedError<HashLookup, AppError>(__TAURI_INVOKE("modrinth_identify", { sha1s, refresh })),
 	/**
@@ -113,6 +114,19 @@ export const events = {
 };
 
 /* Types */
+/**  How a watch-mode anchor hit is treated (see module docs). Set per anchor in `src/core/crash`. */
+export type AnchorTier = 
+/**
+ *  The game cannot continue (crash header, ResolutionException, missing mandatory deps,
+ *  incompatible mod set, mod loading failed, …): opens an episode and emits promptly.
+ */
+"fatal" | 
+/**
+ *  Often logged by healthy games (`Caused by`, mixin warnings, NoClassDefFoundError, …):
+ *  recorded silently; emits only if the process exits within `CONTEXT_WINDOW_MS`.
+ */
+"contextual";
+
 /**  The IPC error shape. */
 export type AppError = {
 	kind: ErrorKind,
@@ -161,8 +175,8 @@ export type CrashDetected = {
 
 /**  Why watch mode opened a crash episode. */
 export type CrashTrigger = { kind: "newCrashReport"; source_id: string } | { kind: "newHsErr"; source_id: string } | 
-/**  A new `latest.log` line contained a TS anchor (first hit per anchor only). */
-{ kind: "logAnchor"; anchor: string; line: number } | 
+/**  A new `latest.log` line contained a TS anchor (first hit per anchor per episode only). */
+{ kind: "logAnchor"; anchor: string; tier: AnchorTier; line: number } | 
 /**  The instance's Java process exited (exit code is not observable for non-child processes). */
 { kind: "processExit"; pid: number };
 
@@ -762,6 +776,12 @@ export type UpdateInfo = {
 	version: string,
 	notes: string | null,
 	date: string | null,
+};
+
+/**  One anchor for `set_watch`: a literal, case-sensitive substring and its tier. */
+export type WatchAnchor = {
+	text: string,
+	tier: AnchorTier,
 };
 
 export type WorkOrder = {
