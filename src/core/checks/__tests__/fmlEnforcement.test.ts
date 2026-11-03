@@ -33,8 +33,14 @@ describe('FML VersionSupportMatrix', () => {
     expect(fmlFallbacks(loader, mc, dep)).toEqual(expected);
   });
 
-  it('has exactly the three researched rows', () => {
-    expect(FML_VERSION_SUPPORT_MATRIX.map((r) => `${r.loader}@${r.mc}`)).toEqual(['neoforge@1.21.1', 'neoforge@1.21.8', 'forge@1.20.1']);
+  it('has exactly the researched rows', () => {
+    expect(FML_VERSION_SUPPORT_MATRIX.map((r) => `${r.loader}@${r.mcs.join('|')}${r.minLoaderVersion ? `>=${r.minLoaderVersion}` : ''}`)).toEqual([
+      'forge@1.16.4|1.16.5',
+      'forge@1.19.2',
+      'forge@1.20.1>=47.2.16',
+      'neoforge@1.21.1',
+      'neoforge@1.21.8',
+    ]);
   });
 
   it('fallbacks never apply to Fabric-syntax ranges', () => {
@@ -103,7 +109,7 @@ describe('E-LOADER-RANGE with FML fallbacks', () => {
     ['neoforge 1.21.3 is strict', 'neoforge', '1.21.3', '21.3.50', '[21.0.0-beta,21.3.40)', undefined, 'client', 'error'],
     ['forge [47.1.80,) on 47.0.35 → error', 'forge', '1.20.1', '47.0.35', '[47.1.80,)', undefined, 'client', 'error'],
     ['forge [47,) on 47.0.35 is fine', 'forge', '1.20.1', '47.0.35', '[47,)', undefined, 'client', null],
-    ['forge [47.1.0,) on 47.0.35 → info (47.1.79 fallback)', 'forge', '1.20.1', '47.0.35', '[47.1.0,)', undefined, 'client', 'info'],
+    ['forge [47.1.0,) on 47.0.35 → error (the 47.1.79 row exists only from 47.2.16)', 'forge', '1.20.1', '47.0.35', '[47.1.0,)', undefined, 'client', 'error'],
     ['forge on 1.19.2 is strict', 'forge', '1.19.2', '43.2.0', '[43.3,)', undefined, 'client', 'error'],
   ])('%s', (_name, loader, mc, version, loaderDep, loaderSide, side, expected) => {
     const j = jar({ file: 'mod.jar', mods: [{ id: 'mod', loader, loaderDep, ...(loaderSide ? { loaderSide } : {}) }] });

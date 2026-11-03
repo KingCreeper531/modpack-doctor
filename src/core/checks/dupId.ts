@@ -6,7 +6,8 @@
  *   **warning** ("keeps the newest, ignores the older"); otherwise (the id is a secondary mod in
  *   at least one file, so two kept files declare it) → **error**.
  * - Fabric: **warning** — the resolver keeps one per id, newest preferred (best effort).
- * - Quilt, Legacy Forge, unknown loader: **error**.
+ * - Quilt, legacy FML (Forge on MC < 1.13 or a Legacy Forge pack; DuplicateModsFoundException),
+ *   unknown loader: **error**.
  * - Duplicates inside one jar (Forge + NeoForge metadata, or mods.toml + mcmod.info) are ignored.
  * - Nested jars are never compared: the loaders de-duplicate JarJar libraries by
  *   `group:artifact` and Fabric/Quilt JiJ by mod id, and a top-level copy overrides a nested one.
@@ -17,7 +18,7 @@
  */
 import type { FixAction, JarRecord, ModMeta } from '../../bindings';
 import type { Check, Evidence, Finding } from '../model';
-import { versionSyntaxFor } from '../pack';
+import { mcCompare, versionSyntaxFor } from '../pack';
 import { versionApi } from '../version';
 import { contextFor } from './context';
 import { jarRef, listText, makeFinding, metadataEvidence, modIdLines, modName } from './evidence';
@@ -48,7 +49,9 @@ export const dupIdCheck: Check = {
 
     const out: Finding[] = [];
     const kind = ctx.pack.loader?.kind;
-    const fml = kind === 'forge' || kind === 'neoforge';
+    // Modern FML only: legacy FML (MC < 1.13) throws DuplicateModsFoundException for any duplicate.
+    const legacy = kind === 'forge' && (mcCompare(ctx.pack.mcVersion, '1.13') ?? 0) < 0;
+    const fml = (kind === 'forge' && !legacy) || kind === 'neoforge';
     for (const { jars, ids } of sets.values()) {
       ids.sort();
       const firstIds = jars.map((j) => ctx.relevant(j)[0]?.modId);

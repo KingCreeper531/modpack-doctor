@@ -2,7 +2,9 @@
  * E-MC-RANGE: an effective metadata entry's `mcRange` excludes the pack's MC version.
  * - Evaluated with `evaluateRange` (pack/fmlCompat.ts): plain `versionApi.satisfies(mc, range,
  *   'minecraft')`, then — Maven/FML ranges only — FML's `VersionSupportMatrix` fallbacks
- *   (NeoForge 1.21.1 also accepts `1.21`, NeoForge 1.21.8 also `1.21.7`).
+ *   (e.g. Forge 1.16.5 also accepts `1.16.3`/`1.16.4`, Forge 1.19.2 `1.19.1`, NeoForge 1.21.1
+ *   `1.21`, NeoForge 1.21.8 `1.21.7`; full table in pack/fmlCompat.ts).
+ * - `mcmod.info` entries are skipped: legacy FML never reads `mcversion`.
  *   - excluded by the actual version and every fallback → **error** (FML/Fabric/Quilt refuse it);
  *   - admitted only by a fallback → **info** (it loads through the compatibility override);
  *   - unknown (unknown MC, unparseable/unrepresentable range) → nothing.
@@ -14,7 +16,7 @@
  * Fixes (error): disable the jar; manual "get the build for <MC>". Info: manual only.
  */
 import type { Check, Finding } from '../model';
-import { describeFallback, evaluateRange } from '../pack';
+import { describeFallback, evaluateRange, MCMOD_INFO } from '../pack';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rawRange, rangeDependency } from './evidence';
 import { depSideApplies } from './missingDep';
@@ -29,10 +31,12 @@ export const mcRangeCheck: Check = {
     const out: Finding[] = [];
     for (const e of ctx.effective) {
       const range = e.mod.mcRange;
-      if (!range) continue;
+      // Legacy FML never reads mcmod.info `mcversion` (it enforces @Mod acceptedMinecraftVersions,
+      // which the scanner does not read yet).
+      if (!range || e.mod.metadataFile === MCMOD_INFO) continue;
       const dep = rangeDependency(e.mod, ['minecraft']);
       if (dep && !depSideApplies(dep, ctx.pack.side)) continue;
-      const verdict = evaluateRange(mc, range, 'minecraft', 'minecraft', { loader: ctx.pack.loader?.kind, mc });
+      const verdict = evaluateRange(mc, range, 'minecraft', 'minecraft', { loader: ctx.pack.loader?.kind, mc, loaderVersion: ctx.pack.loader?.version ?? null });
       if (verdict.kind === 'pass' || verdict.kind === 'unknown') continue;
       const name = modName(e.mod);
       const wants = describeRange(range, 'minecraft');

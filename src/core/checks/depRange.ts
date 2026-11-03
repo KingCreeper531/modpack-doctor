@@ -21,6 +21,7 @@ import type { Check, Finding, JarRef } from '../model';
 import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES } from '../pack';
 import { versionApi } from '../version';
 import { isBuiltinDependency } from './builtins';
+import { aliasGroup } from './connector';
 import { contextFor, type CheckContext, type ModEntry } from './context';
 import {
   dependencyLines,
@@ -54,7 +55,7 @@ function platformFinding(ctx: CheckContext, e: ModEntry, dep: Dependency): Findi
   const actual = dep.modId === 'minecraft' ? ctx.pack.mcVersion : loader && loader.kind === dep.modId ? loader.version : null;
   if (!actual) return null;
   const subject = dep.modId === 'minecraft' ? 'minecraft' : 'other';
-  const verdict = evaluateRange(actual, dep.range, subject, dep.modId, { loader: loader?.kind, mc: ctx.pack.mcVersion });
+  const verdict = evaluateRange(actual, dep.range, subject, dep.modId, { loader: loader?.kind, mc: ctx.pack.mcVersion, loaderVersion: loader?.version ?? null });
   if (verdict.kind === 'pass' || verdict.kind === 'unknown') return null;
   const name = modName(e.mod);
   const target = dep.modId === 'minecraft' ? 'Minecraft' : LOADER_NAMES[loader?.kind ?? 'unknown'];
@@ -103,6 +104,7 @@ export const depRangeCheck: Check = {
           continue;
         }
         if (isBuiltinDependency(dep.modId, ctx.pack)) continue;
+        if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // widened to * by Connector
         const providers = ctx.versionProviders(dep.modId).filter((p) => p.jar.id !== e.jar.id);
         if (providers.length === 0) continue;
         if (providers.some((p) => versionApi.satisfies(p.mod.version, dep.range, 'other') !== false)) continue;

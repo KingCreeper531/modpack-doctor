@@ -10,7 +10,7 @@
  * Fix: disable the jar.
  */
 import type { Check, Finding } from '../model';
-import { describeLoader, LOADER_NAMES, loaderAccepts, loaderReadsFile } from '../pack';
+import { describeLoader, LOADER_NAMES, loaderAccepts, loaderReadsFile, mcCompare, MODS_TOML, NEOFORGE_TOML } from '../pack';
 import { contextFor } from './context';
 import { disable, jarRef, makeFinding, metadataEvidence, modIdLines, modName } from './evidence';
 
@@ -26,6 +26,7 @@ export const wrongLoaderCheck: Check = {
     for (const jar of ctx.topLevel) {
       const declared = jar.mods.filter((m) => m.loader !== 'unknown');
       if (declared.length === 0 || ctx.relevant(jar).length > 0) continue;
+      if (ctx.connector.ignored(jar) !== null) continue; // skipped silently by Sinytra Connector
       if ((jar.metadataErrors ?? []).some((e) => loaderReadsFile(kind, mc, jar, e.file))) continue;
       const loaders = [...new Set(declared.map((m) => LOADER_NAMES[m.loader]))];
       // Right loader, wrong file: the entry would be accepted, but the loader never reads it.
@@ -34,11 +35,20 @@ export const wrongLoaderCheck: Check = {
       if (!first) continue;
       const packLoader = describeLoader(ctx.pack);
       const name = modName(first);
-      const title = unread
-        ? `${jar.fileName} only has ${unread.metadataFile}, which ${LOADER_NAMES[kind]}${mc ? ` on ${mc}` : ''} does not read`
+      // Legacy FML (MC < 1.13) with a jar that only has 1.13+ FML metadata.
+      const legacyPack = (kind === 'forge' || kind === 'legacyforge') && (mcCompare(mc, '1.13') ?? 0) < 0;
+      const modern = legacyPack && declared.every((m) => m.metadataFile === MODS_TOML || m.metadataFile === NEOFORGE_TOML);
+      const title = modern
+        ? `${jar.fileName} is made for Minecraft 1.13+, but this pack runs ${mc}`
+        : unread
+        ?`${jar.fileName} only has ${unread.metadataFile}, which ${LOADER_NAMES[kind]}${mc ? ` on ${mc}` : ''} does not read`
         : `${jar.fileName} is a ${loaders.join('/')} mod, but this pack runs ${LOADER_NAMES[kind]}`;
-      const explanation = unread
-        ? `${name} (${jar.fileName}) declares itself only in ${unread.metadataFile}. ${packLoader} on Minecraft ${mc ?? '(unknown)'} ` +
+      const explanation = modern
+        ? `${name} (${jar.fileName}) only declares itself in ${first.metadataFile}, a format introduced with Minecraft 1.13. ` +
+          `Forge on ${mc} never reads that file; it finds the mod class and refuses it as made for a different Minecraft version. ` +
+          `Disable it and install the build of ${name} for ${mc}, if one exists.`
+        : unread
+        ?`${name} (${jar.fileName}) declares itself only in ${unread.metadataFile}. ${packLoader} on Minecraft ${mc ?? '(unknown)'} ` +
           `reads a different metadata file, so it does not see this mod at all — it is ignored, and anything that depends on it will be missing. ` +
           `Install the build of ${name} made for this Minecraft version, and disable this one.`
         : `${name} (${jar.fileName}) only has ${loaders.join(' and ')} metadata, so ${packLoader} cannot load it. ` +

@@ -105,9 +105,10 @@ export const MCMOD_INFO = 'mcmod.info';
  *   leftover `META-INF/mods.toml` (stale, empty, unexpanded template) is ignored by the loader.
  * - NeoForge 1.20.1–1.20.4: `META-INF/mods.toml` (`neoforge.mods.toml` did not exist yet).
  * - NeoForge with an unknown MC version: both FML files (we cannot tell).
- * - Forge: `META-INF/mods.toml` (+ `mcmod.info`, whose entries `loaderAccepts` limits to < 1.13).
- *   Forge never reads `neoforge.mods.toml`.
- * - Legacy Forge: `mcmod.info` and `META-INF/mods.toml` (the MC version decides via `loaderAccepts`).
+ * - Forge on MC ≥ 1.13: `META-INF/mods.toml`. Forge never reads `neoforge.mods.toml`.
+ * - Legacy FML (Forge on MC < 1.13, or a `legacyforge` pack): only `mcmod.info`. A 1.13+
+ *   `mods.toml` is never read there (FML finds the `@Mod` class and rejects it as wrong-MC).
+ * - Forge with an unknown MC version: `mods.toml` and `mcmod.info` (we cannot tell).
  * - Fabric: `fabric.mod.json`. Quilt: `quilt.mod.json` when the jar has one, else `fabric.mod.json`.
  */
 export function metadataFilesRead(packLoader: LoaderKind, mc: string | null, present: readonly string[]): ReadonlySet<string> | null {
@@ -117,10 +118,13 @@ export function metadataFilesRead(packLoader: LoaderKind, mc: string | null, pre
       if (c === null) return new Set([NEOFORGE_TOML, MODS_TOML]);
       return new Set([c >= 0 ? NEOFORGE_TOML : MODS_TOML]);
     }
-    case 'forge':
-      return new Set([MODS_TOML, MCMOD_INFO]);
+    case 'forge': {
+      const c = mcCompare(mc, '1.13');
+      if (c === null) return new Set([MODS_TOML, MCMOD_INFO]);
+      return new Set([c < 0 ? MCMOD_INFO : MODS_TOML]);
+    }
     case 'legacyforge':
-      return new Set([MCMOD_INFO, MODS_TOML]);
+      return new Set([MCMOD_INFO]);
     case 'fabric':
       return new Set([FABRIC_JSON]);
     case 'quilt':

@@ -13,6 +13,7 @@ import type { Dependency, FixAction, JarRecord } from '../../bindings';
 import type { Check, Finding } from '../model';
 import { entryRelevant } from '../pack';
 import { isBuiltinDependency } from './builtins';
+import { aliasGroup } from './connector';
 import { contextFor, type CheckContext } from './context';
 import { dependencyLines, describeRange, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rawRange } from './evidence';
 
@@ -43,6 +44,9 @@ export const missingDepCheck: Check = {
         if (dep.kind !== 'required' || dep.modId === e.mod.modId) continue;
         if (isBuiltinDependency(dep.modId, ctx.pack) || !depSideApplies(dep, ctx.pack.side)) continue;
         if (ctx.providers(dep.modId).length > 0) continue;
+        // Connector widens aliased ids (cloth_config ↔ cloth-config2, …) to "any of them".
+        const group = ctx.connector.via(e.jar) ? aliasGroup(dep.modId) : null;
+        if (group && group.some((a) => ctx.providers(a).length > 0)) continue;
         const name = modName(e.mod);
         const wants = describeRange(dep.range);
         const anyVersion = rawRange(dep.range) === '*' || wants.startsWith('any version');

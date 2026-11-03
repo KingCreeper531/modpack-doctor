@@ -7,7 +7,8 @@
  * - *relevant* entry: a `ModMeta` from a metadata file the pack's loader reads, targeting a loader
  *   it runs (`entryRelevant` = `metadataFilesRead` + `loaderAccepts`, pack/loaders.ts); all
  *   entries when the pack loader is unknown. E.g. NeoForge ≥ 1.20.5 ignores a leftover
- *   `META-INF/mods.toml`, so its entries never reach any check.
+ *   `META-INF/mods.toml`, so its entries never reach any check. With Sinytra Connector active,
+ *   the Fabric entries of Fabric-only jars are relevant too (checks/connector.ts).
  * - *loaded* entry: relevant and not excluded by its environment for the pack side (Fabric/Quilt
  *   `environment: client` and Forge `clientSideOnly` mods are skipped on a dedicated server;
  *   Fabric `environment: server` mods are skipped on a client).
@@ -23,6 +24,7 @@ import type { JarRecord, ModEnvironment, ModMeta, Side } from '../../bindings';
 import type { CheckInput, Evidence, JarIndex, PackContext } from '../model';
 import { buildJarIndex, describePack, entryRelevant, topLevelOf, versionSyntaxFor } from '../pack';
 import { versionApi } from '../version';
+import { connectorView, normalizeId, type ConnectorView } from './connector';
 
 export interface ModEntry {
   /** Jar that holds the metadata (nested jar for bundled mods). */
@@ -57,6 +59,8 @@ export interface CheckContext {
    * per `group:artifact`), every copy for Fabric/Quilt JiJ (the resolver may pick any of them).
    */
   versionProviders(modId: string): readonly ModEntry[];
+  /** Sinytra Connector state (checks/connector.ts); `active: false` without it. */
+  readonly connector: ConnectorView;
   /** `note` evidence describing the pack identity and where it came from. */
   readonly packNote: Evidence;
 }
@@ -114,14 +118,19 @@ function build(input: CheckInput): CheckContext {
   const active = sorted.filter((j) => index.byId.has(j.id));
 
   const packKind = pack.loader?.kind ?? 'unknown';
-  const relevantMemo = new Map<string, ModMeta[]>();
-  const relevant = (jar: JarRecord): ModMeta[] => {
-    let r = relevantMemo.get(jar.id);
+  const baseMemo = new Map<string, ModMeta[]>();
+  const baseRelevant = (jar: JarRecord): ModMeta[] => {
+    let r = baseMemo.get(jar.id);
     if (!r) {
       r = jar.mods.filter((m) => entryRelevant(packKind, pack.mcVersion, jar, m));
-      relevantMemo.set(jar.id, r);
+      baseMemo.set(jar.id, r);
     }
     return r;
+  };
+  const connector = connectorView({ packLoader: packKind, mc: pack.mcVersion, active, baseRelevant });
+  const relevant = (jar: JarRecord): ModMeta[] => {
+    const base = baseRelevant(jar);
+    return base.length > 0 || !connector.active ? base : connector.mods(jar);
   };
   const loaded = (jar: JarRecord): ModMeta[] => relevant(jar).filter((m) => sideAccepts(m.environment, pack.side));
   const activeIds = new Set(active.map((j) => j.id));
@@ -186,7 +195,18 @@ function build(input: CheckInput): CheckContext {
     }
   }
 
-  const providers = (modId: string): readonly ModEntry[] => providerMap.get(modId) ?? [];
+  // With Connector, `x-y` and `x_y` name the same mod (FFAPI modules satisfy Fabric API deps).
+  const normalizedMap = new Map<string, ModEntry[]>();
+  if (connector.active) {
+    for (const [id, list] of providerMap) {
+      const key = normalizeId(id);
+      const cur = normalizedMap.get(key) ?? [];
+      for (const e of list) if (!cur.includes(e)) cur.push(e);
+      normalizedMap.set(key, cur);
+    }
+  }
+  const providers = (modId: string): readonly ModEntry[] =>
+    providerMap.get(modId) ?? (connector.active ? normalizedMap.get(normalizeId(modId)) : undefined) ?? [];
   const versionProviders = (modId: string): readonly ModEntry[] => {
     const list = providers(modId);
     const tops = list.filter((e) => e.jar.depth === 0);
@@ -209,6 +229,7 @@ function build(input: CheckInput): CheckContext {
     topOf,
     providers,
     versionProviders,
+    connector,
     packNote: { kind: 'note', text: describePack(pack) },
   };
 }
