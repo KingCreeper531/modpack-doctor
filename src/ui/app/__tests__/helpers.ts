@@ -2,7 +2,7 @@
 import type { Instance, PackOverride, ScanResult } from '../../../bindings';
 import type { CheckInput, Finding, PackContext } from '../../../core/model';
 import { createMockBackend, type MockOptions } from '../mockIpc';
-import { createAppStore, type AppStore, type CoreApi } from '../store';
+import { createAppStore, type AppStore, type CoreApi, type StoreDeps } from '../store';
 
 export function manualFrames() {
   const queue: Array<() => void> = [];
@@ -51,12 +51,12 @@ export function fakeCore(make: (input: CheckInput) => Finding[] = () => []) {
   return { core, calls };
 }
 
-export function mockStore(opts: Partial<MockOptions> = {}, make?: (input: CheckInput) => Finding[], initialSelect?: string) {
+export function mockStore(opts: Partial<MockOptions> = {}, make?: (input: CheckInput) => Finding[], initialSelect?: string, extra: Partial<StoreDeps> = {}) {
   const backend = createMockBackend({ scanMs: 0, latencyMs: 0, ...opts });
   const frames = manualFrames();
   const { core, calls } = fakeCore(make);
   let t = 1_000_000;
-  const store: AppStore = createAppStore({ backend, core, frame: frames.frame, now: () => (t += 100), initialSelect: initialSelect ?? null });
+  const store: AppStore = createAppStore({ backend, core, frame: frames.frame, now: () => (t += 100), initialSelect: initialSelect ?? null, ...extra });
   return { store, backend, frames, calls };
 }
 

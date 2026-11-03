@@ -13,10 +13,12 @@ export interface ToggleProps {
   /** Show the state word (`on` / `off`) beside the track. */
   showState?: boolean;
   disabled?: boolean;
+  /** Visible label before the track (e.g. `Watch for crashes`); the accessible name stays `label`. */
+  text?: string;
   className?: string;
 }
 
-export function Toggle({ on, onChange, label, showState = false, disabled = false, className }: ToggleProps) {
+export function Toggle({ on, onChange, label, showState = false, disabled = false, text, className }: ToggleProps) {
   return (
     <button
       type="button"
@@ -26,6 +28,7 @@ export function Toggle({ on, onChange, label, showState = false, disabled = fals
       onClick={() => onChange?.(!on)}
       className={cx('inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60', className)}
     >
+      {text ? <span className="t-small text-fg-dim">{text}</span> : null}
       <span
         aria-hidden
         className={cx('relative block h-[14px] w-[28px] shrink-0 rounded-1', on ? 'bg-ok-fill' : 'bg-tile-off')}

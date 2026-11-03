@@ -276,8 +276,11 @@ describe('override editor', () => {
     fireEvent.change(within(form).getByLabelText('Loader ver.'), { target: { value: '49.0.3' } });
     await act(async () => {
       fireEvent.submit(form);
-      await until(() => spy.mock.calls.length === 1);
+      // `setSettings` is called first and applies the patch only after its (mock) round trip;
+      // wait for the store to hold the answer, not just for the call (this raced before).
+      await until(() => spy.mock.calls.length === 1 && m.store.getState().settings.overrides[ATM.id] !== undefined);
     });
+    expect(spy).toHaveBeenCalledTimes(1);
     expect(m.backend.settings().overrides[ATM.id]).toEqual({ mcVersion: '1.20.4', loader: { kind: 'forge', version: '49.0.3' }, side: null });
   });
 });

@@ -1,6 +1,7 @@
 /** Inspector: one finding. Code, diagnosis, full explanation, culprits, evidence and fixes. */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
+import type { Finding } from '../../../core/model';
 import { Button } from '../../components/Button';
 import { Chip } from '../../components/Chip';
 import { cx } from '../../components/cx';
@@ -13,6 +14,16 @@ import { SubLegend } from './Plate';
 
 export function FindingDetails({ instanceId, findingId }: { instanceId: string; findingId: string }) {
   const finding = useApp((s) => s.scans[instanceId]?.findings.find((f) => f.id === findingId) ?? null);
+  if (!finding) return <p className="px-4 py-2 t-small text-fg-faint">This finding is gone after the last scan.</p>;
+  return <FindingBody instanceId={instanceId} finding={finding} />;
+}
+
+/**
+ * The shared body for static and crash findings. `afterHeader` goes between the title and the
+ * explanation (crash findings put their log source there).
+ */
+export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: string; finding: Finding; afterHeader?: ReactNode }) {
+  const findingId = finding.id;
   const result = useApp((s) => s.scans[instanceId]?.result ?? null);
   // Only errors from the inspector's own buttons; the triage row shows the ones it triggered.
   const fixError = useApp((s) => (s.fixErrorFrom[findingId] === 'inspector' ? (s.fixErrors[findingId] ?? null) : null));
@@ -26,7 +37,6 @@ export function FindingDetails({ instanceId, findingId }: { instanceId: string; 
     return n;
   }, [result]);
 
-  if (!finding) return <p className="px-4 py-2 t-small text-fg-faint">This finding is gone after the last scan.</p>;
   const label = (id: string) => names[id] ?? id;
   const steps = finding.fixes.flatMap((f) => (f.kind === 'manual' ? f.steps : []));
   const plannable = finding.fixes.filter((f) => f.kind !== 'manual');
@@ -38,6 +48,7 @@ export function FindingDetails({ instanceId, findingId }: { instanceId: string; 
         <FindingCode code={finding.code} severity={finding.severity} />
         <h3 className="t-title text-fg">{finding.title}</h3>
       </div>
+      {afterHeader}
       <p className="border-t border-line px-4 py-2 t-body text-fg">{finding.explanation}</p>
       {finding.culprits.length ? (
         <>
