@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::discovery::Discovered;
 use crate::error::{Error, Result};
 use crate::guard::PathGuard;
+use crate::logs::watch::Watchers;
 use crate::model::{DiscoveryReport, Instance};
+use crate::process::Processes;
 use crate::scan::ScanCache;
 use crate::settings::SettingsService;
 
@@ -30,6 +32,10 @@ pub struct AppState {
     pub scope_lock: Arc<tokio::sync::RwLock<()>>,
     /// Roots that are never unregistered by discovery (the app data dir).
     pub pinned_roots: Arc<RwLock<Vec<PathBuf>>>,
+    /// Java-process detection shared by watch mode and the running-game guard.
+    pub processes: Processes,
+    /// Live crash watchers by instance id (started only by `set_watch`).
+    pub watchers: Arc<Watchers>,
 }
 
 impl std::fmt::Debug for AppState {

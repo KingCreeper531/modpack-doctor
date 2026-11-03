@@ -5,6 +5,7 @@
 //! signatures do not change without an approved contract proposal.
 
 mod instances;
+mod logs;
 mod scanning;
 
 #[cfg(test)]
@@ -22,7 +23,8 @@ pub use instances::{
 };
 pub use scanning::{scan_registered, EventSink, ScanSink};
 
-use instances::{blocking, discover_blocking, pick_folder, remove_manual_blocking};
+use instances::{blocking, discover_blocking, pick_folder};
+pub use logs::{disable_watch, enable_watch, forget_instance, remove_manual_and_forget};
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -70,7 +72,8 @@ pub async fn pick_and_add_folder(app: AppHandle, state: State<'_, AppState>) -> 
 pub async fn remove_manual_instance(state: State<'_, AppState>, instance_id: String) -> Cmd<()> {
     let st = AppState::clone(&state);
     let _scope = st.scope_lock.clone().write_owned().await;
-    Ok(blocking(move || remove_manual_blocking(&st, &instance_id)).await?)
+    // Also stops its watcher and drops its `watched` entry and pack override.
+    Ok(blocking(move || remove_manual_and_forget(&st, &instance_id)).await?)
 }
 
 /// Native folder picker for an extra launcher data root (portable Prism/MultiMC, custom
@@ -146,8 +149,10 @@ pub async fn scan_instance(app: AppHandle, state: State<'_, AppState>, instance_
 /// Crash reports, latest.log, debug.log, hs_err files; newest first.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_log_sources(_state: State<'_, AppState>, _instance_id: String) -> Cmd<Vec<LogSource>> {
-    not_yet("Crash and log analysis" /* M4 */)
+pub async fn list_log_sources(state: State<'_, AppState>, instance_id: String) -> Cmd<Vec<LogSource>> {
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().read_owned().await;
+    Ok(blocking(move || logs::list_sources_blocking(&st, &instance_id)).await?)
 }
 
 /// Streams the file and returns a bounded digest. `anchors` come from `src/core/crash/anchors.ts`.
@@ -155,13 +160,15 @@ pub async fn list_log_sources(_state: State<'_, AppState>, _instance_id: String)
 #[tauri::command]
 #[specta::specta]
 pub async fn read_log_digest(
-    _state: State<'_, AppState>,
-    _instance_id: String,
-    _source_id: String,
-    _anchors: Vec<String>,
-    _options: Option<DigestOptions>,
+    state: State<'_, AppState>,
+    instance_id: String,
+    source_id: String,
+    anchors: Vec<String>,
+    options: Option<DigestOptions>,
 ) -> Cmd<LogDigest> {
-    not_yet("Crash and log analysis" /* M4 */)
+    let st = AppState::clone(&state);
+    let _scope = st.scope_lock.clone().read_owned().await;
+    Ok(blocking(move || logs::read_digest_blocking(&st, &instance_id, &source_id, &anchors, options)).await?)
 }
 
 /// Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
@@ -172,13 +179,20 @@ pub async fn read_log_digest(
 #[tauri::command]
 #[specta::specta]
 pub async fn set_watch(
-    _app: AppHandle,
-    _state: State<'_, AppState>,
-    _instance_id: String,
-    _enabled: bool,
-    _anchors: Vec<WatchAnchor>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    instance_id: String,
+    enabled: bool,
+    anchors: Vec<WatchAnchor>,
 ) -> Cmd<()> {
-    not_yet("Watching for crashes" /* M4 */)
+    let st = AppState::clone(&state);
+    if enabled {
+        let sink: std::sync::Arc<dyn crate::logs::watch::CrashSink> =
+            std::sync::Arc::new(crate::logs::watch::TauriCrashSink::new(app));
+        Ok(blocking(move || enable_watch(&st, &instance_id, anchors, sink)).await?)
+    } else {
+        Ok(blocking(move || disable_watch(&st, &instance_id)).await?)
+    }
 }
 
 // ── Modrinth ─────────────────────────────────────────────────────────────────
@@ -289,8 +303,9 @@ pub async fn plan_undo(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn game_running(_state: State<'_, AppState>, _instance_id: String) -> Cmd<GameStatus> {
-    not_yet("Detecting a running game" /* M6 */)
+pub async fn game_running(state: State<'_, AppState>, instance_id: String) -> Cmd<GameStatus> {
+    let st = AppState::clone(&state);
+    Ok(blocking(move || logs::game_status_blocking(&st, &instance_id)).await?)
 }
 
 // ── Settings, window, reports, updates ───────────────────────────────────────
