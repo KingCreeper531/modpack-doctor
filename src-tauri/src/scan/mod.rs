@@ -50,7 +50,7 @@ pub fn is_jar_file_name(name: &str) -> bool {
 }
 
 fn is_disabled_path(path: &str) -> bool {
-    path.to_ascii_lowercase().ends_with(jar_id::DISABLED_SUFFIX)
+    jar_id::strip_disabled(path).is_some()
 }
 
 fn file_name_of(path: &str) -> String {

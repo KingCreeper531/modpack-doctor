@@ -534,8 +534,8 @@ fn disabled_ids_and_collision() {
     assert_eq!(
         got,
         vec![
-            ("mods/Z.JAR.DISABLED", "mods/Z.JAR.DISABLED", true),
-            ("mods/Z.JAR.DISABLED!/inner.jar", "inner.jar", true),
+            ("mods/Z.JAR", "mods/Z.JAR.DISABLED", true),
+            ("mods/Z.JAR!/inner.jar", "inner.jar", true),
             ("mods/x.jar", "mods/x.jar", false),
             ("mods/x.jar#disabled", "mods/x.jar.disabled", true),
             ("mods/y.jar", "mods/y.jar.disabled", true),

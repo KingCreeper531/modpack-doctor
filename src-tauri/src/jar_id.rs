@@ -13,19 +13,27 @@ pub fn normalize(rel: &str) -> String {
     rel.replace('\\', "/")
 }
 
+/// `path` without a `.disabled` suffix, matched ASCII case-insensitively (launchers treat
+/// `X.JAR.DISABLED` as disabled too). None when there is no such suffix.
+pub fn strip_disabled(path: &str) -> Option<&str> {
+    let cut = path.len().checked_sub(DISABLED_SUFFIX.len())?;
+    let (base, suffix) = (path.get(..cut)?, path.get(cut..)?);
+    suffix.eq_ignore_ascii_case(DISABLED_SUFFIX).then_some(base)
+}
+
 /// Ids for a set of top-level jar paths (relative to the scan root, any separator).
 /// Returns `(id, normalized path)` in input order.
 pub fn top_level_ids(paths: &[String]) -> Vec<(String, String)> {
     let normalized: Vec<String> = paths.iter().map(|p| normalize(p)).collect();
     let enabled: HashSet<&str> = normalized
         .iter()
-        .filter(|p| !p.ends_with(DISABLED_SUFFIX))
+        .filter(|p| strip_disabled(p).is_none())
         .map(String::as_str)
         .collect();
     normalized
         .iter()
         .map(|path| {
-            let id = match path.strip_suffix(DISABLED_SUFFIX) {
+            let id = match strip_disabled(path) {
                 Some(base) if enabled.contains(base) => format!("{base}{DISABLED_MARKER}"),
                 Some(base) => base.to_string(),
                 None => path.clone(),
@@ -55,14 +63,34 @@ pub fn resolve(root: &Path, id: &str) -> Option<String> {
             .unwrap_or(false)
     };
     if let Some(base) = id.strip_suffix(DISABLED_MARKER) {
-        let p = format!("{base}{DISABLED_SUFFIX}");
-        return exists(&p).then_some(p);
+        return disabled_twin(root, base);
     }
     if exists(id) {
         return Some(id.to_string());
     }
-    let p = format!("{id}{DISABLED_SUFFIX}");
-    exists(&p).then_some(p)
+    disabled_twin(root, id)
+}
+
+/// `<base>.disabled` as it exists on disk, with its `.disabled` suffix in any letter case.
+fn disabled_twin(root: &Path, base: &str) -> Option<String> {
+    let canonical = format!("{base}{DISABLED_SUFFIX}");
+    let dir = crate::guard::PathGuard::join_relative(root, &canonical).ok()?;
+    if dir.is_file() {
+        return Some(canonical);
+    }
+    let (parent_rel, base_name) = match base.rsplit_once('/') {
+        Some((p, n)) => (Some(p), n),
+        None => (None, base),
+    };
+    let parent = dir.parent()?;
+    std::fs::read_dir(parent).ok()?.flatten().find_map(|entry| {
+        let name = entry.file_name().into_string().ok()?;
+        let matches = strip_disabled(&name) == Some(base_name) && entry.path().is_file();
+        matches.then(|| match parent_rel {
+            Some(p) => format!("{p}/{name}"),
+            None => name,
+        })
+    })
 }
 
 #[cfg(test)]
@@ -82,6 +110,26 @@ mod tests {
     #[test]
     fn collision_marks_disabled_twin() {
         assert_eq!(ids(&["mods/x.jar.disabled", "mods/x.jar"]), vec!["mods/x.jar#disabled", "mods/x.jar"]);
+    }
+
+    #[test]
+    fn disabled_suffix_is_case_insensitive() {
+        assert_eq!(ids(&["mods/A.JAR.DISABLED"]), vec!["mods/A.JAR"]);
+        assert_eq!(ids(&["mods/a.jar.Disabled", "mods/a.jar"]), vec!["mods/a.jar#disabled", "mods/a.jar"]);
+        assert_eq!(strip_disabled("x.jar.DISABLED"), Some("x.jar"));
+        assert_eq!(strip_disabled("x.jar"), None);
+        assert_eq!(strip_disabled("ü.disabled"), Some("ü"));
+        assert_eq!(strip_disabled("ab"), None);
+    }
+
+    #[test]
+    fn resolve_finds_upper_case_disabled_suffix() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mods = tmp.path().join("mods");
+        std::fs::create_dir_all(&mods).expect("mkdir");
+        std::fs::write(mods.join("b.jar.DISABLED"), b"x").expect("write");
+        let got = resolve(tmp.path(), "mods/b.jar").expect("resolved");
+        assert!(got.eq_ignore_ascii_case("mods/b.jar.disabled"), "{got}");
     }
 
     #[test]
