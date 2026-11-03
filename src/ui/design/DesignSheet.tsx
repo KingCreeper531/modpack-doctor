@@ -76,6 +76,16 @@ function TopBar() {
 export default function DesignSheet() {
   const [selectedJar, setSelectedJar] = useState<string | null>(null);
   const sel = { selectedJar, onSelectJar: setSelectedJar };
+  // cmdk scrolls its active item into view on mount, which drags the whole sheet down to the
+  // palette specimens. Restore the requested anchor (or the top) once that has happened.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const target = window.location.hash ? document.getElementById(window.location.hash.slice(1)) : null;
+      if (target) target.scrollIntoView({ block: 'start' });
+      else window.scrollTo(0, 0);
+    }, 50);
+    return () => window.clearTimeout(id);
+  }, []);
   return (
     <div className="min-h-screen bg-bg text-fg">
       <TopBar />

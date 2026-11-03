@@ -146,7 +146,7 @@ export function ControlsSection() {
         </Spec>
         <Spec label="Mono text">
           <div className="flex w-[280px] flex-col gap-1">
-            <MonoText>sha1 4f2c9e1a7b3d5f6081c2e4a6b8d0f1e3c5a7b9d1</MonoText>
+            <MonoText truncate>sha1 4f2c9e1a7b3d5f6081c2e4a6b8d0f1e3c5a7b9d1</MonoText>
             <MonoText tone="dim">mods/create-1.20.1-0.5.1.f.jar</MonoText>
             <MonoText tone="faint">META-INF/jarjar/metadata.json</MonoText>
             <MonoText truncate>C:\Users\alex\curseforge\minecraft\Instances\All the Mods 9\mods</MonoText>
