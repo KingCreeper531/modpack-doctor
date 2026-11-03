@@ -24,9 +24,10 @@ pub struct AppState {
     pub scan_cache: Arc<ScanCache>,
     /// Instances currently being scanned.
     pub scans: InFlight,
-    /// Serialises discovery and every scope change (pickers, removals), so registry updates
-    /// and PathGuard roots are applied in order.
-    pub scope_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Scope changes (discovery, pickers, removals) take it for writing, so registry updates and
+    /// PathGuard roots are applied in order; scans take it for reading, so roots can't be
+    /// unregistered mid-scan while different instances still scan in parallel.
+    pub scope_lock: Arc<tokio::sync::RwLock<()>>,
     /// Roots that are never unregistered by discovery (the app data dir).
     pub pinned_roots: Arc<RwLock<Vec<PathBuf>>>,
 }

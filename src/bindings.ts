@@ -235,7 +235,9 @@ export type DropRejected = {
 	reason: string,
 };
 
-export type ErrorKind = "notFound" | "permission" | "gameRunning" | "outsideScope" | "corrupt" | "network" | "rateLimited" | "hashMismatch" | "conflict" | "offline" | "io" | "invalid" | "internal";
+export type ErrorKind = "notFound" | "permission" | "gameRunning" | "outsideScope" | "corrupt" | "network" | "rateLimited" | "hashMismatch" | "conflict" | "offline" | "io" | "invalid" | "internal" | 
+/**  Feature not in this build yet; the UI shows it neutrally, not as a failure. */
+"unavailable";
 
 export type FileOp = 
 /**  Paths relative to the game dir, `/` separators. */

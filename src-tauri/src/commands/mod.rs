@@ -26,8 +26,9 @@ use instances::{blocking, discover_blocking, pick_folder, remove_manual_blocking
 
 type Cmd<T> = Result<T, AppError>;
 
-fn not_yet<T>(what: &str, milestone: &str) -> Cmd<T> {
-    Err(Error::Internal(format!("{what} is not implemented yet ({milestone})")).into())
+/// A command whose feature arrives in a later milestone (noted at each call site).
+fn not_yet<T>(feature: &str) -> Cmd<T> {
+    Err(Error::Unavailable(feature.to_string()).into())
 }
 
 // ── Instances ────────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ fn not_yet<T>(what: &str, milestone: &str) -> Cmd<T> {
 #[specta::specta]
 pub async fn discover_instances(_app: AppHandle, state: State<'_, AppState>) -> Cmd<DiscoveryReport> {
     let st = AppState::clone(&state);
-    let _scope = st.scope_lock.clone().lock_owned().await;
+    let _scope = st.scope_lock.clone().write_owned().await;
     Ok(blocking(move || discover_blocking(&st)).await?)
 }
 
@@ -50,7 +51,7 @@ pub async fn pick_and_add_folder(app: AppHandle, state: State<'_, AppState>) -> 
         return Ok(None);
     };
     let st = AppState::clone(&state);
-    let _scope = st.scope_lock.clone().lock_owned().await;
+    let _scope = st.scope_lock.clone().write_owned().await;
     let instance = blocking(move || {
         let folder = canonical_dir(&picked)?;
         let shown = folder.display().to_string();
@@ -68,7 +69,7 @@ pub async fn pick_and_add_folder(app: AppHandle, state: State<'_, AppState>) -> 
 #[specta::specta]
 pub async fn remove_manual_instance(state: State<'_, AppState>, instance_id: String) -> Cmd<()> {
     let st = AppState::clone(&state);
-    let _scope = st.scope_lock.clone().lock_owned().await;
+    let _scope = st.scope_lock.clone().write_owned().await;
     Ok(blocking(move || remove_manual_blocking(&st, &instance_id)).await?)
 }
 
@@ -89,7 +90,7 @@ pub async fn pick_launcher_root(
         return Ok(None);
     };
     let st = AppState::clone(&state);
-    let _scope = st.scope_lock.clone().lock_owned().await;
+    let _scope = st.scope_lock.clone().write_owned().await;
     let report = blocking(move || {
         let folder = canonical_dir(&picked)?;
         let shown = folder.display().to_string();
@@ -105,7 +106,7 @@ pub async fn pick_launcher_root(
 #[specta::specta]
 pub async fn remove_launcher_root(state: State<'_, AppState>, path: String) -> Cmd<()> {
     let st = AppState::clone(&state);
-    let _scope = st.scope_lock.clone().lock_owned().await;
+    let _scope = st.scope_lock.clone().write_owned().await;
     Ok(blocking(move || {
         let (_, removed) = st.settings.update(|s| Ok(remove_stored_path(s, &path)))?;
         if !removed {
@@ -121,7 +122,7 @@ pub async fn remove_launcher_root(state: State<'_, AppState>, path: String) -> C
 #[tauri::command]
 #[specta::specta]
 pub async fn pick_mrpack(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<Option<Instance>> {
-    not_yet("pick_mrpack", "M7")
+    not_yet("Opening .mrpack files" /* M7 */)
 }
 
 // ── Scanning ─────────────────────────────────────────────────────────────────
@@ -133,9 +134,10 @@ pub async fn scan_instance(app: AppHandle, state: State<'_, AppState>, instance_
     let st = AppState::clone(&state);
     let inst = st.instance(&instance_id)?;
     if inst.instance.launcher == Launcher::Mrpack {
-        return not_yet("Scanning a .mrpack file", "M7");
+        return not_yet("Scanning .mrpack files" /* M7 */);
     }
     let sink = EventSink::new(app);
+    let _scope = st.scope_lock.clone().read_owned().await;
     Ok(blocking(move || scan_registered(&st.guard, &st.scan_cache, &st.scans, &inst, &sink)).await?)
 }
 
@@ -145,7 +147,7 @@ pub async fn scan_instance(app: AppHandle, state: State<'_, AppState>, instance_
 #[tauri::command]
 #[specta::specta]
 pub async fn list_log_sources(_state: State<'_, AppState>, _instance_id: String) -> Cmd<Vec<LogSource>> {
-    not_yet("list_log_sources", "M4")
+    not_yet("Crash and log analysis" /* M4 */)
 }
 
 /// Streams the file and returns a bounded digest. `anchors` come from `src/core/crash/anchors.ts`.
@@ -159,7 +161,7 @@ pub async fn read_log_digest(
     _anchors: Vec<String>,
     _options: Option<DigestOptions>,
 ) -> Cmd<LogDigest> {
-    not_yet("read_log_digest", "M4")
+    not_yet("Crash and log analysis" /* M4 */)
 }
 
 /// Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
@@ -176,7 +178,7 @@ pub async fn set_watch(
     _enabled: bool,
     _anchors: Vec<WatchAnchor>,
 ) -> Cmd<()> {
-    not_yet("set_watch", "M4")
+    not_yet("Watching for crashes" /* M4 */)
 }
 
 // ── Modrinth ─────────────────────────────────────────────────────────────────
@@ -185,7 +187,7 @@ pub async fn set_watch(
 #[tauri::command]
 #[specta::specta]
 pub async fn modrinth_identify(_state: State<'_, AppState>, _sha1s: Vec<String>, _refresh: bool) -> Cmd<HashLookup> {
-    not_yet("modrinth_identify", "M5")
+    not_yet("Modrinth lookups" /* M5 */)
 }
 
 /// `POST /v2/version_files/update` with loaders + game versions + version types.
@@ -201,7 +203,7 @@ pub async fn modrinth_find_updates(
     _version_types: Vec<String>,
     _refresh: bool,
 ) -> Cmd<HashLookup> {
-    not_yet("modrinth_find_updates", "M5")
+    not_yet("Modrinth update suggestions" /* M5 */)
 }
 
 /// `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request); caches icons into
@@ -210,7 +212,7 @@ pub async fn modrinth_find_updates(
 #[tauri::command]
 #[specta::specta]
 pub async fn modrinth_projects(_state: State<'_, AppState>, _ids: Vec<String>, _refresh: bool) -> Cmd<ProjectLookup> {
-    not_yet("modrinth_projects", "M5")
+    not_yet("Modrinth project details" /* M5 */)
 }
 
 /// `GET /v2/project/{id}/version?loaders=…&game_versions=…` newest first, filtered by
@@ -224,7 +226,7 @@ pub async fn modrinth_project_versions(
     _game_versions: Vec<String>,
     _version_types: Vec<String>,
 ) -> Cmd<Vec<MrVersion>> {
-    not_yet("modrinth_project_versions", "M5")
+    not_yet("Modrinth version lookups" /* M5 */)
 }
 
 // ── Fixes ────────────────────────────────────────────────────────────────────
@@ -250,26 +252,26 @@ pub async fn plan_work_order(
     _pack: PackIdentity,
     _actions: Vec<FixAction>,
 ) -> Cmd<WorkOrder> {
-    not_yet("plan_work_order", "M6")
+    not_yet("Applying fixes" /* M6 */)
 }
 
 /// Execute a stored order: guard check → snapshot → ops (emits `OpStatus`) → rollback on failure.
 #[tauri::command]
 #[specta::specta]
 pub async fn execute_work_order(_app: AppHandle, _state: State<'_, AppState>, _order_id: String) -> Cmd<WorkOrderResult> {
-    not_yet("execute_work_order", "M6")
+    not_yet("Applying fixes" /* M6 */)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn discard_work_order(_state: State<'_, AppState>, _order_id: String) -> Cmd<()> {
-    not_yet("discard_work_order", "M6")
+    not_yet("Applying fixes" /* M6 */)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn list_backups(_state: State<'_, AppState>, _instance_id: String) -> Cmd<Vec<BackupEntry>> {
-    not_yet("list_backups", "M6")
+    not_yet("Backup history" /* M6 */)
 }
 
 /// Plans the reverse of a backup as a work order (shown and confirmed like any other).
@@ -282,13 +284,13 @@ pub async fn plan_undo(
     _backup_id: String,
     _action_indexes: Option<Vec<u32>>,
 ) -> Cmd<WorkOrder> {
-    not_yet("plan_undo", "M6")
+    not_yet("Undo" /* M6 */)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn game_running(_state: State<'_, AppState>, _instance_id: String) -> Cmd<GameStatus> {
-    not_yet("game_running", "M6")
+    not_yet("Detecting a running game" /* M6 */)
 }
 
 // ── Settings, window, reports, updates ───────────────────────────────────────
@@ -319,7 +321,7 @@ pub async fn save_report(
     _format: ReportFormat,
     _contents: String,
 ) -> Cmd<Option<String>> {
-    not_yet("save_report", "M7")
+    not_yet("Saving reports" /* M7 */)
 }
 
 /// Re-themes the native title bar (Windows DWM); no-op elsewhere. Called on every resolved theme change.
@@ -332,12 +334,12 @@ pub fn set_window_theme(window: tauri::WebviewWindow, theme: ResolvedTheme) -> C
 #[tauri::command]
 #[specta::specta]
 pub async fn check_update(_app: AppHandle) -> Cmd<Option<UpdateInfo>> {
-    not_yet("check_update", "M8")
+    not_yet("Update checks" /* M8 */)
 }
 
 /// Downloads, verifies the updater signature, installs, restarts.
 #[tauri::command]
 #[specta::specta]
 pub async fn install_update(_app: AppHandle) -> Cmd<()> {
-    not_yet("install_update", "M8")
+    not_yet("Installing updates" /* M8 */)
 }
