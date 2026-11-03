@@ -4,8 +4,10 @@
 //! with a busy timeout and a bounded retry on `SQLITE_BUSY`. Nothing is ever written.
 
 use std::collections::HashSet;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -13,7 +15,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use crate::model::{Launcher, ProbeResult, Side};
 
 use super::common::{
-    build, dir_state, display, is_dir, is_file, json_get, json_str, list_subdirs, loader_from_name, name_of, non_empty,
+    absolute, build, dir_state, display, is_dir, is_file, json_get, json_str, list_subdirs, loader_from_name, name_of, non_empty,
     read_json, DirState, Meta, NewInstance, Outcome,
 };
 use super::env::{Env, Os};
@@ -118,9 +120,24 @@ fn has_all(set: &HashSet<String>, want: &[&str]) -> bool {
     want.iter().all(|w| set.contains(*w))
 }
 
+/// The path handed to SQLite. A filename beginning with `file:` would be parsed as a URI,
+/// whose query (`?immutable=1`, `?mode=rwc`) could change how the database is opened. We do
+/// not pass SQLITE_OPEN_URI, but the bundled libsqlite3-sys is compiled with
+/// `SQLITE_USE_URI`, so the flag alone is not enough: the path is made absolute (an absolute
+/// path starts with `/`, a drive or `\\`, never `file:`) and anything else is refused.
+fn db_open_path(path: &Path) -> Option<PathBuf> {
+    let abs = absolute(path);
+    let s = abs.to_string_lossy();
+    let uri_like = s.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("file:"));
+    (abs.is_absolute() && !uri_like).then_some(abs)
+}
+
 fn read_db_once(path: &Path, timeout: Duration) -> rusqlite::Result<DbData> {
-    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let conn = Connection::open_with_flags(path, flags)?;
+    let Some(path) = db_open_path(path) else {
+        return Err(rusqlite::Error::InvalidPath(path.to_path_buf()));
+    };
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let conn = Connection::open_with_flags(&path, flags)?;
     conn.busy_timeout(timeout)?;
     let tables = table_names(&conn)?;
     let mut data = DbData::default();
@@ -168,10 +185,77 @@ fn is_busy(e: &rusqlite::Error) -> bool {
     )
 }
 
+/// Is `db` a WAL-mode database (header bytes 18/19 = 2)?
+fn is_wal_mode(db: &Path) -> bool {
+    use std::io::Read;
+    let mut header = [0u8; 20];
+    fs::File::open(db).and_then(|mut f| f.read_exact(&mut header)).is_ok()
+        && header.starts_with(b"SQLite format 3\0")
+        && (header[18] == 2 || header[19] == 2)
+}
+
+fn wal_path(db: &Path) -> PathBuf {
+    let mut s = db.as_os_str().to_os_string();
+    s.push("-wal");
+    PathBuf::from(s)
+}
+
+/// A private temporary folder, removed on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new() -> std::io::Result<TempDir> {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("modpack-doctor-appdb-{}-{nanos}-{n}", std::process::id()));
+        fs::create_dir(&dir)?;
+        Ok(TempDir(dir))
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Read `app.db` without changing anything in the launcher's folder.
+///
+/// A read-only connection to a WAL database whose `-wal`/`-shm` files are absent (the app
+/// is closed and checkpointed) makes SQLite *create* empty `-wal` and `-shm` files next to
+/// it and leave them behind. In that state every row is in the main file, so we read a
+/// private copy instead. When `-wal` exists (the app is running, or crashed) the original
+/// is opened read-only so uncheckpointed rows are seen; SQLite then only uses the existing
+/// files.
+fn read_db_snapshot(path: &Path, timeout: Duration) -> rusqlite::Result<DbData> {
+    if !is_wal_mode(path) || wal_path(path).exists() {
+        return read_db_once(path, timeout);
+    }
+    let copy = || -> std::io::Result<(TempDir, PathBuf)> {
+        let tmp = TempDir::new()?;
+        let target = tmp.0.join("app.db");
+        fs::copy(path, &target)?;
+        Ok((tmp, target))
+    };
+    match copy() {
+        // The app may have started while we copied; then its WAL now exists and holds
+        // the newest rows, so read the original after all.
+        Ok(_) if wal_path(path).exists() => read_db_once(path, timeout),
+        Ok((tmp, target)) => {
+            let result = read_db_once(&target, timeout);
+            drop(tmp); // connection is closed by now; remove the copy.
+            result
+        }
+        // Could not copy (e.g. no temp space): fall back to the read-only open.
+        Err(_) => read_db_once(path, timeout),
+    }
+}
+
 fn read_db(path: &Path, opts: &DbOptions) -> Result<DbData, DbFailure> {
     let mut retries = 0;
     loop {
-        match read_db_once(path, opts.busy_timeout) {
+        match read_db_snapshot(path, opts.busy_timeout) {
             Ok(d) => return Ok(d),
             Err(e) if is_busy(&e) => {
                 if retries >= opts.retries {
@@ -323,4 +407,20 @@ pub(crate) fn probe(env: &Env, dir: &Path, opts: &DbOptions) -> Outcome {
         out.note(format!("{unmatched} profile folder(s) are not in app.db — using jar metadata for them"));
     }
     out.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn db_path_is_never_a_uri() {
+        // Relative names (including `file:` ones) become absolute paths, which SQLite never
+        // parses as URIs.
+        let p = db_open_path(Path::new("file:app.db?immutable=1")).expect("absolute");
+        assert!(p.is_absolute());
+        assert!(!p.to_string_lossy().to_ascii_lowercase().starts_with("file:"));
+        let abs = std::env::temp_dir().join("app.db");
+        assert_eq!(db_open_path(&abs), Some(absolute(&abs)));
+    }
 }
