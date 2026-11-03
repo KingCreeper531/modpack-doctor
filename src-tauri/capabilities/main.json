@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main window. Minimal by design: the webview has no fs, dialog, store, shell or http access; Rust owns all I/O (docs/CONTRACTS.md). App-defined commands need no entry (no app ACL manifest).",
+  "windows": ["main"],
+  "platforms": ["windows", "macOS", "linux"],
+  "permissions": [
+    "core:event:default",
+    "core:menu:default",
+    "core:resources:default",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://modrinth.com/*" },
+        { "url": "https://github.com/KingCreeper531/modpack-doctor*" }
+      ]
+    }
+  ]
+}

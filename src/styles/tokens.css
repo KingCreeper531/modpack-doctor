@@ -1,0 +1,77 @@
+/* Design tokens. FROZEN (M1) — mirrors DESIGN.md §2–§4, §8. The only file allowed raw hex. */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --c-bg: #14130f;
+  --c-panel: #1c1a16;
+  --c-raised: #24221d;
+  --c-line: #2e2b25;
+  --c-line-strong: #45413a;
+  --c-fg: #e9e4d8;
+  --c-fg-dim: #ada697;
+  --c-fg-faint: #958f81;
+  --c-signal: #f2a93b;
+  --c-signal-fill: #f2a93b;
+  --c-signal-ink: #14130f;
+  --c-err: #d2553a;
+  --c-err-text: #e0664a;
+  --c-ok: #7fa36b;
+  --c-ok-fill: #7fa36b;
+  --c-info: #8e9ba6;
+  --c-tile-empty: #2a2721;
+  --c-tile-off: #3a372f;
+  --c-hl-line: #f2a93b1f;
+  --c-overlay-shadow: rgb(0 0 0 / 0.35);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --c-bg: #f4f0e6;
+  --c-panel: #ece7da;
+  --c-raised: #e3ddce;
+  --c-line: #d6cfbe;
+  --c-line-strong: #b9b09c;
+  --c-fg: #1e1c18;
+  --c-fg-dim: #4f4a42;
+  --c-fg-faint: #645e54;
+  --c-signal: #8a5200;
+  --c-signal-fill: #b8741a;
+  --c-signal-ink: #f4f0e6;
+  --c-err: #b8452b;
+  --c-err-text: #a8361e;
+  --c-ok: #45663a;
+  --c-ok-fill: #5e8549;
+  --c-info: #4a5866;
+  --c-tile-empty: #ddd6c6;
+  --c-tile-off: #c9c1ae;
+  --c-hl-line: #b8741a26;
+  --c-overlay-shadow: rgb(30 28 24 / 0.18);
+}
+
+:root {
+  --f-ui: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-1: 2px;
+  --radius-2: 4px;
+
+  --row-dense: 24px;
+  --row: 32px;
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur: 160ms;
+  --dur-slow: 180ms;
+
+  --tile: 12px;
+  --tile-gap: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+  }
+}

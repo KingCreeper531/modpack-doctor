@@ -1,0 +1,41 @@
+{
+  "name": "modpack-doctor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc --noEmit -p src/core && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/core",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tauri": "tauri",
+    "bindings": "cd src-tauri && cargo test --lib export_bindings"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans-condensed": "5.3.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-virtual": "3.14.25",
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-notification": "2.8.0",
+    "@tauri-apps/plugin-opener": "2.7.2",
+    "cmdk": "1.1.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.4",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "tailwindcss": "4.3.4",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

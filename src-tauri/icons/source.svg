@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Original app mark: a 4x4 scan grid, one warning tile, one notched error tile. -->
+  <rect width="1024" height="1024" rx="40" fill="#14130F"/>
+  <rect x="64" y="64" width="896" height="896" fill="none" stroke="#45413A" stroke-width="16"/>
+  <g fill="#7FA36B">
+    <rect x="152" y="152" width="152" height="152"/><rect x="352" y="152" width="152" height="152"/>
+    <rect x="552" y="152" width="152" height="152"/><rect x="752" y="152" width="120" height="152"/>
+    <rect x="152" y="352" width="152" height="152"/><rect x="552" y="352" width="152" height="152"/>
+    <rect x="752" y="352" width="120" height="152"/><rect x="152" y="552" width="152" height="152"/>
+    <rect x="352" y="552" width="152" height="152"/><rect x="752" y="552" width="120" height="152"/>
+    <rect x="152" y="752" width="152" height="120"/><rect x="352" y="752" width="152" height="120"/>
+    <rect x="552" y="752" width="152" height="120"/><rect x="752" y="752" width="120" height="120"/>
+  </g>
+  <rect x="352" y="352" width="152" height="152" fill="#F2A93B"/>
+  <path d="M552 552 H660 L704 596 V704 H552 Z" fill="#D2553A"/>
+</svg>

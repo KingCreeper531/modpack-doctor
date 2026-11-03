@@ -1,0 +1,14 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+*.log
+!fixtures/**/*.log
+.DS_Store
+.env
+.env.*
+# Updater signing keys never go in the repo
+*.key
+*.key.pub
+coverage/
+.vite/

@@ -1,0 +1,138 @@
+/* Tailwind entry. FROZEN (M1): maps utilities onto DESIGN.md tokens only.
+   Every default colour, font, radius and shadow is wiped; only these exist. */
+@import 'tailwindcss';
+@import './tokens.css';
+
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --drop-shadow-*: initial;
+  --inset-shadow-*: initial;
+  --blur-*: initial;
+  --text-*: initial;
+  --text-shadow-*: initial;
+  --animate-*: initial;
+  --ease-*: initial;
+  --perspective-*: initial;
+  --tracking-*: initial;
+  --leading-*: initial;
+
+  /* Page defaults: Plex everywhere, including portals (menus, tooltips, palette). */
+  --default-font-family: var(--f-ui);
+  --default-mono-font-family: var(--f-mono);
+
+  /* Spacing unit = 4px: p-2 = 8px, p-4 = 16px. Layout uses even steps only (8px grid);
+     odd steps (p-1 = 4px) are allowed only inside components (DESIGN.md §4).
+     The design-lint test rejects fractional and odd steps above 1. */
+  --spacing: 4px;
+
+  --tracking-label: 0.08em;
+
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-raised: var(--c-raised);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-fg: var(--c-fg);
+  --color-fg-dim: var(--c-fg-dim);
+  --color-fg-faint: var(--c-fg-faint);
+  --color-signal: var(--c-signal);
+  --color-signal-fill: var(--c-signal-fill);
+  --color-signal-ink: var(--c-signal-ink);
+  --color-err: var(--c-err);
+  --color-err-text: var(--c-err-text);
+  --color-ok: var(--c-ok);
+  --color-ok-fill: var(--c-ok-fill);
+  --color-info: var(--c-info);
+  --color-tile-empty: var(--c-tile-empty);
+  --color-tile-off: var(--c-tile-off);
+  --color-hl-line: var(--c-hl-line);
+  --color-transparent: transparent;
+
+  --font-ui: var(--f-ui);
+  --font-mono: var(--f-mono);
+
+  --radius-1: 2px;
+  --radius-2: 4px;
+
+  /* Type scale (DESIGN.md §3) */
+  --text-label: 11px;
+  --text-label--line-height: 16px;
+  --text-small: 12px;
+  --text-small--line-height: 16px;
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+  --text-log: 12px;
+  --text-log--line-height: 18px;
+  --text-title: 15px;
+  --text-title--line-height: 24px;
+  --text-head: 18px;
+  --text-head--line-height: 24px;
+
+  --shadow-overlay: 0 0 0 1px var(--c-line-strong), 0 4px 12px var(--c-overlay-shadow);
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Composite text styles (DESIGN.md §3). Use these, not ad-hoc combinations. */
+@utility t-label {
+  font-family: var(--f-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+@utility t-small {
+  font-family: var(--f-ui);
+  font-size: 12px;
+  line-height: 16px;
+}
+@utility t-body {
+  font-family: var(--f-ui);
+  font-size: 13px;
+  line-height: 20px;
+}
+@utility t-mono {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+@utility t-log {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+@utility t-title {
+  font-family: var(--f-ui);
+  font-size: 15px;
+  line-height: 24px;
+  font-weight: 600;
+}
+@utility t-head {
+  font-family: var(--f-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--c-bg);
+    color: var(--c-fg);
+    font-family: var(--f-ui);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  /* 2px offset: a strip of surface always separates the ring from the element. Amber against
+     the ink button fill is only 1.57 (dark) / 2.66 (light); against any surface ≥ 4.71. */
+  *:focus-visible {
+    outline: 2px solid var(--c-signal);
+    outline-offset: 2px;
+  }
+}
