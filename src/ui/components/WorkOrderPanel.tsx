@@ -107,8 +107,8 @@ export function WorkOrderPanel({ order, statuses = [], phase = 'review', rolledB
         })}
       </ol>
       {order.notes.map((n, i) => (
-        <div key={i} className="flex min-h-6 items-baseline gap-4 border-b border-line px-4 py-1 t-mono">
-          <span className="w-[104px] shrink-0 t-label text-fg-faint">note</span>
+        <div key={i} className="grid min-h-6 grid-cols-[104px_minmax(0,1fr)_112px] items-baseline border-b border-line px-4 py-1 t-mono">
+          <span className="t-label text-fg-faint">note</span>
           <span className="text-fg-dim">{n}</span>
         </div>
       ))}
@@ -132,7 +132,17 @@ export function WorkOrderPanel({ order, statuses = [], phase = 'review', rolledB
             <Button onClick={onCancel} disabled={phase === 'running'}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={onExecute} disabled={phase === 'running'} {...(enter ? { hint: '↵' } : {})}>
+            <Button
+              variant="primary"
+              onClick={onExecute}
+              // A focused native button turns Enter into a click. Only the single-rename undo may
+              // run that way (§6.4); every other order needs a click or Space.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !enter) e.preventDefault();
+              }}
+              disabled={phase === 'running'}
+              {...(enter ? { hint: '↵' } : {})}
+            >
               {phase === 'running' ? 'Executing' : 'Execute'}
             </Button>
           </>
