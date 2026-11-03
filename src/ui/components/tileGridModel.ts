@@ -13,7 +13,7 @@ export const FADE_MS = 140;
 export type TileState = 'unscanned' | 'ok' | 'warning' | 'error' | 'disabled';
 
 /** CSS custom properties (without `--c-`) a tile can be painted with. */
-export type TileToken = 'tile-empty' | 'ok-fill' | 'signal-fill' | 'err' | 'tile-off' | 'fg-faint' | 'fg' | 'signal';
+export type TileToken = 'tile-empty' | 'ok-fill' | 'signal-fill' | 'err' | 'tile-off' | 'fg-faint' | 'fg' | 'signal' | 'panel';
 
 export interface TileVisual {
   fill: TileToken;
@@ -47,7 +47,45 @@ export const TILE_TOKENS: readonly TileToken[] = [
   'fg-faint',
   'fg',
   'signal',
+  'panel',
 ];
+
+export type FrameKind = 'selected' | 'hover' | 'focus';
+
+/**
+ * One square band around a tile: its outer edge sits `out` px outside the tile edge and it is
+ * `width` px thick (inward). `out: 0` paints over the tile's own outermost pixels.
+ */
+export interface FrameLayer {
+  token: TileToken;
+  out: number;
+  width: number;
+}
+
+/**
+ * Interaction frames, drawn in order. Every frame starts with a 1px `panel` keyline over the
+ * tile's edge, so the ring never touches the tile fill: a `signal` ring on a `signal-fill`
+ * (warning) tile would otherwise measure ~1:1 (dark) / ~1.6:1 (light). The ring then sits in
+ * the 2px gutter, bounded by panel on its inside and panel or a neighbouring tile outside.
+ */
+const FRAMES: Record<FrameKind, readonly FrameLayer[]> = {
+  selected: [
+    { token: 'panel', out: 0, width: 1 },
+    { token: 'signal', out: 1, width: 1 },
+  ],
+  hover: [
+    { token: 'panel', out: 0, width: 1 },
+    { token: 'fg', out: 1, width: 1 },
+  ],
+  focus: [
+    { token: 'panel', out: 0, width: 1 },
+    { token: 'signal', out: 2, width: 2 },
+  ],
+};
+
+export function frameLayers(kind: FrameKind): readonly FrameLayer[] {
+  return FRAMES[kind];
+}
 
 export interface GridLayout {
   cols: number;

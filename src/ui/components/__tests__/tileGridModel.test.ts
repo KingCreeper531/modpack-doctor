@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   easeOut,
+  frameLayers,
   GAP,
   hatchSegments,
   hitTest,
@@ -14,6 +18,9 @@ import {
   tileOrigin,
   tileTooltip,
   tileVisual,
+  type FrameKind,
+  type Rgba,
+  type TileToken,
 } from '../tileGridModel';
 
 describe('layoutGrid', () => {
@@ -161,5 +168,78 @@ describe('tileTooltip', () => {
     expect(tileTooltip({ label: 'jei', version: '15.2.0', state: 'error', count: 1 })).toBe('jei  15.2.0  ·  ERR 1');
     expect(tileTooltip({ label: 'ftb', version: null, state: 'ok', count: 0 })).toBe('ftb  —  ·  OK');
     expect(tileTooltip({ label: 'x', version: '1', state: 'disabled', count: 0 })).toBe('x  1  ·  disabled');
+  });
+});
+
+/** Token values per theme, read from the frozen tokens.css. */
+function themeTokens(theme: 'dark' | 'light'): Record<string, Rgba> {
+  const css = readFileSync(join(__dirname, '..', '..', '..', 'styles', 'tokens.css'), 'utf8');
+  const block = (re: RegExp) => re.exec(css)?.[1] ?? '';
+  const dark = block(/:root\[data-theme='dark'\]\s*\{([^}]*)\}/);
+  const light = block(/:root\[data-theme='light'\]\s*\{([^}]*)\}/);
+  const out: Record<string, Rgba> = {};
+  for (const src of theme === 'dark' ? [dark] : [dark, light]) {
+    for (const m of src.matchAll(/--c-([\w-]+):\s*([^;]+);/g)) {
+      const c = parseColor(m[2]!);
+      if (c) out[m[1]!] = c;
+    }
+  }
+  return out;
+}
+
+function luminance([r, g, b]: Rgba): number {
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function contrast(a: Rgba, b: Rgba): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe('interaction frames', () => {
+  const kinds: FrameKind[] = ['selected', 'hover', 'focus'];
+
+  it('start with a 1px panel keyline over the tile edge', () => {
+    for (const k of kinds) {
+      expect(frameLayers(k)[0]).toEqual({ token: 'panel', out: 0, width: 1 });
+    }
+  });
+
+  it('keep every ring in the 2px gutter, never on the tile fill', () => {
+    for (const k of kinds) {
+      for (const layer of frameLayers(k).slice(1)) {
+        expect(layer.out - layer.width).toBeGreaterThanOrEqual(0);
+        expect(layer.out).toBeLessThanOrEqual(GAP);
+      }
+    }
+    expect(frameLayers('focus')[1]).toMatchObject({ token: 'signal', width: 2 });
+    expect(frameLayers('selected')[1]).toMatchObject({ token: 'signal', width: 1 });
+    expect(frameLayers('hover')[1]).toMatchObject({ token: 'fg', width: 1 });
+  });
+
+  it('measure >= 3:1 against the panel they touch, in both themes', () => {
+    expect(themeTokens('light').panel).not.toEqual(themeTokens('dark').panel);
+    for (const theme of ['dark', 'light'] as const) {
+      const t = themeTokens(theme);
+      for (const k of kinds) {
+        for (const layer of frameLayers(k).slice(1)) {
+          const ratio = contrast(t[layer.token as TileToken]!, t.panel!);
+          expect(ratio, `${theme} ${k} ${layer.token} vs panel`).toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
+  });
+
+  it('documents why the keyline exists: signal against a warning tile fails 3:1', () => {
+    for (const theme of ['dark', 'light'] as const) {
+      const t = themeTokens(theme);
+      expect(contrast(t.signal!, t['signal-fill']!)).toBeLessThan(3);
+      // The keyline (panel) is what the warning tile meets instead.
+      expect(contrast(t.panel!, t['signal-fill']!)).toBeGreaterThanOrEqual(3);
+    }
   });
 });

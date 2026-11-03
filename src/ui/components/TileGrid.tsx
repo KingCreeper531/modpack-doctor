@@ -15,6 +15,7 @@ import { cx } from './cx';
 import {
   easeOut,
   FADE_MS,
+  frameLayers,
   hatchSegments,
   hitTest,
   isFocusKey,
@@ -29,6 +30,7 @@ import {
   tileOrigin,
   tileTooltip,
   tileVisual,
+  type FrameKind,
   type Rgba,
   type TileState,
   type TileToken,
@@ -231,18 +233,21 @@ export function TileGrid({ tiles, selectedId = null, onSelect, label, className 
       ctx.restore();
     }
 
-    // 4. Interaction frames: selected (1px signal), hover (1px fg), keyboard focus (2px signal).
-    const ring = (i: number, out: number, w: number, token: TileToken) => {
+    // 4. Interaction frames (tileGridModel.frameLayers): a 1px panel keyline over the tile edge,
+    //    then selected (1px signal), hover (1px fg) or keyboard focus (2px signal) in the gutter.
+    const ring = (i: number, kind: FrameKind) => {
       if (i < 0 || i >= n) return;
       const { x, y } = tileOrigin(i, cols);
-      ctx.beginPath();
-      frame(ctx, x, y, out, w);
-      ctx.fillStyle = color(token);
-      ctx.fill();
+      for (const layer of frameLayers(kind)) {
+        ctx.beginPath();
+        frame(ctx, x, y, layer.out, layer.width);
+        ctx.fillStyle = color(layer.token);
+        ctx.fill();
+      }
     };
-    ring(e.selected, 1, 1, 'signal');
-    if (e.hover !== null) ring(e.hover, 1, 1, 'fg');
-    if (e.showFocus) ring(e.focus, 2, 2, 'signal');
+    ring(e.selected, 'selected');
+    if (e.hover !== null) ring(e.hover, 'hover');
+    if (e.showFocus) ring(e.focus, 'focus');
 
     if (animating) e.raf = requestAnimationFrame(draw);
   }, []);
