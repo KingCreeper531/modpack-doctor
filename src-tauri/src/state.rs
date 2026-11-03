@@ -82,6 +82,14 @@ impl AppState {
         let pinned = self.pinned();
         let mut reg = self.registry.write().map_err(|_| poisoned("instance registry"))?;
         apply_registry(&self.guard, &mut reg, next, &pinned);
+        // An instance that is no longer discovered can't be watched: its roots are gone.
+        let known = reg.ids();
+        drop(reg);
+        for id in self.watchers.ids() {
+            if !known.contains(&id) {
+                self.watchers.stop(&id);
+            }
+        }
         Ok(discovered.report)
     }
 }

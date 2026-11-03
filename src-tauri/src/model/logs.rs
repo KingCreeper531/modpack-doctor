@@ -28,7 +28,10 @@
 //! The UI then classifies the episode's source with `src/core` and sends a native notification
 //! only for an error-severity crash finding.
 
-/// Coalescing delay before a fatal episode is emitted (unless the process exits first).
+/// Coalescing delay before a fatal episode is emitted (unless the process exits first). The
+/// delay restarts on each further fatal input, capped at `logs::episode` MAX_COALESCE_MS (10 s)
+/// after the first. After an emission, triggers are suppressed until a new game process appears
+/// or QUIET_MS (60 s) pass without a trigger.
 pub const FATAL_SETTLE_MS: u64 = 2_000;
 /// A contextual anchor hit only counts if the game process exits within this window after it.
 pub const CONTEXT_WINDOW_MS: u64 = 30_000;
