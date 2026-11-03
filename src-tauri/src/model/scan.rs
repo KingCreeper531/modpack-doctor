@@ -185,6 +185,10 @@ pub struct JarRecord {
     /// `module-info.class` name if present, else MANIFEST `Automatic-Module-Name`. None
     /// otherwise; `src/core` derives the JDK automatic name from the file name itself.
     pub module_name: Option<String>,
+    /// MANIFEST `FMLModType` attribute verbatim (`MOD`, `LIBRARY`, `GAMELIBRARY`, `LANGPROVIDER`),
+    /// trimmed; None if absent. FML 1.17+ loads a jar without mods metadata only if this is set
+    /// (docs/research/loader-enforcement.md, third round).
+    pub fml_mod_type: Option<String>,
     /// Set for nested jars declared in `META-INF/jarjar/metadata.json`.
     pub jarjar: Option<JarJarInfo>,
     /// Ids of directly nested jars.

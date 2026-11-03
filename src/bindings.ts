@@ -235,7 +235,9 @@ export type DropRejected = {
 	reason: string,
 };
 
-export type ErrorKind = "notFound" | "permission" | "gameRunning" | "outsideScope" | "corrupt" | "network" | "rateLimited" | "hashMismatch" | "conflict" | "offline" | "io" | "invalid" | "internal";
+export type ErrorKind = "notFound" | "permission" | "gameRunning" | "outsideScope" | "corrupt" | "network" | "rateLimited" | "hashMismatch" | "conflict" | "offline" | "io" | "invalid" | "internal" | 
+/**  Feature not in this build yet; the UI shows it neutrally, not as a failure. */
+"unavailable";
 
 export type FileOp = 
 /**  Paths relative to the game dir, `/` separators. */
@@ -409,6 +411,12 @@ export type JarRecord = {
 	 *  otherwise; `src/core` derives the JDK automatic name from the file name itself.
 	 */
 	moduleName: string | null,
+	/**
+	 *  MANIFEST `FMLModType` attribute verbatim (`MOD`, `LIBRARY`, `GAMELIBRARY`, `LANGPROVIDER`),
+	 *  trimmed; None if absent. FML 1.17+ loads a jar without mods metadata only if this is set
+	 *  (docs/research/loader-enforcement.md, third round).
+	 */
+	fmlModType: string | null,
 	/**  Set for nested jars declared in `META-INF/jarjar/metadata.json`. */
 	jarjar: JarJarInfo | null,
 	/**  Ids of directly nested jars. */

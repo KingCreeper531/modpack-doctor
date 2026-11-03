@@ -310,6 +310,7 @@ function buildJar(spec: JarSpec, seed: number): JarRecord[] {
       mixinConfigs: [],
       maxClassMajor: 61,
       moduleName: null,
+      fmlModType: null,
       jarjar: { group: n.group, artifact: n.artifact, range: n.range, version: n.mod.version },
       nested: [],
     };
@@ -333,6 +334,7 @@ function buildJar(spec: JarSpec, seed: number): JarRecord[] {
     mixinConfigs: status.state === 'ok' ? (spec.mixins ?? (primary && r() < 0.45 ? [`${primary.modId}.mixins.json`] : [])) : [],
     maxClassMajor: status.state === 'ok' ? (spec.maxClass === undefined ? 61 : spec.maxClass) : null,
     moduleName: spec.moduleName ?? null,
+    fmlModType: null,
     jarjar: null,
     nested: nestedRecords.map((n) => n.id),
   };
