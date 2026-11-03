@@ -112,30 +112,40 @@ fn is_hex_len(s: &str, len: usize) -> bool {
 /// Parse one Version object. `None` when it is malformed.
 pub(crate) fn version_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<MrVersion> {
     let v: ApiVersion = serde_json::from_value(v).ok()?;
-    let files = v
-        .files
-        .unwrap_or_default()
+    let listed = v.files.unwrap_or_default();
+    let listed_count = listed.len();
+    let mut primary_dropped = false;
+    let files: Vec<MrFile> = listed
         .into_iter()
         .filter_map(|f| {
-            if !cdn.allows(&f.url) {
-                return None;
+            let primary = f.primary;
+            let usable = (|| {
+                if !cdn.allows(&f.url) {
+                    return None;
+                }
+                let sha1 = f.hashes.sha1?.to_ascii_lowercase();
+                let sha512 = f.hashes.sha512?.to_ascii_lowercase();
+                if !is_hex_len(&sha1, 40) || !is_hex_len(&sha512, 128) {
+                    return None;
+                }
+                Some(MrFile {
+                    url: f.url,
+                    filename: f.filename,
+                    // TODO(M2 review, agent E): ApiFile.size should be Option so "absent" ≠ 0.
+                    size: Some(f.size).filter(|s| *s > 0),
+                    primary,
+                    sha1,
+                    sha512,
+                    file_type: f.file_type,
+                })
+            })();
+            if usable.is_none() && primary {
+                primary_dropped = true;
             }
-            let sha1 = f.hashes.sha1?.to_ascii_lowercase();
-            let sha512 = f.hashes.sha512?.to_ascii_lowercase();
-            if !is_hex_len(&sha1, 40) || !is_hex_len(&sha512, 128) {
-                return None;
-            }
-            Some(MrFile {
-                url: f.url,
-                filename: f.filename,
-                size: f.size,
-                primary: f.primary,
-                sha1,
-                sha512,
-                file_type: f.file_type,
-            })
+            usable
         })
         .collect();
+    let dropped_files = u32::try_from(listed_count - files.len()).unwrap_or(u32::MAX);
     let dependencies = v
         .dependencies
         .unwrap_or_default()
@@ -156,6 +166,8 @@ pub(crate) fn version_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<
         loaders: v.loaders.unwrap_or_default(),
         version_type: v.version_type,
         environment: v.environment,
+        dropped_files,
+        primary_dropped,
         files,
         dependencies,
     })

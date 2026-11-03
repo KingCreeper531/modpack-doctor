@@ -165,6 +165,10 @@ pub struct JarRecord {
     /// Highest class-file major version among this jar's own classes outside `META-INF/**`
     /// (multi-release overlays excluded), e.g. 65 = Java 21. Sampled; None if no classes.
     pub max_class_major: Option<u32>,
+    /// JPMS module name, for mapping `Module X reads package …` errors to jars: the
+    /// `module-info.class` name if present, else MANIFEST `Automatic-Module-Name`. None
+    /// otherwise; `src/core` derives the JDK automatic name from the file name itself.
+    pub module_name: Option<String>,
     /// Set for nested jars declared in `META-INF/jarjar/metadata.json`.
     pub jarjar: Option<JarJarInfo>,
     /// Ids of directly nested jars.

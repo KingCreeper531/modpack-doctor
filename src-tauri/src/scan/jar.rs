@@ -70,6 +70,7 @@ pub(crate) fn empty_record(ctx: &JarCtx, size: u64, status: JarStatus) -> JarRec
         packages: Vec::new(),
         mixin_configs: Vec::new(),
         max_class_major: None,
+        module_name: None,
         jarjar: None,
         nested: Vec::new(),
     }

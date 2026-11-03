@@ -66,6 +66,7 @@ function jarRecord(j: CorpusJar): JarRecord {
     packages: [...j.packages].sort(),
     mixinConfigs: j.mixinConfigs,
     maxClassMajor: null,
+    moduleName: null,
     jarjar: null,
     nested: [],
   };

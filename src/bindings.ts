@@ -384,6 +384,12 @@ export type JarRecord = {
 	 *  (multi-release overlays excluded), e.g. 65 = Java 21. Sampled; None if no classes.
 	 */
 	maxClassMajor: number | null,
+	/**
+	 *  JPMS module name, for mapping `Module X reads package …` errors to jars: the
+	 *  `module-info.class` name if present, else MANIFEST `Automatic-Module-Name`. None
+	 *  otherwise; `src/core` derives the JDK automatic name from the file name itself.
+	 */
+	moduleName: string | null,
 	/**  Set for nested jars declared in `META-INF/jarjar/metadata.json`. */
 	jarjar: JarJarInfo | null,
 	/**  Ids of directly nested jars. */
@@ -547,7 +553,8 @@ export type MrFile = {
 	/**  Always a `https://cdn.modrinth.com/` URL (others are dropped by the client). */
 	url: string,
 	filename: string,
-	size: number,
+	/**  None when the API omitted it (unknown — never treated as 0). */
+	size: number | null,
 	primary: boolean,
 	sha1: string,
 	sha512: string,
@@ -590,7 +597,15 @@ export type MrVersion = {
 	 *  `server_only_client_optional`, …). Preferred over the project's legacy side fields.
 	 */
 	environment: string | null,
+	/**  Usable files only (CDN URL + sha1 + sha512). Others are dropped by the client. */
 	files: MrFile[],
+	/**  Number of files the API listed but the client dropped (non-CDN host, missing hashes). */
+	droppedFiles: number,
+	/**
+	 *  True when the API's `primary: true` file was among the dropped ones. The planner must
+	 *  then fail rather than fall back to "the sole remaining file" (CONTRACTS invariant 8).
+	 */
+	primaryDropped: boolean,
 	dependencies: MrDependency[],
 };
 

@@ -11,8 +11,9 @@ pub struct MrFile {
     /// Always a `https://cdn.modrinth.com/` URL (others are dropped by the client).
     pub url: String,
     pub filename: String,
-    #[specta(type = specta_typescript::Number)]
-    pub size: u64,
+    /// None when the API omitted it (unknown — never treated as 0).
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub size: Option<u64>,
     pub primary: bool,
     pub sha1: String,
     pub sha512: String,
@@ -46,7 +47,13 @@ pub struct MrVersion {
     /// Raw v3 environment of this version (`client_only`, `client_and_server`,
     /// `server_only_client_optional`, …). Preferred over the project's legacy side fields.
     pub environment: Option<String>,
+    /// Usable files only (CDN URL + sha1 + sha512). Others are dropped by the client.
     pub files: Vec<MrFile>,
+    /// Number of files the API listed but the client dropped (non-CDN host, missing hashes).
+    pub dropped_files: u32,
+    /// True when the API's `primary: true` file was among the dropped ones. The planner must
+    /// then fail rather than fall back to "the sole remaining file" (CONTRACTS invariant 8).
+    pub primary_dropped: bool,
     pub dependencies: Vec<MrDependency>,
 }
 

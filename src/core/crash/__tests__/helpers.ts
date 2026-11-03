@@ -51,6 +51,7 @@ export function jar(spec: JarSpec): JarRecord {
     packages: spec.packages ?? [],
     mixinConfigs: spec.mixins ?? [],
     maxClassMajor: 61,
+    moduleName: null,
     jarjar: null,
     nested: [],
   };
