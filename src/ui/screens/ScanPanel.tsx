@@ -69,7 +69,9 @@ export function ScanPanel({ instanceId, className }: { instanceId: string; class
         <>
           <SortSwitch value={gridSort} disabled={status === 'scanning'} />
           {status === 'done' ? (
-            <span className="t-mono text-fg-faint">{`${counts.error} err · ${counts.warning} warn · ${counts.disabled} off`}</span>
+            // Tile counts are jars (a jar with two findings is one red tile), unlike the summary
+            // strip's finding counts, so say "jars" to keep the two from looking inconsistent.
+            <span className="t-mono text-fg-faint">{`jars: ${counts.error} error · ${counts.warning} warning · ${counts.disabled} disabled`}</span>
           ) : null}
         </>
       }

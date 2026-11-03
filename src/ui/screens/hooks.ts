@@ -1,5 +1,5 @@
 /** Small view hooks shared by the screens. */
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 /** Wall clock that re-renders the caller every `intervalMs` while `active`. */
 export function useNow(intervalMs: number, active = true): number {
@@ -14,17 +14,22 @@ export function useNow(intervalMs: number, active = true): number {
 }
 
 /** Content-box height of an element, tracked with a ResizeObserver. */
-export function useElementHeight<T extends HTMLElement>(fallback: number): [RefObject<T | null>, number] {
-  const ref = useRef<T>(null);
+/**
+ * Uses a callback ref so the observer re-binds whenever React swaps the DOM node; a
+ * mount-only `useRef` + effect kept observing a detached node after the workspace re-rendered,
+ * which froze the mod table at its pre-scan height (M3 visual review).
+ */
+export function useElementHeight<T extends HTMLElement>(fallback: number): [(el: T | null) => void, number] {
+  const [el, setEl] = useState<T | null>(null);
   const [height, setHeight] = useState(fallback);
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el) return;
     const measure = (h: number) => setHeight(h > 0 ? Math.floor(h) : fallback);
     measure(el.clientHeight);
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => measure(entries[0]?.contentRect.height ?? el.clientHeight));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fallback]);
-  return [ref, height];
+  }, [el, fallback]);
+  return [setEl, height];
 }

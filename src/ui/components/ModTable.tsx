@@ -109,8 +109,12 @@ export interface ModTableProps {
   /** Scrolls this row into view whenever it changes (e.g. after a tile click). */
   scrollToId?: string | null;
   defaultExpanded?: readonly string[];
-  /** Scroll viewport height (px); the owner sizes it in the real layout. */
-  height?: number;
+  /**
+   * Scroll viewport height: px, or `'fill'` to take the remaining height of a flex parent via
+   * CSS. Prefer `'fill'` in layouts: it never depends on ResizeObserver timing (hidden or
+   * background windows don't deliver observer callbacks, which left the table at a stale size).
+   */
+  height?: number | 'fill';
   className?: string;
 }
 
@@ -137,7 +141,10 @@ export function ModTable({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 24,
     overscan: 16,
+    // Render a screenful before the virtualizer's own observer reports the real size.
+    initialRect: { width: 0, height: height === 'fill' ? 1200 : height },
   });
+  const fill = height === 'fill';
 
   useEffect(() => {
     if (!scrollToId) return;
@@ -158,9 +165,14 @@ export function ModTable({
 
   return (
     <TableRoleContext.Provider value="grid">
-      <div role="grid" aria-label="Mods" aria-rowcount={flat.length + 1} className={cx('flex min-w-0 flex-col', className)}>
+      <div
+        role="grid"
+        aria-label="Mods"
+        aria-rowcount={flat.length + 1}
+        className={cx('flex min-w-0 flex-col', fill && 'h-full min-h-0', className)}
+      >
         <TableHeader<string> columns={COLUMNS} sort={sort} onSort={(s) => onSort(s as SortState<ModSortKey>)} />
-        <div ref={scrollRef} className="overflow-y-auto" style={{ height }}>
+        <div ref={scrollRef} className={cx('overflow-y-auto', fill && 'min-h-0 flex-1')} style={fill ? undefined : { height }}>
           <div role="rowgroup" className="relative w-full" style={{ height: virtual.getTotalSize() }}>
             {virtual.getVirtualItems().map((v) => {
               const f = flat[v.index]!;

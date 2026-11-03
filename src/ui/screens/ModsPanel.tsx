@@ -14,7 +14,6 @@ import { Panel } from '../components/Panel';
 import { deriveModRows } from '../app/derive';
 import { emptyScan } from '../app/scanState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
-import { useElementHeight } from './hooks';
 
 /** The most recent enable/disable refusal, if any. */
 function toggleError(errors: Readonly<Record<string, AppError>>): [string, AppError] | null {
@@ -33,7 +32,6 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
   const reveal = useApp((st) => st.revealJarId);
   const fixErrors = useApp((st) => st.fixErrors);
   const a = useActions();
-  const [bodyRef, bodyHeight] = useElementHeight<HTMLDivElement>(384);
 
   const rows = useMemo(
     () => deriveModRows({ ...emptyScan(), stubs: s.stubs ?? [], result: s.result, findings: s.findings ?? [], status: s.status }),
@@ -60,7 +58,7 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
           }
         />
       ) : null}
-      <div ref={bodyRef} className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1">
         <ModTable
           rows={rows}
           sort={sort}
@@ -69,7 +67,7 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
           onSelect={(id) => a.select({ kind: 'jar', id })}
           onToggleEnabled={(id, next) => void a.setJarEnabled(id, next)}
           scrollToId={reveal}
-          height={Math.max(48, bodyHeight - 24)}
+          height="fill"
         />
       </div>
     </Panel>
