@@ -383,6 +383,11 @@ export type JarRecord = {
 	depth: number,
 	parentId: string | null,
 	status: JarStatus,
+	/**
+	 *  Metadata files present in the jar that failed to parse (see `MetadataError`). Empty for
+	 *  healthy jars. Never makes the jar `Corrupt` on its own if another metadata file parsed.
+	 */
+	metadataErrors: MetadataError[],
 	/**  Union of `mods[].loader`; empty when no metadata file was found. */
 	loaders: LoaderKind[],
 	mods: ModMeta[],
@@ -411,7 +416,10 @@ export type JarRecord = {
 };
 
 export type JarStatus = { state: "ok" } | 
-/**  Not a valid zip, or metadata present but unparseable. */
+/**
+ *  Not a valid zip, or it has metadata files and NONE of them parsed. A jar where at least
+ *  one metadata file parsed is `Ok`; the failed ones are listed in `metadata_errors`.
+ */
 { state: "corrupt"; reason: string } | 
 /**  I/O or permission error. */
 { state: "unreadable"; reason: string };
@@ -511,6 +519,18 @@ export type LogSource = {
 	kind: LogKind,
 	modifiedMs: number,
 	size: number,
+};
+
+/**
+ *  A metadata file inside a jar that could not be parsed (empty, invalid TOML/JSON, unexpanded
+ *  build-template placeholders such as `${mod_id}`, …). Whether it matters depends on which file
+ *  the pack's loader reads, which only `src/core` knows: e.g. NeoForge ≥ 1.20.5 reads only
+ *  `META-INF/neoforge.mods.toml`, so a broken leftover `META-INF/mods.toml` is harmless there.
+ */
+export type MetadataError = {
+	/**  Path inside the jar, e.g. `META-INF/mods.toml`. */
+	file: string,
+	reason: string,
 };
 
 /**  Where the instance's MC version / loader came from. */

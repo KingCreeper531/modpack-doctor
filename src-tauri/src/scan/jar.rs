@@ -118,6 +118,7 @@ pub(crate) fn empty_record(ctx: &JarCtx, size: u64, status: JarStatus) -> JarRec
         depth: ctx.depth,
         parent_id: ctx.parent_id.clone(),
         status,
+        metadata_errors: Vec::new(),
         loaders: Vec::new(),
         mods: Vec::new(),
         packages: Vec::new(),

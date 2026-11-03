@@ -99,11 +99,24 @@ pub struct ModMeta {
     pub metadata_excerpt: String,
 }
 
+/// A metadata file inside a jar that could not be parsed (empty, invalid TOML/JSON, unexpanded
+/// build-template placeholders such as `${mod_id}`, …). Whether it matters depends on which file
+/// the pack's loader reads, which only `src/core` knows: e.g. NeoForge ≥ 1.20.5 reads only
+/// `META-INF/neoforge.mods.toml`, so a broken leftover `META-INF/mods.toml` is harmless there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataError {
+    /// Path inside the jar, e.g. `META-INF/mods.toml`.
+    pub file: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum JarStatus {
     Ok,
-    /// Not a valid zip, or metadata present but unparseable.
+    /// Not a valid zip, or it has metadata files and NONE of them parsed. A jar where at least
+    /// one metadata file parsed is `Ok`; the failed ones are listed in `metadata_errors`.
     Corrupt { reason: String },
     /// I/O or permission error.
     Unreadable { reason: String },
@@ -154,6 +167,9 @@ pub struct JarRecord {
     pub depth: u32,
     pub parent_id: Option<String>,
     pub status: JarStatus,
+    /// Metadata files present in the jar that failed to parse (see `MetadataError`). Empty for
+    /// healthy jars. Never makes the jar `Corrupt` on its own if another metadata file parsed.
+    pub metadata_errors: Vec<MetadataError>,
     /// Union of `mods[].loader`; empty when no metadata file was found.
     pub loaders: Vec<LoaderKind>,
     pub mods: Vec<ModMeta>,

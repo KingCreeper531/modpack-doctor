@@ -212,6 +212,7 @@ function record(spec: JarSpec, loader: LoaderKind, id: string, path: string, dep
     depth,
     parentId,
     status: spec.status ?? { state: 'ok' },
+    metadataErrors: [],
     loaders,
     mods,
     packages: [...(spec.packages ?? [])].sort(),

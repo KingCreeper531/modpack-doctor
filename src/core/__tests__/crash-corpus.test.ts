@@ -47,6 +47,7 @@ function jarRecord(j: CorpusJar): JarRecord {
     depth: 0,
     parentId: null,
     status: { state: 'ok' },
+    metadataErrors: [],
     loaders: [],
     mods: j.modIds.map((modId) => ({
       modId,

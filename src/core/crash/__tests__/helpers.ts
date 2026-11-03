@@ -48,6 +48,7 @@ export function jar(spec: JarSpec): JarRecord {
     depth: spec.parent ? 1 : 0,
     parentId: spec.parent ?? null,
     status: { state: 'ok' },
+    metadataErrors: [],
     loaders: [loader],
     mods: (spec.mods ?? []).map(([m, n]) => mod(m, n, loader)),
     packages: spec.packages ?? [],
