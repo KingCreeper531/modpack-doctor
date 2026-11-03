@@ -332,9 +332,13 @@ export function createAppStore(deps: StoreDeps): AppStore {
           return;
         }
         const result = res.data;
-        const progress: Record<string, boolean> = {};
-        for (const j of result.jars) if (j.depth === 0) progress[j.id] = j.status.state === 'ok';
-        patchScan(id, (s) => ({ ...s, result, progress, done: Object.keys(progress).length, total: Object.keys(progress).length }));
+        // The result is authoritative; it also covers any progress event that never arrived.
+        patchScan(id, (s) => {
+          const progress: Record<string, boolean> = { ...s.progress };
+          for (const j of result.jars) if (j.depth === 0) progress[j.id] = j.status.state === 'ok';
+          const n = Object.keys(progress).length;
+          return { ...s, result, progress, done: n, total: n };
+        });
         const checked = check(id);
         patchScan(id, (s) => ({ ...s, ...checked, status: 'done', finishedAt: now() }));
         keepSelection(id);

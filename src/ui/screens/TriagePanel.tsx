@@ -38,7 +38,8 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
   useEffect(() => {
     if (!expandRequest) return;
     setExpanded((cur) => (cur.has(expandRequest) ? cur : new Set(cur).add(expandRequest)));
-    const row = listRef.current?.querySelector(`[data-finding-id="${CSS.escape(expandRequest)}"]`);
+    const rows = listRef.current?.querySelectorAll<HTMLElement>('[data-finding-id]') ?? [];
+    const row = Array.from(rows).find((r) => r.dataset.findingId === expandRequest);
     row?.scrollIntoView?.({ block: 'nearest' });
   }, [expandRequest, s.findings]);
 
