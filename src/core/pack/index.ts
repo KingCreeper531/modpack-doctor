@@ -3,31 +3,28 @@
  */
 import type { Instance, PackOverride, ScanResult } from '../../bindings';
 import type { JarIndex, PackContext } from '../model';
+import { buildJarIndexImpl } from './jarIndex';
+import { resolvePackImpl } from './resolve';
 
 /**
  * Effective pack identity (check 1): `override` > launcher/mrpack metadata > majority across
  * active jars. Never throws; unknown parts are null with `source: 'unknown'`.
+ * Full precedence and `source` rules: ./resolve.ts.
  */
 export function resolvePack(instance: Instance, scan: ScanResult, override?: PackOverride | null): PackContext {
-  void scan;
-  void override;
-  return {
-    mcVersion: instance.mcVersion,
-    loader: instance.loader,
-    side: instance.side,
-    source: instance.metadataSource === 'launcher' ? 'launcher' : 'unknown',
-  };
+  try {
+    return resolvePackImpl(instance, scan, override);
+  } catch {
+    const side = override?.side ?? (instance?.side === 'server' ? 'server' : 'client');
+    return { mcVersion: null, loader: null, side, source: 'unknown' };
+  }
 }
 
-/** Lookup tables over active jars (see `JarIndex` docs). */
+/** Lookup tables over active jars (see `JarIndex` docs and ./jarIndex.ts). */
 export function buildJarIndex(scan: ScanResult): JarIndex {
-  void scan;
-  return {
-    byId: new Map(),
-    byModId: new Map(),
-    byPackage: new Map(),
-    byPackageAnyDepth: new Map(),
-    byMixinConfig: new Map(),
-    byFileName: new Map(),
-  };
+  return buildJarIndexImpl(scan);
 }
+
+export { describeLoader, describePack } from './describe';
+export { isActive, isDisabledChain, topLevelOf } from './active';
+export { LOADER_DEP_IDS, LOADER_NAMES, loaderAccepts, mcCompare, mcIs, versionSyntaxFor } from './loaders';
