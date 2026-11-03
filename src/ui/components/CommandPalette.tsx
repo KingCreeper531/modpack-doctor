@@ -33,6 +33,8 @@ export interface CommandPaletteProps {
   /** `fixed`: the real overlay (64px from the window top). `contained`: positioned by the parent. */
   placement?: 'fixed' | 'contained';
   initialQuery?: string;
+  /** Focus the input on mount (the real overlay). The /design specimens pass false. */
+  autoFocus?: boolean;
   className?: string;
 }
 
@@ -50,7 +52,7 @@ function Marked({ label, query }: { label: string; query: string }) {
   );
 }
 
-export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed', initialQuery = '', className }: CommandPaletteProps) {
+export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed', initialQuery = '', autoFocus = true, className }: CommandPaletteProps) {
   const [query, setQuery] = useState(initialQuery);
   return (
     <Command
@@ -72,6 +74,7 @@ export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed',
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-4 text-fg-faint focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-signal">
         <MagnifyingGlass size={16} aria-hidden />
         <Command.Input
+          autoFocus={autoFocus}
           value={query}
           onValueChange={setQuery}
           placeholder="instance, mod id, or action…"

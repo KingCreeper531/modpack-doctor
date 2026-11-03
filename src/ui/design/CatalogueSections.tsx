@@ -86,12 +86,12 @@ export function PaletteSection() {
       <SpecRow>
         <Spec label="Open" note="window frame, palette 64px below its top" className="min-w-0 flex-1">
           <div className="relative h-[400px] overflow-hidden border border-line bg-bg">
-            <CommandPalette groups={groups} onSelect={setPicked} onClose={() => setPicked('closed')} placement="contained" className="absolute top-16 left-4" />
+            <CommandPalette groups={groups} onSelect={setPicked} onClose={() => setPicked('closed')} placement="contained" autoFocus={false} className="absolute top-16 left-4" />
           </div>
         </Spec>
         <Spec label="Filtered" note={'query "re" · matched characters fg, rest fg-dim'} className="min-w-0 flex-1">
           <div className="relative h-[400px] overflow-hidden border border-line bg-bg">
-            <CommandPalette groups={groups} onSelect={setPicked} onClose={() => setPicked('closed')} placement="contained" initialQuery="re" className="absolute top-16 left-4" />
+            <CommandPalette groups={groups} onSelect={setPicked} onClose={() => setPicked('closed')} placement="contained" autoFocus={false} initialQuery="re" className="absolute top-16 left-4" />
           </div>
         </Spec>
       </SpecRow>
