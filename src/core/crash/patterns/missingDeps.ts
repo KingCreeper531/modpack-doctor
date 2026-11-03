@@ -83,7 +83,8 @@ function collect(ctx: Ctx): Dep[] {
 
     const msg = stripFormatting(logMessage(t));
     const tr = TRANSLATED.exec(msg);
-    if (!tr) return;
+    // `Mod x requires mod y, version …` is the Fabric ≤0.11 resolver (C-FABRIC-INCOMPAT), not FML.
+    if (!tr || tr[2] === 'mod') return;
     const depId = tr[2] ?? '';
     let actual = '[MISSING]';
     for (let j = i + 1; j <= i + 3 && contiguous(ctx.lines, j - 1, j); j++) {

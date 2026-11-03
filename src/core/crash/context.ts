@@ -99,8 +99,12 @@ export function crashed(ctx: Ctx): boolean {
 /** Log level of the record line `i` belongs to (walks back over stack-trace lines); null if none. */
 export function levelAt(ctx: Ctx, i: number): Level | null {
   for (let j = i, steps = 0; j >= 0 && steps < 600; j--, steps++) {
-    const lvl = logLevel(ctx.lines[j]?.text ?? '');
+    const text = ctx.lines[j]?.text ?? '';
+    const lvl = logLevel(text);
     if (lvl) return lvl;
+    // The JVM's own uncaught-exception output (stderr appended to the log by the launcher) is a
+    // record of its own, not a continuation of the log line before it.
+    if (text.startsWith('Exception in thread "')) return null;
     if (j > 0 && !contiguous(ctx.lines, j - 1, j)) return null;
   }
   return null;

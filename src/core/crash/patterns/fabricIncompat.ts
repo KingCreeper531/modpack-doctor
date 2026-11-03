@@ -45,6 +45,12 @@ interface Problem {
 const FABRIC_SUBJECT = /(?:[Mm]od )?'([^']+)' \(([\w.-]+)\) (\S+) (requires|transitively requires|is incompatible with|conflicts with|recommends|breaks) (.+)$/;
 const DEP = /^(.+?) of (?:(?:[Mm]od )?'([^']+)' \(([\w.-]+)\)|([\w.-]+))(.*)$/;
 const QUILT = /^(.+?) (requires|transitively requires|breaks with) (.+?) of (.+?), (which is missing!?|but only (?:a different|the wrong|wrong) versions? (?:is|are) present.*|but an incompatible version is present.*)$/;
+/** Fabric ≤0.11: ` - Mod <id> requires mod <dep>, version <range> but only the wrong version is present: X!` */
+const OLD_FABRIC_DETAIL = /^\s*-\s+Mod ([\w.-]+) (requires|conflicts with|breaks|is incompatible with) mod ([\w.-]+), versions? (\S+?),? ((?:but|which|yet) .*)$/;
+/** Quilt: `	- Lumen Lanterns 0.9.0 is loaded from <mods>/lumenlanterns-0.9.0.jar` */
+const LOADED_FROM = /^\s*-\s+(.+?) (\S+) is loaded from (.+?)\s*$/;
+/** Quilt report Mod Table row: `| 4 | oωo | owo | 0.11.2 | fabric | <mods>/owo-lib.jar |` */
+const MOD_TABLE_ROW = /^\|\s*\d+\s*\|([^|]+)\|([^|]+)\|[^|]*\|[^|]*\|([^|]+)\|/;
 const OLD_FABRIC = /Could not find required mod: ([\w.-]+) requires \{([\w.-]+) @ \[([^\]]*)\]\}/;
 const REMOVE = /Remove mod '([^']+)' \(([\w.-]+)\) (\S+) \(([^)]+)\)\./;
 const INSTALL = /Install ([\w.-]+), (.+?)\.\s*$/;
@@ -65,14 +71,55 @@ function kindOf(verb: string, tail: string): { kind: Kind; actual?: string } | n
   return null;
 }
 
+/** Display names compared loosely: case, spaces and punctuation ignored. */
+export function normName(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+interface Alias {
+  id?: string;
+  file?: string;
+}
+
+/** Display name → mod id / jar file, from Quilt `is loaded from` lines and the report's Mod Table. */
+function aliasesOf(ctx: Ctx): Map<string, Alias> {
+  const out = new Map<string, Alias>();
+  const merge = (name: string, a: Alias): void => {
+    const key = normName(name);
+    if (!key) return;
+    out.set(key, { ...a, ...out.get(key) });
+  };
+  for (const { text } of ctx.lines) {
+    const lf = LOADED_FROM.exec(text);
+    if (lf) {
+      const file = basename(lf[3] ?? '');
+      if (/\.jar$/i.test(file)) merge(lf[1] ?? '', { file });
+      continue;
+    }
+    const row = MOD_TABLE_ROW.exec(text);
+    if (row) {
+      const file = basename((row[3] ?? '').trim());
+      merge((row[1] ?? '').trim(), { id: (row[2] ?? '').trim(), ...(/\.jar$/i.test(file) ? { file } : {}) });
+    }
+  }
+  return out;
+}
+
 function partyLabel(p: Party): string {
   return p.id && p.id !== p.name ? `${p.name} (${p.id})` : p.name;
 }
 
-function partyJars(ctx: Ctx, p: Party | undefined): JarRecord[] {
+function partyJars(ctx: Ctx, p: Party | undefined, aliases: Map<string, Alias>): JarRecord[] {
   const index = ctx.index;
   if (!index || !p) return [];
-  const js = p.id ? jarsForModId(p.id, index) : jarsForModName(p.name, index);
+  let js = p.id ? jarsForModId(p.id, index) : [];
+  const alias = aliases.get(normName(p.name));
+  if (js.length === 0 && alias?.file) {
+    const byFile = jarByFileName(alias.file, index);
+    if (byFile) js = [byFile];
+  }
+  if (js.length === 0 && alias?.id) js = jarsForModId(alias.id, index);
+  if (js.length === 0 && !p.id) js = jarsForModName(p.name, index);
   return uniqueTopLevel(js.slice(0, 1), index);
 }
 
@@ -85,7 +132,7 @@ function collect(ctx: Ctx): { problems: Problem[]; headerIdx: number[]; steps: M
     const existing = problems.get(p.key);
     const sev = gate(ctx, i, { fatal: true });
     if (existing) {
-      for (const s of p.subjects) if (!existing.subjects.some((e) => e.name === s.name)) existing.subjects.push(s);
+      for (const s of p.subjects) if (!existing.subjects.some((e) => normName(e.name) === normName(s.name))) existing.subjects.push(s);
       for (const f of p.files ?? []) if (!existing.files.includes(f)) existing.files.push(f);
       existing.lineIdx.push(i);
       existing.severity = worst(existing.severity, sev);
@@ -121,11 +168,23 @@ function collect(ctx: Ctx): { problems: Problem[]; headerIdx: number[]; steps: M
       continue;
     }
 
+    const od = OLD_FABRIC_DETAIL.exec(t);
+    if (od) {
+      sawDetails = true;
+      const subject: Party = { id: od[1] ?? '', name: od[1] ?? '' };
+      const dep: Party = { id: od[3] ?? '', name: od[3] ?? '' };
+      const k = kindOf(od[2] ?? '', od[5] ?? '');
+      if (!k || dep.id === 'java') continue;
+      const key = k.kind === 'missing' ? `missing:${normName(dep.name)}` : `${k.kind}:${subject.id}->${dep.id}`;
+      add(i, { key, kind: k.kind, subjects: [subject], dep, range: od[4] ?? '', ...(k.actual ? { actual: k.actual } : {}) });
+      continue;
+    }
+
     const old = OLD_FABRIC.exec(t);
     if (old) {
       const id = old[1] ?? '';
       const dep = old[2] ?? '';
-      add(i, { key: `missing:${dep}`, kind: 'missing', subjects: [{ id, name: id }], dep: { id: dep, name: dep }, range: old[3] ?? '' });
+      add(i, { key: `missing:${normName(dep)}`, kind: 'missing', subjects: [{ id, name: id }], dep: { id: dep, name: dep }, range: old[3] ?? '' });
       continue;
     }
 
@@ -141,9 +200,9 @@ function collect(ctx: Ctx): { problems: Problem[]; headerIdx: number[]; steps: M
       if (!k || dep.id === 'java') continue; // java → C-JAVA-VERSION
       const key =
         k.kind === 'missing'
-          ? `missing:${dep.id ?? dep.name}`
+          ? `missing:${normName(dep.id ?? dep.name)}`
           : k.kind === 'breaks'
-            ? `breaks:${[subject.id, dep.id].sort().join('+')}`
+            ? `breaks:${[normName(subject.id ?? ''), normName(dep.id ?? '')].sort().join('+')}`
             : `${k.kind}:${subject.id}->${dep.id ?? dep.name}`;
       add(i, { key, kind: k.kind, subjects: [subject], dep, range: (d[1] ?? '').trim(), ...(k.actual ? { actual: k.actual } : {}) });
       continue;
@@ -155,10 +214,16 @@ function collect(ctx: Ctx): { problems: Problem[]; headerIdx: number[]; steps: M
       const subject: Party = { name: (q[1] ?? '').trim() };
       const dep: Party = { name: (q[4] ?? '').trim() };
       sawDetails = true;
+      // A Fabric-era line already matched above; this is Quilt's display-name form.
       if (/^(?:java|Java)\b/.test(dep.name)) continue;
       const k = kindOf(q[2] ?? '', q[5] ?? '');
       if (!k) continue;
-      const key = k.kind === 'missing' ? `missing:${dep.name}` : `${k.kind}:${subject.name}->${dep.name}`;
+      const key =
+        k.kind === 'missing'
+          ? `missing:${normName(dep.name)}`
+          : k.kind === 'breaks'
+            ? `breaks:${[normName(subject.name), normName(dep.name)].sort().join('+')}`
+            : `${k.kind}:${normName(subject.name)}->${normName(dep.name)}`;
       add(i, { key, kind: k.kind, subjects: [subject], dep, range: (q[3] ?? '').trim(), ...(k.actual ? { actual: k.actual } : {}) });
       continue;
     }
@@ -178,16 +243,17 @@ function collect(ctx: Ctx): { problems: Problem[]; headerIdx: number[]; steps: M
   return { problems: [...problems.values()], headerIdx, steps, sawDetails };
 }
 
-function toFinding(ctx: Ctx, p: Problem, steps: Map<string, string>, headerIdx: number[]): Finding | null {
+function toFinding(ctx: Ctx, p: Problem, steps: Map<string, string>, headerIdx: number[], aliases: Map<string, Alias>): Finding | null {
   if (!p.severity) return null;
   const index = ctx.index;
   const subjects = listText(p.subjects.map(partyLabel));
   const plural = p.subjects.length > 1;
-  const subjectJars = index ? uniqueTopLevel(p.subjects.flatMap((s) => partyJars(ctx, s)), index) : [];
-  const depJars = partyJars(ctx, p.dep);
+  const subjectJars = index ? uniqueTopLevel(p.subjects.flatMap((s) => partyJars(ctx, s, aliases)), index) : [];
+  const depJars = partyJars(ctx, p.dep, aliases);
   const dep = p.dep ? partyLabel(p.dep) : '';
-  const evidence = [logEvidence(ctx, p.lineIdx, { context: 1, contextIdx: headerIdx.slice(0, 1) })];
-  const unresolved = index ? p.subjects.filter((s) => partyJars(ctx, s).length === 0).map(partyLabel) : [];
+  // The loader's failure header is part of the diagnosis: culprit role, like the detail lines.
+  const evidence = [logEvidence(ctx, [...headerIdx.slice(0, 3), ...p.lineIdx], { context: 1 })];
+  const unresolved = index ? p.subjects.filter((s) => partyJars(ctx, s, aliases).length === 0).map(partyLabel) : [];
   const stepFor = (id: string | undefined): string | undefined => (id ? steps.get(id) : undefined);
 
   switch (p.kind) {
@@ -236,7 +302,11 @@ function toFinding(ctx: Ctx, p: Problem, steps: Map<string, string>, headerIdx: 
         explanation: `${subjects} declare${plural ? '' : 's'} that ${p.range ? `${p.range} of ` : ''}${dep} breaks it${p.actual ? `, and ${p.actual} is installed` : ''}. Remove one of them or update to versions that work together.`,
         culprits,
         evidence,
-        fixes: [manual(`Remove ${subjects} or ${dep}, or update one so the versions are compatible.`)],
+        // Either side can go: offer disabling each, the declaring mod first.
+        fixes: [
+          ...culprits.flatMap((c) => disable(c)),
+          manual(`Remove ${subjects} or ${dep}, or update one so the versions are compatible.`),
+        ],
         discriminator: p.key,
         unresolved,
       });
@@ -294,7 +364,8 @@ export const fabricIncompatPattern: CrashPattern = {
   match(input) {
     const ctx = ctxOf(input);
     const { problems, headerIdx, steps, sawDetails } = collect(ctx);
-    const found = problems.flatMap((p) => toFinding(ctx, p, steps, headerIdx) ?? []);
+    const aliases = aliasesOf(ctx);
+    const found = problems.flatMap((p) => toFinding(ctx, p, steps, headerIdx, aliases) ?? []);
     // Generic finding only when the details are not in the log (a java-only problem is
     // reported by C-JAVA-VERSION instead).
     if (found.length === 0 && !sawDetails && headerIdx.length > 0) {

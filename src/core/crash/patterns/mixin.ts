@@ -5,7 +5,7 @@
  */
 import type { JarRecord } from '../../../bindings';
 import type { CrashPattern, Finding, Severity } from '../../model';
-import { ctxOf, disable, finding, gate, listText, logEvidence, manual, refs, worst, type Ctx } from '../context';
+import { ctxOf, disable, finding, gate, listText, logEvidence, manual, refs, traceAt, worst, type Ctx } from '../context';
 import { jarByFileName, jarsForModId, jarsForPackage, jarLabel, uniqueTopLevel } from '../jars';
 import { basename, normalizeClassName, packageOf, simpleName, truncate } from '../text';
 
@@ -169,6 +169,24 @@ function duplicateConfigFindings(ctx: Ctx): Finding[] {
   return out;
 }
 
+/**
+ * A matched line is often a wrapper (`MixinApplyError … FAILED during APPLY`); the reason is the
+ * innermost cause of the same stack trace (`InvalidMixinException: @Shadow field … was not
+ * located…`). Mark that line as a culprit too and prefer its message as the error.
+ */
+function addInnermostCause(ctx: Ctx, g: Group): void {
+  for (const i of [...g.lineIdx]) {
+    const trace = traceAt(ctx, i);
+    const inner = trace?.segments[trace.segments.length - 1];
+    if (!inner || inner.idx <= i || g.lineIdx.includes(inner.idx)) continue;
+    g.lineIdx.push(inner.idx);
+    if (!g.error || /^failed during /.test(g.error)) {
+      g.error = `${simpleName(inner.cls)}${inner.message ? `: ${inner.message}` : ''}`;
+    }
+  }
+  g.lineIdx.sort((a, b) => a - b);
+}
+
 export const mixinPattern: CrashPattern = {
   id: 'mixin',
   codes: ['C-MIXIN'],
@@ -220,6 +238,7 @@ export const mixinPattern: CrashPattern = {
         return;
       }
     });
+    for (const g of [...groups.values(), loose]) addInnermostCause(ctx, g);
     const found = [...groups.values()].flatMap((g) => toFinding(ctx, g) ?? []);
     if (found.length === 0 && loose.lineIdx.length > 0) {
       const f = toFinding(ctx, loose);
