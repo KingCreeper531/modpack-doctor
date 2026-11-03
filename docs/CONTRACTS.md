@@ -42,6 +42,14 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    objects into that form but never evaluates a range. Pack identity (including inference from the
    jar majority) lives in `src/core/pack`, so `src/core` chooses the Modrinth version for
    replace/install and passes a `versionId`.
+   Range semantics are settled in `src/core/version`, so checks must not handle these cases
+   again:
+   - A bare Maven version (`47.1.0`) is a *soft* requirement and matches everything, as in FML.
+   - In Fabric ranges only the tested version is MC-normalised. Predicate versions stay as written,
+     as in fabric-loader, so `>=1.20.5-pre1` does not match game `1.20.5-pre1`.
+   - `satisfies` returns `null` (unknown, never a guess) for unparseable or unrepresentable input.
+   - `Instance.loader = null` together with `metadataSource: 'launcher'` means a **vanilla**
+     instance. `LoaderKind` has no vanilla member.
 5. **IDs.**
    - Instance id = first 16 hex chars of SHA-1 over the canonical game dir path, lowercased on
      Windows and macOS. Discovery de-duplicates by it.
