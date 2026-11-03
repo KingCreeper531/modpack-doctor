@@ -97,10 +97,13 @@ export function jarsForModule(name: string, index: JarIndex): JarRecord[] {
 
 /** Jars whose mod display name or id equals `name` (Quilt messages use display names). */
 export function jarsForModName(name: string, index: JarIndex): JarRecord[] {
-  const wanted = name.trim().toLowerCase();
+  // Loose comparison: "Lumen Lanterns" matches the id `lumenlanterns` and the name "Lumen lanterns".
+  const loose = (t: string): string => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const wanted = loose(name);
   const out: JarRecord[] = [];
+  if (!wanted) return out;
   for (const jar of index.byId.values()) {
-    if (jar.mods.some((m) => m.name?.toLowerCase() === wanted || m.modId.toLowerCase() === wanted)) out.push(jar);
+    if (jar.mods.some((m) => (m.name !== null && loose(m.name) === wanted) || loose(m.modId) === wanted)) out.push(jar);
   }
   return out.sort((a, b) => a.depth - b.depth);
 }

@@ -4,13 +4,24 @@
  */
 import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, finding, gate, logEvidence, manual, worst, type Ctx } from '../context';
+import { logLevel } from '../text';
 
 type OomKind = 'heap' | 'gc' | 'metaspace' | 'class-space' | 'direct' | 'array' | 'threads' | 'native';
 
 const JAVA_OOM = /java\.lang\.OutOfMemoryError: (Java heap space|GC overhead limit exceeded|Metaspace|Compressed class space|Direct buffer memory|Requested array size exceeds VM limit|unable to create (?:new )?native thread.*)/;
 const NATIVE_OOM = /There is insufficient memory for the Java Runtime Environment|Native memory allocation \((?:malloc|mmap)\) failed|Out of Memory Error \(/;
 
+/**
+ * Only a thrown OutOfMemoryError counts: a stack-trace line that *starts* with it (optionally
+ * after `Exception in thread "…"`, `Caused by:`, `Caused by N:` or `Exception message:`), or a
+ * log record that reports it. The same words inside a crash-report details value (a mod's config
+ * dump) or JVM flags (`-XX:+HeapDumpOnOutOfMemoryError`) do not.
+ */
+const THROWN_OOM = /^\s*(?:Exception in thread "[^"]*" |Caused by(?: \d+)?: |Exception message: )?java\.lang\.OutOfMemoryError:/;
+
 function kindOf(text: string): OomKind | null {
+  if (text.startsWith('#')) return NATIVE_OOM.test(text) ? 'native' : null;
+  if (!THROWN_OOM.test(text) && logLevel(text) === null) return null;
   const m = JAVA_OOM.exec(text);
   if (m) {
     const what = m[1] ?? '';
@@ -22,7 +33,7 @@ function kindOf(text: string): OomKind | null {
     if (what.startsWith('Requested array size')) return 'array';
     return 'threads';
   }
-  return NATIVE_OOM.test(text) ? 'native' : null;
+  return null;
 }
 
 /** Max heap in MiB from `-Xmx`, the crash report `Memory: … up to N bytes`, or null. */
