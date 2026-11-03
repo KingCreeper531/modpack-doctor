@@ -175,6 +175,16 @@ pub(crate) fn parse_429_wait(body: &[u8]) -> Option<Duration> {
     }
 }
 
+/// Research §6/rec. 4: wait `max(X-Ratelimit-Reset, "retry after N ms", 1 s)`; when the server
+/// gives neither, fall back to exponential backoff.
+pub(crate) fn wait_after_429(parsed: Option<Duration>, reset: Option<Duration>, fallback: Duration, min: Duration) -> Duration {
+    let wait = match (parsed, reset) {
+        (None, None) => fallback,
+        (a, b) => a.unwrap_or(Duration::ZERO).max(b.unwrap_or(Duration::ZERO)),
+    };
+    wait.max(min)
+}
+
 fn header_u64(resp: &Response, name: &str) -> Option<u64> {
     resp.headers().get(name)?.to_str().ok()?.trim().parse().ok()
 }
@@ -297,10 +307,7 @@ pub(crate) async fn send(
                 let reset = header_u64(&resp, "x-ratelimit-reset").map(Duration::from_secs);
                 let body = read_capped(resp, 64 * 1024).await.unwrap_or_default();
                 drop(permit);
-                let wait = parse_429_wait(&body)
-                    .or(reset)
-                    .unwrap_or_else(|| backoff(policy, attempt))
-                    .max(policy.min_429_wait);
+                let wait = wait_after_429(parse_429_wait(&body), reset, backoff(policy, attempt), policy.min_429_wait);
                 if attempt >= policy.max_retries || wait > MAX_SINGLE_WAIT {
                     return Err(ReqError::RateLimited { retry_after_s: secs_ceil(wait) });
                 }
@@ -353,6 +360,17 @@ mod tests {
         assert_eq!(parse_429_wait(b), Some(Duration::from_secs(3)));
         assert_eq!(parse_429_wait(b"not json"), None);
         assert_eq!(parse_429_wait(br#"{"description":"slow down"}"#), None);
+    }
+
+    #[test]
+    fn wait_after_429_takes_the_max() {
+        let s = Duration::from_secs;
+        let ms = Duration::from_millis;
+        assert_eq!(wait_after_429(Some(ms(1500)), Some(s(3)), s(9), s(1)), s(3));
+        assert_eq!(wait_after_429(Some(ms(4500)), Some(s(3)), s(9), s(1)), ms(4500));
+        assert_eq!(wait_after_429(Some(ms(10)), None, s(9), s(1)), s(1));
+        assert_eq!(wait_after_429(None, Some(s(2)), s(9), s(1)), s(2));
+        assert_eq!(wait_after_429(None, None, s(9), s(1)), s(9));
     }
 
     #[test]
