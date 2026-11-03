@@ -12,3 +12,5 @@ src-tauri/gen/schemas/
 *.key.pub
 coverage/
 .vite/
+# Agent worktrees
+.claude/worktrees/
