@@ -37,3 +37,68 @@ Seven agents worked in parallel in separate worktrees. The integrator merged eve
   - M3 passes `&PathGuard` into the scanner, runs `discover()` on `spawn_blocking`, and wires the screens.
   - M4 builds the Rust watch episode state machine and the shared process detection.
   - M5 surfaces the rate-limit status and confirms E's four extra alias slugs against the live API.
+
+## M3: static checks, end to end (this commit)
+Three agents worked in parallel worktrees: **H** checks (`src/core/checks`, `src/core/pack`), **I** screens
+(`src/ui`), and **J** Rust wiring (`commands`, `state`, `settings`). The scanner (A) was resumed for
+follow-ups. A research agent studied the loaders' source code, and an independent reviewer audited the
+result.
+
+- **Static checks:** pack identity (override > launcher/mrpack > jar majority, loader first), jar index,
+  and every SPEC check: wrong loader, MC/loader/dependency ranges, missing deps, duplicate ids, split
+  packages, declared incompatibilities, client-only on a server, corrupt jars, Java class version, and
+  not-on-Modrinth.
+- **The real app:** instance rail, summary strip, live scan grid, triage list with evidence, inspector
+  with a validated pack override, virtualised mod table, empty and error states, an inspector drawer
+  below 1168 px wide, and theme following. The IPC layer is real in Tauri and a mock only in dev
+  browsers; the mock is excluded from production builds.
+- **Rust wiring:** discovery → registry → PathGuard roots (scope changes serialised, scans hold a
+  read lock), Rust-side folder/launcher-root pickers, `scan_instance` with live events and the scan
+  cache, settings persisted through tauri-plugin-store with validated patches, and a readable
+  `unavailable` error for later-milestone commands.
+- **Real-world validation:** the M2 plan's "read-only smoke test on your instances" became a dev
+  tool (`examples/smoke_scan.rs` + `SMOKE_DIR` test). On the owner's 27 instances it surfaced false
+  positives in packs whose `latest.log` proves they load. Three source-code research rounds
+  (`docs/research/loader-enforcement.md`) turned those into loader-accurate rules:
+  - FML's `VersionSupportMatrix` on every branch;
+  - FML duplicate-id resolution (newest wins);
+  - which metadata file each loader version reads;
+  - legacy FML 1.12 rules;
+  - Sinytra Connector;
+  - jars built for another loader;
+  - metadata-less jars and `FMLModType`.
+
+  Smoke result: errors went 24 → 8. Every remaining error is either confirmed (Verity is missing
+  Searchables; ATM10 really has Iris and Embeddium together) or in a pack with no successful launch on
+  record. Every pack known to load shows 0 errors. Discovery takes about 1 s; ATM9/ATM10 (≈420 jars)
+  scan in about 1.5 s.
+- **Contract changes during M3:**
+  - `JarRecord.metadataErrors` (`MetadataError`): a jar is Corrupt only if no metadata file parsed.
+  - `JarRecord.fmlModType`.
+  - `ErrorKind::Unavailable`.
+  - `discovery::locate_game_dir` made public.
+  - `remove_launcher_root` may also drop a stale manual folder.
+- **Gates:**
+  - 228 Rust tests and clippy `-D warnings` (including examples) clean, with no bindings drift;
+  - 1505 Vitest tests;
+  - both typechecks clean;
+  - the production build contains no mock data;
+  - a full `tauri build` produces `.msi` and `.exe`.
+
+  Screenshots are at 960×600, 1280×800 and 1920×1080 in both themes (`docs/screenshots/m3/`,
+  untracked), plus real-app captures.
+- **Decisions:**
+  - Severities follow what each loader actually does (info/warn/error), and the UI shows a severity
+    word when it differs from the code's prefix.
+  - Incendium/Nullscape (`forge` and `neoforge` both optional) are accepted on Forge.
+  - Split-package overlaps that involve bundled libraries are capped at info.
+  - Forge never reads `neoforge.mods.toml`, even when the MC version is unknown.
+- **Known gaps, documented in `src/core/checks/README.md`:**
+  - legacy `@Mod` annotations;
+  - `config/fml.toml` `dependencyOverrides`;
+  - Connector `hiddenMods` and its runtime mixin safeguard;
+  - the exact NeoForge 20.6 build that switched to FML 3.0.19.
+- **Carried forward:**
+  - M4: the watch episode state machine and process detection; also removing a manual instance should
+    clean up its `watched` and `overrides` entries.
+  - M5: a Modrinth "unreachable" notice, and a review of E's extra alias slugs against the live API.
