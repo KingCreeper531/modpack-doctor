@@ -30,6 +30,11 @@ export { describeFallback, evaluateRange, FML_VERSION_SUPPORT_MATRIX, fmlFallbac
 export { isActive, isDisabledChain, topLevelOf } from './active';
 export {
   entryRelevant,
+  FABRIC_JSON,
+  MCMOD_INFO,
+  MODS_TOML,
+  NEOFORGE_TOML,
+  QUILT_JSON,
   LOADER_DEP_IDS,
   LOADER_NAMES,
   loaderAccepts,

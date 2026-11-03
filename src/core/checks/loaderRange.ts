@@ -15,7 +15,7 @@
  * Fixes (error): manual "update the loader / get a matching build"; disable the jar.
  */
 import type { Check, Finding } from '../model';
-import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES } from '../pack';
+import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES, MCMOD_INFO } from '../pack';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rangeDependency, rawRange } from './evidence';
 import { depSideApplies } from './missingDep';
@@ -32,11 +32,11 @@ export const loaderRangeCheck: Check = {
     const out: Finding[] = [];
     for (const e of ctx.effective) {
       const range = e.mod.loaderRange;
-      if (!range || e.mod.loader !== loader.kind) continue;
+      if (!range || e.mod.loader !== loader.kind || e.mod.metadataFile === MCMOD_INFO) continue;
       const dep = rangeDependency(e.mod, LOADER_DEP_IDS[e.mod.loader]);
       if (dep && !depSideApplies(dep, ctx.pack.side)) continue;
       const depId = dep?.modId ?? loader.kind;
-      const verdict = evaluateRange(version, range, 'other', depId, { loader: loader.kind, mc: ctx.pack.mcVersion });
+      const verdict = evaluateRange(version, range, 'other', depId, { loader: loader.kind, mc: ctx.pack.mcVersion, loaderVersion: version });
       if (verdict.kind === 'pass' || verdict.kind === 'unknown') continue;
       const name = modName(e.mod);
       const wants = describeRange(range);

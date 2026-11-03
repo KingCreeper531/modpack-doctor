@@ -33,11 +33,25 @@ an error.
   `fabric.mod.json`; unknown MC on NeoForge → both FML files. Entries from files the loader
   ignores never reach any check (`ctx.relevant`), and `metadataErrors` in ignored files are not
   W-CORRUPT-JAR. Many real jars ship a stale `mods.toml` next to `neoforge.mods.toml`.
-- **FML compatibility table** (`../pack/fmlCompat.ts`, `VersionSupportMatrix`): on NeoForge 1.21.1
-  a `minecraft` range also passes if it contains `1.21` (and `neoforge` if it contains
-  `21.0.166`); on NeoForge 1.21.8 `1.21.7` / `21.7.26-beta`; on Forge 1.20.1 `forge` also
-  `47.1.79`. Range checks call `evaluateRange`: `fail` → error, `fallback` → the same code at
-  **info** naming the override, `pass`/`unknown` → nothing. Fabric/Quilt ranges are strict.
+- **FML compatibility table** (`../pack/fmlCompat.ts`, `VersionSupportMatrix`, every branch):
+  Forge 1.16.4–1.16.5 (`minecraft` 1.16.3/1.16.4, `forge` 34.1.42/35.1.37), Forge 1.19.2
+  (1.19.1, 42.0.9), Forge 1.20.1 from 47.2.16 (`forge` 47.1.79; assumed when the version is
+  unknown, and the wording says so), NeoForge 1.21.1 (1.21, 21.0.166), NeoForge 1.21.8 (1.21.7,
+  21.7.26-beta). Everything else is strict. Range checks call `evaluateRange`: `fail` → error,
+  `fallback` → the same code at **info** naming the override, `pass`/`unknown` → nothing.
+  Fabric/Quilt ranges are strict (also under Connector).
+- **Legacy FML** (Forge on MC < 1.13): only `mcmod.info` is read; a jar with only a `mods.toml`
+  whose `minecraft` range excludes the pack version is E-WRONG-LOADER ("made for Minecraft
+  1.13+"). Without such a range it is not reported: real 1.12.2 mods ship leftover `mods.toml`
+  templates and FML finds them by their `@Mod` class. `mcversion` is never enforced
+  (FML doesn't read it); mcmod.info dependencies are checked only as far as the scanner emits them
+  (it does so only under `useDependencyInformation`). Duplicate ids are errors.
+- **Sinytra Connector** (`connector.ts`): with mod id `connector` / `connectormod` present on
+  Forge/NeoForge, Fabric-only jars are loaded (no E-WRONG-LOADER). Skipped silently: upstream
+  Fabric API, `mixinextras` on 1.21.x, ids (`-`→`_`) already loaded natively. Dependency ids
+  match with `-`→`_`; cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
+  widened; `fabricloader` deps ignored; `minecraft` strict (Fabric semantics); other
+  depends/breaks stay errors.
 - **FML side filter**: dependencies with `side = "CLIENT"` are skipped on a server pack and
   `SERVER` on a client pack — including the `minecraft` and loader dependencies behind
   `mcRange` / `loaderRange`.
@@ -50,8 +64,11 @@ an error.
 
 - `config/fml.toml` `dependencyOverrides` are not read: a dependency the user removed there is
   still reported.
-- The Forge 1.20.1 `forge 47.1.79` fallback is applied to every Forge 1.20.1 pack, although only
-  later 47.x builds carry it.
+- Legacy FML `@Mod` annotation `dependencies` / `acceptedMinecraftVersions` are not read yet
+  (they need a class-file reader), so legacy MC and dependency checks report nothing beyond the
+  mcmod.info dependencies the scanner emits.
+- Sinytra Connector: `hiddenMods` in `config/connector.json` and the runtime mixin safeguard are
+  not modelled.
 - Quilt "any of" dependency arrays are not reported when none is present (CONTRACTS invariant 13).
 
 ## Steps

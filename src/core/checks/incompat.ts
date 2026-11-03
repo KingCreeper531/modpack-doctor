@@ -13,6 +13,7 @@
  */
 import type { Check, Finding, JarRef } from '../model';
 import { versionApi } from '../version';
+import { aliasGroup } from './connector';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, jarRef, makeFinding, modName, rawRange } from './evidence';
 import { depSideApplies } from './missingDep';
@@ -27,6 +28,7 @@ export const incompatCheck: Check = {
       for (const dep of e.mod.deps) {
         if (dep.kind !== 'incompatible' && dep.kind !== 'breaks' && dep.kind !== 'conflicts') continue;
         if (dep.modId === e.mod.modId || !depSideApplies(dep, ctx.pack.side)) continue;
+        if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // Connector: breaks on aliased ids not enforced
         const targets = ctx
           .providers(dep.modId)
           .filter((p) => p.top.id !== e.top.id && versionApi.satisfies(p.mod.version, dep.range, 'other') === true);
