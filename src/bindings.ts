@@ -509,19 +509,20 @@ export type LogDigest = {
 };
 
 export type LogKind = 
-/**  `crash-reports/*.txt` */
+/**  `crash-reports/crash-*.txt` */
 "crashReport" | 
 /**  `logs/latest.log` */
 "latestLog" | 
 /**  `logs/debug.log` */
 "debugLog" | 
-/**  `hs_err_pid*.log` in the game dir */
+/**  `hs_err_pid*.log` in the game dir, or `@cwd/hs_err_pid<pid>.log` in the JVM's working dir */
 "hsErr";
 
 export type LogSource = {
 	/**
-	 *  Path relative to the game dir with `/` separators; also the id. On input
-	 *  (`read_log_digest`) only ids returned by `list_log_sources` are accepted.
+	 *  Path relative to the game dir with `/` separators, or `@cwd/hs_err_pid<pid>.log`
+	 *  (CONTRACTS invariant 5); also the id. On input (`read_log_digest`) only ids returned by
+	 *  `list_log_sources` are accepted.
 	 */
 	id: string,
 	kind: LogKind,

@@ -68,21 +68,22 @@ use specta::Type;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum LogKind {
-    /// `crash-reports/*.txt`
+    /// `crash-reports/crash-*.txt`
     CrashReport,
     /// `logs/latest.log`
     LatestLog,
     /// `logs/debug.log`
     DebugLog,
-    /// `hs_err_pid*.log` in the game dir
+    /// `hs_err_pid*.log` in the game dir, or `@cwd/hs_err_pid<pid>.log` in the JVM's working dir
     HsErr,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LogSource {
-    /// Path relative to the game dir with `/` separators; also the id. On input
-    /// (`read_log_digest`) only ids returned by `list_log_sources` are accepted.
+    /// Path relative to the game dir with `/` separators, or `@cwd/hs_err_pid<pid>.log`
+    /// (CONTRACTS invariant 5); also the id. On input (`read_log_digest`) only ids returned by
+    /// `list_log_sources` are accepted.
     pub id: String,
     pub kind: LogKind,
     #[specta(type = specta_typescript::Number)]

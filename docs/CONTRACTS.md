@@ -69,8 +69,15 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
      `JarRecord.path` holds the actual file path. Build ids and resolve them back to files only
      with `src-tauri/src/jar_id.rs`.
    - Nested jar id = `<parentId>!/<entry path>`.
-   - Log source id = its path relative to the game dir. Only ids that `list_log_sources` returned
-     are accepted.
+   - Log source id = its path relative to the game dir (`/` separators), or
+     `@cwd/hs_err_pid<pid>.log` for a HotSpot crash log in the JVM's working dir when that is not
+     the game dir (the vanilla launcher runs every profile in `.minecraft`). The `@cwd/` form is
+     exact: a decimal pid with no leading zero, and nothing else. It names a file directly in a
+     working dir that watch mode recorded for that pid of this instance, or, for vanilla
+     instances, in the discovered `.minecraft` when the file's `Command Line:` names the
+     instance's `--gameDir`. The file must resolve inside a PathGuard root (invariant 2); nothing
+     is registered for it. Only ids that `list_log_sources` returned are accepted. A malformed `@`
+     id is `OutsideScope`, an unlisted one `NotFound`.
    - Backup id = `<instanceId>/<ms>`, validated as `^[0-9a-f]{16}/[0-9]+$`.
 6. **Numbers.** Values that are `u64` in Rust are exported as TS `number` via
    `#[specta(type = specta_typescript::Number)]`, never `f64` (which exports as `number | null`).
@@ -124,13 +131,27 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       (30 s), or a crash file appears.
     - Rust watch mode detects only. It tails `latest.log` across log rotation, watches for new
       crash files, and tracks the Java process. Process detection is shared with the
-      running-game guard (`src-tauri/src/process/`, built in M4, reused by M6).
+      running-game guard (`src-tauri/src/process/`, built in M4, reused by M6). It records each
+      Java process's working dir and, on exit, treats `<cwd>/hs_err_pid<pid>.log` as a new hs_err
+      file (fatal) when the PathGuard accepts it. It resolves `latest.log` through the PathGuard
+      before each read. Only `crash-reports/crash-*.txt` are crash reports.
+    - After an emission, triggers are suppressed until every Java process that was running at
+      emission has exited (plus a 5 s grace); without process tracking, for a fixed 60 s. Nothing
+      dropped during suppression extends it. A new crash file after the coalesce window opens a
+      new episode.
     - The full episode rules are in `model/logs.rs`. They emit one `CrashDetected` per crash. A
       normal quit emits nothing; a normal quit is a process exit with no fatal event and no
       contextual hit inside the window.
     - The UI classifies the episode's `source` with `src/core` and sends a native notification
       only for an error-severity crash finding.
-    - Rust never starts watchers by itself. The UI re-arms `Settings.watched` at startup.
+    - Rust never starts watchers by itself. The UI re-arms `Settings.watched` after every
+      discovery load, for watched instances that are present and not already armed.
+    - Known gaps (M4): a JVM that fails before logging starts (wrong Java, a LinkageError on the
+      main class, bad JVM arguments) writes only to stderr and may live less than one poll, so it
+      usually emits nothing. hs_err files in a working dir outside every PathGuard root (the
+      CurseForge launcher's `Install` dir, or a vanilla `.minecraft` that no profile uses) are
+      not read; registering launcher folders as roots would widen the scope and needs an owner
+      decision.
     - Required tests: in M2 (TS), the tier marking itself. In M4, the Rust episode state machine
       with an injected clock and process source:
       - a healthy `latest.log` full of logged exceptions (contextual hits, game keeps running or
