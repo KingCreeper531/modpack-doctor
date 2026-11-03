@@ -14,18 +14,16 @@ fn legacy_dep(spec: &str, kind: DependencyKind) -> Option<Dependency> {
     (!id.is_empty()).then(|| Dependency { mod_id: id.to_string(), kind, range: maven_range(range), side: None })
 }
 
-/// `mcversion` is a single version (`1.12.2`); expressed as the exact Maven range `[1.12.2]`.
-/// Values that already look like a range pass through; unexpanded `${…}` placeholders are dropped.
+/// `mcversion` is a single version (`1.12.2`, often just `1.12`) that legacy Forge never
+/// enforced. It is passed through as a bare Maven version, i.e. a soft requirement that every
+/// version satisfies (CONTRACTS invariant 4: Rust restructures, never evaluates). Explicit
+/// ranges pass through unchanged; unexpanded `${…}` placeholders are dropped.
 fn mc_version_range(v: Option<&str>) -> Option<RawRange> {
     let v = v?.trim();
     if v.is_empty() || v.contains("${") {
         return None;
     }
-    if v.starts_with(['[', '(']) {
-        Some(maven_range(Some(v)))
-    } else {
-        Some(maven_range(Some(&format!("[{v}]"))))
-    }
+    Some(maven_range(Some(v)))
 }
 
 fn strings(v: Option<&Value>) -> Vec<&str> {

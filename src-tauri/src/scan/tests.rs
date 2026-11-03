@@ -9,6 +9,13 @@ use super::*;
 use crate::model::{DependencyKind, JarJarInfo, LoaderKind, ModEnvironment, ModMeta, RangeSyntax, RawRange};
 use crate::test_support::JarBuilder;
 
+/// A guard whose only root is `root`.
+pub(super) fn guard_for(root: &std::path::Path) -> PathGuard {
+    let g = PathGuard::new();
+    g.add_root(root).expect("add root");
+    g
+}
+
 fn scan(b: JarBuilder) -> Vec<JarRecord> {
     scan_jar_bytes("mods/a.jar", "mods/a.jar", "a.jar", &b.build(), 0, None)
 }
@@ -293,7 +300,7 @@ fn mcmod_info_both_forms() {
     assert_eq!(r.loaders, vec![LoaderKind::Legacyforge]);
     let m = &r.mods[0];
     assert_eq!(m.mod_id, "oldmod");
-    assert_eq!(m.mc_range, Some(maven("[1.12.2]")));
+    assert_eq!(m.mc_range, Some(maven("1.12.2")), "bare soft version, never an exact range");
     assert_eq!(m.loader_range, Some(maven("[14.23.5,)")));
     assert_eq!(dep(m, "baubles").kind, DependencyKind::Required);
     assert_eq!(dep(m, "jei").kind, DependencyKind::Optional);
@@ -378,7 +385,7 @@ fn nesting_depth_is_capped() {
         disabled: false,
         mtime_ms: 0,
     };
-    jar::scan_into(&ctx, &bytes, &mut out, &mut issues);
+    jar::scan_into(&ctx, &bytes, &mut jar::Budget::new(jar::DEFAULT_LIMITS), &mut out, &mut issues);
     assert_eq!(out.iter().map(|r| r.depth).max(), Some(MAX_NESTED_DEPTH));
     assert_eq!(out.len(), MAX_NESTED_DEPTH as usize + 1);
     assert!(out.iter().find(|r| r.depth == MAX_NESTED_DEPTH).is_some_and(|r| r.nested.is_empty()));
@@ -399,7 +406,7 @@ fn missing_nested_entry_is_an_issue_not_a_record() {
         mtime_ms: 0,
     };
     let (mut out, mut issues) = (Vec::new(), Vec::new());
-    jar::scan_into(&ctx, &bytes, &mut out, &mut issues);
+    jar::scan_into(&ctx, &bytes, &mut jar::Budget::new(jar::DEFAULT_LIMITS), &mut out, &mut issues);
     assert_eq!(out.len(), 1);
     assert!(out[0].nested.is_empty());
     assert!(issues[0].message.contains("gone.jar"));
@@ -476,7 +483,7 @@ fn hashes_match_independent_digests() {
         .nested("in.jar", inner)
         .write_to(&tmp.path().join("mods"), "h.jar");
     let file_bytes = std::fs::read(&path).expect("read");
-    let res = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     let outer = &res.jars[0];
     assert_eq!(outer.sha1, hex::encode(Sha1::digest(&file_bytes)));
     assert_eq!(outer.sha512, hex::encode(Sha512::digest(&file_bytes)));
@@ -502,7 +509,7 @@ fn corrupt_and_non_zip_files_do_not_stop_the_scan() {
     std::fs::create_dir_all(mods.join("sub")).expect("mkdir");
     JarBuilder::new().write_to(&mods.join("sub"), "deep.jar");
 
-    let res = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     let ids: Vec<&str> = res.jars.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, vec!["mods/empty.jar", "mods/good.jar", "mods/text.jar", "mods/truncated.jar"]);
     for r in &res.jars {
@@ -529,7 +536,7 @@ fn disabled_ids_and_collision() {
         .fabric_mod_json(r#"{"id":"z","version":"1","jars":[{"file":"inner.jar"}]}"#)
         .nested("inner.jar", JarBuilder::new())
         .write_to(&mods, "Z.JAR.DISABLED");
-    let res = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     let got: Vec<(&str, &str, bool)> = res.jars.iter().map(|r| (r.id.as_str(), r.path.as_str(), r.disabled)).collect();
     assert_eq!(
         got,
@@ -551,7 +558,7 @@ fn non_ascii_file_names() {
         .fabric_mod_json(r#"{"id":"uni","version":"1","name":"Jürgen's мод 日本"}"#)
         .class("com/ü/Ä.class", 61)
         .write_to(&mods, "Jürgen-мод-日本.jar");
-    let res = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     assert_eq!(res.jars.len(), 1);
     let r = &res.jars[0];
     assert_eq!(r.id, "mods/Jürgen-мод-日本.jar");
@@ -575,6 +582,7 @@ fn scan_started_order_and_progress_counts() {
     let res = scan_mods_dir(
         tmp.path(),
         "inst",
+        &guard_for(tmp.path()),
         |stubs| {
             *started_calls.lock().expect("lock") += 1;
             assert!(progress.lock().expect("lock").is_empty(), "ScanStarted precedes progress");
@@ -607,7 +615,7 @@ fn scan_started_order_and_progress_counts() {
 fn missing_mods_dir_is_empty() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut called = false;
-    let res = scan_mods_dir(tmp.path(), "i", |s| called = s.is_empty(), |_| panic!("no progress")).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |s| called = s.is_empty(), |_| panic!("no progress")).expect("scan");
     assert!(called);
     assert!(res.jars.is_empty() && res.issues.is_empty());
 }
@@ -619,7 +627,7 @@ fn scan_paths_overrides_and_unreadable() {
         .fabric_mod_json(r#"{"id":"y","version":"1"}"#)
         .write_to(&tmp.path().join("client-overrides").join("mods"), "y.jar");
     let paths = vec!["client-overrides\\mods\\y.jar".to_string(), "overrides/mods/missing.jar".to_string(), "../escape.jar".to_string()];
-    let res = scan_paths(tmp.path(), &paths, "i", |_| {}, |_| {}).expect("scan");
+    let res = scan_paths(tmp.path(), &paths, "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     let y = res.jars.iter().find(|r| r.id == "client-overrides/mods/y.jar").expect("y");
     assert_eq!(y.path, "client-overrides/mods/y.jar");
     assert_eq!(y.status, JarStatus::Ok);
@@ -641,7 +649,7 @@ fn cache_skips_unchanged_jars_and_rekeys() {
     };
     j().write_to(&mods, "x.jar.disabled");
     let cache = ScanCache::new();
-    let first = scan_mods_dir_cached(tmp.path(), "i", Some(&cache), |_| {}, |_| {}).expect("scan");
+    let first = scan_mods_dir_cached(tmp.path(), "i", &guard_for(tmp.path()), Some(&cache), |_| {}, |_| {}).expect("scan");
     assert_eq!(cache.len(), 1);
     assert_eq!(first.jars[0].id, "mods/x.jar");
 
@@ -653,7 +661,7 @@ fn cache_skips_unchanged_jars_and_rekeys() {
     }
     // An enabled twin appears: the cached disabled jar must be re-keyed to `#disabled`.
     JarBuilder::new().fabric_mod_json(r#"{"id":"other","version":"1"}"#).write_to(&mods, "x.jar");
-    let second = scan_mods_dir_cached(tmp.path(), "i", Some(&cache), |_| {}, |_| {}).expect("scan");
+    let second = scan_mods_dir_cached(tmp.path(), "i", &guard_for(tmp.path()), Some(&cache), |_| {}, |_| {}).expect("scan");
     let dis = second.jars.iter().find(|r| r.id == "mods/x.jar#disabled").expect("rekeyed");
     assert_eq!(dis.mods[0].version, "cached", "served from cache");
     assert_eq!(dis.nested, vec!["mods/x.jar#disabled!/n.jar"]);
@@ -663,7 +671,7 @@ fn cache_skips_unchanged_jars_and_rekeys() {
 
     // Removing a file prunes its entry.
     std::fs::remove_file(mods.join("x.jar")).expect("rm");
-    scan_mods_dir_cached(tmp.path(), "i", Some(&cache), |_| {}, |_| {}).expect("scan");
+    scan_mods_dir_cached(tmp.path(), "i", &guard_for(tmp.path()), Some(&cache), |_| {}, |_| {}).expect("scan");
     assert_eq!(cache.len(), 1);
     cache.clear();
     assert!(cache.is_empty());
@@ -679,8 +687,8 @@ fn output_is_deterministic() {
             .class(&format!("p{i}/C.class"), 61)
             .write_to(&mods, &format!("m{i}.jar"));
     }
-    let a = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
-    let b = scan_mods_dir(tmp.path(), "i", |_| {}, |_| {}).expect("scan");
+    let a = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
+    let b = scan_mods_dir(tmp.path(), "i", &guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     assert_eq!(a.jars, b.jars);
     let ids: Vec<&String> = a.jars.iter().map(|r| &r.id).collect();
     let mut sorted = ids.clone();
