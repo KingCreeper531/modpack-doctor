@@ -40,7 +40,9 @@ export function LogViewer({ lines, frames = [], totalLines, jarLabel, onJarClick
           r.kind === 'gap' ? (
             <div key={`gap-${i}`} className="flex border-y border-line">
               <span aria-hidden className="shrink-0 border-r border-line" style={gutter} />
-              <span className="px-2 text-fg-faint">⋯ {formatInt(r.count)} lines</span>
+              <span className="px-2 text-fg-faint">
+                ⋯ {formatInt(r.count)} {r.count === 1 ? 'line' : 'lines'}
+              </span>
             </div>
           ) : (
             <div key={r.n} className={cx('relative flex', r.culprit && 'bg-hl-line')}>
