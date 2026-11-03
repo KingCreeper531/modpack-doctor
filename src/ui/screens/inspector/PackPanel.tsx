@@ -39,7 +39,18 @@ function Field({ id, label, children }: { id: string; label: string; children: R
   );
 }
 
-function OverrideEditor({ instanceId, current }: { instanceId: string; current: PackOverride | null }) {
+function OverrideEditor({
+  instanceId,
+  current,
+  detectedMc,
+  detectedLoaderVersion,
+}: {
+  instanceId: string;
+  current: PackOverride | null;
+  /** Shown as placeholders so a blank field visibly means "keep the detected value". */
+  detectedMc: string | null;
+  detectedLoaderVersion: string | null;
+}) {
   const a = useActions();
   const error = useApp((s) => s.overrideError);
   const [mc, setMc] = useState(current?.mcVersion ?? '');
@@ -76,7 +87,7 @@ function OverrideEditor({ instanceId, current }: { instanceId: string; current: 
       <p className="px-4 pt-2 t-small text-fg-dim">Blank fields keep the detected value. Overrides apply to the checks and to fixes.</p>
       <div className="py-1">
         <Field id={id('mc')} label="Minecraft">
-          <TextInput id={id('mc')} value={mc} onChange={(e) => setMc(e.target.value)} placeholder="1.20.1" className="w-full" />
+          <TextInput id={id('mc')} value={mc} onChange={(e) => setMc(e.target.value)} placeholder={detectedMc ?? 'e.g. 1.21.1'} className="w-full" />
         </Field>
         <Field id={id('loader')} label="Loader">
           <select id={id('loader')} value={kind} onChange={(e) => setKind(e.target.value as LoaderKind | '')} className={`${SELECT} w-full`}>
@@ -93,7 +104,7 @@ function OverrideEditor({ instanceId, current }: { instanceId: string; current: 
             id={id('version')}
             value={version}
             onChange={(e) => setVersion(e.target.value)}
-            placeholder={kind ? '47.3.0' : 'pick a loader first'}
+            placeholder={kind ? (detectedLoaderVersion ?? 'version') : 'pick a loader first'}
             disabled={!kind}
             className="w-full"
           />
@@ -143,7 +154,13 @@ export function PackPanel({ instanceId }: { instanceId: string }) {
         </PlateRow>
         <PlateRow label="Side">{side}</PlateRow>
       </Plate>
-      <OverrideEditor key={JSON.stringify(current)} instanceId={instanceId} current={current} />
+      <OverrideEditor
+        key={JSON.stringify(current)}
+        instanceId={instanceId}
+        current={current}
+        detectedMc={mc}
+        detectedLoaderVersion={loader?.version ?? null}
+      />
     </Panel>
   );
 }
