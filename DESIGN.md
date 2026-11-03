@@ -188,7 +188,7 @@ Nothing is larger than 18px. There are no hero headings.
 
 ### 6.2 Triage list
 - Each row is 32px collapsed:
-  `[4px severity rail][code mono 12px, fixed 112px][one-line diagnosis t-body][culprit jar chips, right-aligned]`.
+  `[4px severity rail][code mono 12px, fixed 144px][one-line diagnosis t-body][culprit jar chips, right-aligned]`.
 - Severity rail colours: `err` / `signal` / `info`. The code text uses the matching text token.
 - Expanded (Enter or click; height animates 160ms ease-out): an explanation paragraph (max 72ch),
   an evidence block (§6.3 or a metadata excerpt with highlighted lines), then the fix buttons row.
@@ -248,7 +248,7 @@ Columns, left to right:
 | icon | 24px | 16px Modrinth icon, or the loader glyph when there is none |
 | name | flex | `t-body`, with the mod id beneath in `t-mono` `fg-faint` |
 | version | 120px | `t-mono` |
-| loader | 64px | glyph plus abbreviation |
+| loader | 80px | glyph plus abbreviation |
 | Modrinth | 112px | `matched` (`ok`), `update 0.5.11` (`signal`), `not on Modrinth` (`fg-faint`), `—` offline |
 | status | 96px | finding count by severity |
 | enabled | 48px | toggle |

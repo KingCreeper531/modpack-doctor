@@ -1,6 +1,6 @@
 /**
  * Mod table (DESIGN.md §6.6). Columns: status rail 4 · icon 24 · name flex · version 120 ·
- * loader 64 · Modrinth 112 · status 96 · enabled 48. 24px rows, virtualised with
+ * loader 80 · Modrinth 112 · status 96 · enabled 48. 24px rows, virtualised with
  * @tanstack/react-virtual. Nested jars expand under their parent with a 16px indent and `└`.
  * Sorting is controlled (`sort` / `onSort`) so the owner can persist it per instance.
  */
@@ -48,7 +48,7 @@ const COLUMNS = [
   { key: 'icon', label: '', srLabel: 'Icon', width: '24px', flush: true, align: 'center' as const },
   { key: 'name', label: 'Name', width: 'minmax(0,1fr)', sortable: true },
   { key: 'version', label: 'Version', width: '120px', sortable: true },
-  { key: 'loader', label: 'Loader', width: '64px', sortable: true },
+  { key: 'loader', label: 'Loader', width: '80px', sortable: true },
   { key: 'modrinth', label: 'Modrinth', width: '112px', sortable: true },
   { key: 'status', label: 'Status', width: '96px', sortable: true, align: 'right' as const },
   { key: 'enabled', label: 'On', srLabel: 'Enabled', width: '48px', sortable: true, align: 'center' as const },

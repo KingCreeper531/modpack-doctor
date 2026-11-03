@@ -1,6 +1,6 @@
 /**
  * Triage row (DESIGN.md §6.2). Collapsed: 32px
- * `[4px severity rail][code, mono, fixed 112px][one-line diagnosis][culprit chips, right]`.
+ * `[4px severity rail][code, mono, fixed 144px][one-line diagnosis][culprit chips, right]`.
  * Expanded (click / Enter): explanation (≤ 72ch), evidence, fix buttons; height animates 160ms
  * ease-out via a 0fr → 1fr grid track (`--dur` is 0ms under reduced motion).
  * Focused (J/K, owned by the list): `raised` plus an inset 1px `signal` outline.
@@ -64,7 +64,7 @@ export function TriageRow({
           onClick={onToggle}
           className="flex h-8 min-w-0 flex-1 items-center text-left focus-visible:outline-1 focus-visible:-outline-offset-1"
         >
-          <span className={cx('w-28 shrink-0 truncate pl-1 t-mono', SEVERITY_TEXT[finding.severity])} title={finding.code}>
+          <span className={cx('w-36 shrink-0 truncate pl-1 t-mono', SEVERITY_TEXT[finding.severity])} title={finding.code}>
             {finding.code}
           </span>
           <span className="min-w-0 flex-1 truncate pl-1 t-body text-fg">{finding.title}</span>

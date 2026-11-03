@@ -5,7 +5,7 @@
  * #summary, #controls, #palette, #about, #empty).
  */
 import { Moon, Play, Sun } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import type { ResolvedTheme } from '../../bindings';
 import { Button } from '../components/Button';
@@ -31,7 +31,12 @@ const NAV: Array<[string, string]> = [
   ['empty', 'Empty'],
 ];
 
+/** Screenshot hooks: `?theme=dark|light` forces a theme, `?only=<section id>` renders one section. */
+const params = new URLSearchParams(window.location.search);
+
 function initialTheme(): ResolvedTheme {
+  const forced = params.get('theme');
+  if (forced === 'dark' || forced === 'light') return forced;
   const set = document.documentElement.getAttribute('data-theme');
   if (set === 'dark' || set === 'light') return set;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -76,6 +81,7 @@ function TopBar() {
 export default function DesignSheet() {
   const [selectedJar, setSelectedJar] = useState<string | null>(null);
   const sel = { selectedJar, onSelectJar: setSelectedJar };
+  const only = params.get('only');
   // cmdk scrolls its active item into view on mount, which drags the whole sheet down to the
   // palette specimens. Restore the requested anchor (or the top) once that has happened.
   useEffect(() => {
@@ -86,22 +92,23 @@ export default function DesignSheet() {
     }, 50);
     return () => window.clearTimeout(id);
   }, []);
+  const sections: Array<[string, ReactNode]> = [
+    ['controls', <ControlsSection key="controls" />],
+    ['rail', <RailSection key="rail" />],
+    ['summary', <SummarySection key="summary" />],
+    ['tiles', <TilesSection key="tiles" {...sel} />],
+    ['triage', <TriageSection key="triage" {...sel} />],
+    ['log', <LogSection key="log" onSelectJar={setSelectedJar} />],
+    ['work-order', <WorkOrderSection key="work-order" />],
+    ['mod-table', <ModTableSection key="mod-table" {...sel} />],
+    ['palette', <PaletteSection key="palette" />],
+    ['about', <AboutSection key="about" />],
+    ['empty', <EmptySection key="empty" />],
+  ];
   return (
     <div className="min-h-screen bg-bg text-fg">
       <TopBar />
-      <main className="pb-16">
-        <ControlsSection />
-        <RailSection />
-        <SummarySection />
-        <TilesSection {...sel} />
-        <TriageSection {...sel} />
-        <LogSection onSelectJar={setSelectedJar} />
-        <WorkOrderSection />
-        <ModTableSection {...sel} />
-        <PaletteSection />
-        <AboutSection />
-        <EmptySection />
-      </main>
+      <main className="pb-16">{sections.filter(([id]) => !only || id === only).map(([, node]) => node)}</main>
     </div>
   );
 }

@@ -122,8 +122,9 @@ export const PROBES: LauncherProbe[] = [
   {
     launcher: 'modrinth',
     path: 'D:\\Portable\\ModrinthApp\\app.db',
-    result: { state: 'error', message: 'database busy' },
-    notes: ['database busy — retried 3×'],
+    // A busy app.db degrades to listing profile folders (discovery M2/B): Found + note, not Error.
+    result: { state: 'found', count: 0 },
+    notes: ['database busy — retried 3×; folders listed without metadata'],
   },
 ];
 
