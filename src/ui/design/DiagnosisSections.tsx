@@ -13,6 +13,18 @@ import { FINDINGS, JAR_NAMES } from './fixtures';
 import { useScanSim } from './scanSim';
 import { Section, Spec, SpecRow } from './Section';
 
+/** A short run of tiles around one warning tile, for the interaction-state specimens. */
+const STATE_RUN: Array<[string, TileState]> = [
+  ['a', 'ok'],
+  ['b', 'error'],
+  ['c', 'warning'],
+  ['d', 'warning'],
+  ['e', 'ok'],
+  ['f', 'disabled'],
+  ['g', 'unscanned'],
+];
+const runTiles = (prefix: string) => STATE_RUN.map(([id, state]) => ({ id: `${prefix}-${id}`, label: `mod_${id}`, version: '1.4.2', state, count: 2 }));
+
 const LEGEND: Array<[TileState, string]> = [
   ['unscanned', 'tile-empty + 1px fg-faint outline'],
   ['ok', 'ok-fill'],
@@ -39,6 +51,19 @@ export function TilesSection({ selectedJar, onSelectJar }: JarSelection) {
         <TileGrid tiles={tiles} selectedId={selectedJar} onSelect={onSelectJar} label={`Scan grid, ${tiles.length} jars`} />
       </Panel>
       <SpecRow className="border-t">
+        <Spec label="Hover" note="1px fg + panel keyline · 0ms tooltip">
+          <div className="h-12">
+            <TileGrid className="w-26" tiles={runTiles('h')} previewHoverId="h-c" label="Hover specimen" />
+          </div>
+        </Spec>
+        <Spec label="Keyboard focus" note="2px signal + panel keyline">
+          <TileGrid className="w-26" tiles={runTiles('f')} previewFocusId="f-d" label="Focus specimen" />
+        </Spec>
+        <Spec label="Selected" note="1px signal + panel keyline">
+          <TileGrid className="w-26" tiles={runTiles('s')} selectedId="s-c" label="Selected specimen" />
+        </Spec>
+      </SpecRow>
+      <SpecRow>
         {LEGEND.map(([state, note]) => (
           <Spec key={state} label={state} note={note}>
             <TileGrid className="w-4" tiles={[{ id: state, label: 'example', version: '1.0.0', state, count: 1 }]} label={`${state} tile`} />
@@ -72,7 +97,7 @@ export function TriageSection({ selectedJar, onSelectJar }: JarSelection) {
   const sev = { error: 0, warning: 0, info: 0 };
   for (const f of FINDINGS) sev[f.severity]++;
   return (
-    <Section id="triage" title="Triage list" spec="§6.2" meta="J / K move · Enter expands · 160ms height">
+    <Section id="triage" title="Triage list" spec="§6.2" meta="J / K move · Enter expands · 160ms height · W-JAVA-CLASS selected">
       <Panel legend="Findings" meta={`${sev.error} E · ${sev.warning} W · ${sev.info} I`} flush>
         <div
           role="list"
@@ -97,6 +122,7 @@ export function TriageSection({ selectedJar, onSelectJar }: JarSelection) {
                   toggle(f.id);
                 }}
                 focused={focus === i}
+                selected={f.id === 'f-java-04'}
                 jarNames={JAR_NAMES}
                 selectedJarId={selectedJar}
                 onJarClick={onSelectJar}
