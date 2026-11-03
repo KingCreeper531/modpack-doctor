@@ -38,6 +38,9 @@ export interface ModSpec {
   mc?: string | string[];
   /** Range of the loader dependency (forge / neoforge / fabricloader / quilt_loader). */
   loaderDep?: string | string[];
+  /** Forge `side` of the `minecraft` / loader dependency ("CLIENT", "SERVER", "BOTH"). */
+  mcSide?: string;
+  loaderSide?: string;
   deps?: DepSpec[];
   provides?: string[];
   env?: ModEnvironment;
@@ -164,10 +167,10 @@ function excerptFor(spec: ModSpec, loader: LoaderKind, deps: Dependency[]): stri
 export function mod(spec: ModSpec, fallbackLoader: LoaderKind = 'forge', excerpt?: string): ModMeta {
   const loader = spec.loader ?? fallbackLoader;
   const deps: Dependency[] = [];
-  if (spec.mc !== undefined) deps.push({ modId: 'minecraft', kind: 'required', range: range(loader, spec.mc), side: null });
+  if (spec.mc !== undefined) deps.push({ modId: 'minecraft', kind: 'required', range: range(loader, spec.mc), side: spec.mcSide ?? null });
   const loaderDepId = LOADER_DEP[loader];
   if (spec.loaderDep !== undefined && loaderDepId) {
-    deps.push({ modId: loaderDepId, kind: 'required', range: range(loader, spec.loaderDep), side: null });
+    deps.push({ modId: loaderDepId, kind: 'required', range: range(loader, spec.loaderDep), side: spec.loaderSide ?? null });
   }
   for (const d of spec.deps ?? []) deps.push({ modId: d.id, kind: d.kind ?? 'required', range: range(loader, d.range), side: d.side ?? null });
   const env: ModEnvironment = spec.env ?? (loader === 'fabric' || loader === 'quilt' ? 'both' : 'unknown');

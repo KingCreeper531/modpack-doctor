@@ -1,7 +1,7 @@
 /**
  * Shared finding helpers: culprit refs, metadata excerpts with highlighted lines, wording.
  */
-import type { DependencyKind, FixAction, JarRecord, ModMeta, RawRange } from '../../bindings';
+import type { Dependency, DependencyKind, FixAction, JarRecord, ModMeta, RawRange } from '../../bindings';
 import { findingId } from '../crash/id';
 import type { Evidence, Finding, FindingCode, JarRef, Severity } from '../model';
 import { versionApi } from '../version';
@@ -37,6 +37,14 @@ export function describeRange(range: RawRange, subject: 'minecraft' | 'other' = 
 export function rawRange(range: RawRange): string {
   if (range.unrepresentable) return range.unrepresentable;
   return range.raw.length === 0 ? '*' : range.raw.join(' || ');
+}
+
+/**
+ * The dependency entry an extracted range came from (`mcRange` → `minecraft`, `loaderRange` →
+ * the loader id): the first dependency on one of `ids`, as the scanner picks it.
+ */
+export function rangeDependency(mod: ModMeta, ids: readonly string[]): Dependency | undefined {
+  return mod.deps.find((d) => ids.includes(d.modId));
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
