@@ -9,6 +9,7 @@ pub mod logs;
 pub mod model;
 pub mod modrinth;
 pub mod paths;
+pub mod process;
 pub mod scan;
 pub mod settings;
 pub mod state;
