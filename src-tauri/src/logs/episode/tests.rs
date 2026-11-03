@@ -241,7 +241,7 @@ fn second_crash_after_a_new_process_is_a_second_episode() {
     s.at(0, Input::ProcessStarted(10));
     s.at(5 * S, fatal("Incompatible mods found!", 30));
     s.at(6 * S, Input::ProcessExited(10));
-    // Restarted at once (well within the 60 s quiet period) and crashed again.
+    // Restarted at once (well within any quiet period) and crashed again.
     s.at(15 * S, Input::ProcessStarted(11));
     s.at(20 * S, fatal("Incompatible mods found!", 31));
     s.at(21 * S, Input::ProcessExited(11));
@@ -251,21 +251,148 @@ fn second_crash_after_a_new_process_is_a_second_episode() {
 }
 
 #[test]
-fn triggers_after_an_emission_are_suppressed_until_quiet() {
+fn without_tracking_suppression_is_a_fixed_quiet_period() {
     let mut s = Sim::new(false);
     s.at(0, fatal("A", 1));
     s.advance_to(3 * S);
     assert_eq!(s.out.len(), 1);
-    // A crash dump trickling in keeps the suppression alive.
-    s.at(30 * S, crash_file("crash-reports/late.txt"));
-    s.at(80 * S, fatal("B", 2));
-    s.advance_to(130 * S);
-    assert_eq!(s.out.len(), 1, "each dropped trigger restarts the quiet period");
-    // 60 s without a trigger lifts it.
-    s.at(141 * S, fatal("C", 3));
-    s.advance_to(150 * S);
+    // Dropped triggers (fatal or contextual) do not extend the quiet period.
+    for t in (5..60).step_by(5) {
+        s.at(t * S, ctx("Caused by:", t as u32));
+        s.at(t * S + 1, fatal("B", t as u32));
+    }
+    assert_eq!(s.out.len(), 1, "fatal lines during the quiet period are dropped");
+    // The quiet period ends QUIET_MS after the emission (at 2 s), however busy it was.
+    s.at(2 * S + QUIET_MS, fatal("C", 3));
+    s.advance_to(2 * S + QUIET_MS + 3 * S);
     assert_eq!(s.out.len(), 2);
     assert_eq!(s.out[1].triggers, vec![anchor_trigger("C", AnchorTier::Fatal, 3)]);
+}
+
+#[test]
+fn crash_file_inside_the_coalesce_window_belongs_to_the_emitted_crash() {
+    let mut s = Sim::new(false);
+    s.at(0, fatal("A", 1));
+    s.advance_to(3 * S);
+    assert_eq!(s.out.len(), 1);
+    s.at(MAX_COALESCE_MS - 1, crash_file("crash-reports/crash-same.txt"));
+    s.advance_to(30 * S);
+    assert_eq!(s.out.len(), 1);
+}
+
+#[test]
+fn new_crash_file_after_the_coalesce_window_opens_one_new_episode() {
+    for tracking in [false, true] {
+        let mut s = Sim::new(tracking);
+        s.at(0, Input::ProcessStarted(1));
+        s.at(S, fatal("A", 1));
+        s.advance_to(4 * S);
+        assert_eq!(s.out.len(), 1, "tracking {tracking}");
+        // Still suppressed (the game keeps running, or the quiet period is not over).
+        s.at(30 * S, crash_file("crash-reports/crash-later-client.txt"));
+        s.at(30 * S + 100, fatal("---- Minecraft Crash Report ----", 2));
+        s.advance_to(40 * S);
+        assert_eq!(s.out.len(), 2, "tracking {tracking}");
+        assert_eq!(s.out[1].source.id, "crash-reports/crash-later-client.txt");
+        assert_eq!(
+            s.out[1].triggers,
+            vec![
+                CrashTrigger::NewCrashReport { source_id: "crash-reports/crash-later-client.txt".into() },
+                anchor_trigger("---- Minecraft Crash Report ----", AnchorTier::Fatal, 2),
+            ]
+        );
+        // Its exit and the lines that follow are part of that second crash.
+        s.at(45 * S, ctx("Caused by:", 3));
+        s.at(46 * S, Input::ProcessExited(1));
+        s.advance_to(200 * S);
+        assert_eq!(s.out.len(), 2, "tracking {tracking}");
+    }
+}
+
+/// Review finding 2a: a fatal emission while the game keeps running, followed by a steady
+/// stream of contextual lines, must not suppress a later real crash forever.
+#[test]
+fn contextual_lines_do_not_keep_the_suppression_alive() {
+    let mut s = Sim::new(true);
+    s.at(0, Input::ProcessStarted(1));
+    s.at(S, fatal("Incompatible mods found!", 10));
+    s.advance_to(4 * S);
+    assert_eq!(s.out.len(), 1);
+    for t in (5..600).step_by(7) {
+        s.at(t * S, ctx("Caused by:", t as u32));
+    }
+    assert_eq!(s.out.len(), 1);
+    // The game exits (the same crash: nothing new), and is started again; the next crash is
+    // reported.
+    s.at(601 * S, Input::ProcessExited(1));
+    s.at(601 * S + EXIT_GRACE_MS + 1, Input::Tick);
+    assert!(!s.m.is_suppressed());
+    s.at(620 * S, Input::ProcessStarted(2));
+    s.at(630 * S, fatal("Incompatible mods found!", 10));
+    s.advance_to(640 * S);
+    assert_eq!(s.out.len(), 2);
+}
+
+/// Review finding 2b: an error screen left open for longer than the quiet period, then closed
+/// (the process exits with a contextual line on the way out), is still one crash.
+#[test]
+fn error_screen_idle_then_quit_is_one_episode() {
+    let mut s = Sim::new(true);
+    s.at(0, Input::ProcessStarted(33));
+    s.at(2 * S, fatal("Mod loading has failed", 500));
+    s.advance_to(10 * S);
+    assert_eq!(s.out.len(), 1);
+    // The user reads the error screen for three minutes, then closes it.
+    s.advance_to(190 * S);
+    s.at(190 * S, ctx("Caused by:", 900));
+    s.at(191 * S, Input::ProcessExited(33));
+    s.advance_to(400 * S);
+    assert_eq!(s.out.len(), 1, "{:?}", s.out);
+}
+
+#[test]
+fn suppression_waits_for_every_process_running_at_emission() {
+    let mut s = Sim::new(true);
+    s.at(0, Input::ProcessStarted(1));
+    s.at(0, Input::ProcessStarted(2));
+    s.at(S, fatal("A", 1));
+    s.advance_to(4 * S);
+    assert_eq!(s.out.len(), 1);
+    s.at(10 * S, Input::ProcessExited(1));
+    s.advance_to(100 * S);
+    assert!(s.m.is_suppressed(), "pid 2 still runs");
+    s.at(100 * S, Input::ProcessExited(2));
+    s.advance_to(100 * S + EXIT_GRACE_MS - 1);
+    assert!(s.m.is_suppressed(), "grace period");
+    s.advance_to(100 * S + EXIT_GRACE_MS + 250);
+    assert!(!s.m.is_suppressed());
+    assert_eq!(s.out.len(), 1);
+}
+
+/// Review finding 4: the first lines of a run are often read before its process is first seen;
+/// the process start must not drop them.
+#[test]
+fn hits_before_the_first_process_sighting_survive() {
+    let mut s = Sim::new(true);
+    s.at(0, ctx("Caused by:", 12));
+    s.at(500, Input::ProcessStarted(5));
+    s.at(4 * S, Input::ProcessExited(5));
+    assert_eq!(s.out.len(), 1);
+    assert_eq!(
+        s.out[0].triggers,
+        vec![anchor_trigger("Caused by:", AnchorTier::Contextual, 12), CrashTrigger::ProcessExit { pid: 5 }]
+    );
+}
+
+#[test]
+fn a_new_latest_log_forgets_the_hits() {
+    let mut s = Sim::new(true);
+    s.at(0, Input::ProcessStarted(5));
+    s.at(S, ctx("Caused by:", 12));
+    s.at(2 * S, Input::LogReset);
+    s.at(3 * S, Input::ProcessExited(5));
+    s.advance_to(100 * S);
+    assert!(s.out.is_empty(), "{:?}", s.out);
 }
 
 #[test]

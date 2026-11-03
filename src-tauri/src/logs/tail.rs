@@ -89,6 +89,13 @@ impl LogTail {
         &self.path
     }
 
+    /// Read from `path` from now on (watch mode passes the PathGuard-resolved path of
+    /// `latest.log`). The read state is kept; if `path` is another file, the next poll sees it
+    /// as replaced and reads it from the start.
+    pub fn set_path(&mut self, path: impl Into<PathBuf>) {
+        self.path = path.into();
+    }
+
     pub fn offset(&self) -> u64 {
         self.offset
     }

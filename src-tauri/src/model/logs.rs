@@ -5,33 +5,59 @@
 //! `set_watch`.
 //!
 //! Watch mode (Rust) *detects*; it never classifies. Per watched instance it:
-//! - watches `crash-reports/` and the game dir for new `crash-reports/*.txt` / `hs_err_pid*.log`;
+//! - watches `crash-reports/` and the game dir for new `crash-reports/crash-*.txt` /
+//!   `hs_err_pid*.log` (other `.txt` files in `crash-reports/` are not crash reports);
 //! - tails `logs/latest.log` (resetting its offset when the file shrinks or is recreated on a
-//!   new launch) and matches every new line against the tiered TS anchor list (`WatchAnchor`);
+//!   new launch) and matches every new line against the tiered TS anchor list (`WatchAnchor`).
+//!   The file is resolved through the PathGuard before each read; a `latest.log` that resolves
+//!   outside every root (a symlink escaping them) is not read;
 //! - polls the shared process detection (the same code as the running-game guard) for the
-//!   instance's Java process starting and exiting.
+//!   instance's Java process starting and exiting, and records each process's working dir. The
+//!   JVM writes `hs_err_pid<pid>.log` into its working dir, which is not always the game dir
+//!   (the vanilla launcher runs every profile in `.minecraft`). When the process exits,
+//!   `<working dir>/hs_err_pid<pid>.log` (that exact pid) counts as a new hs_err file if the
+//!   PathGuard accepts it; its source id is `@cwd/hs_err_pid<pid>.log` (see `logs::sources`).
 //!
 //! Episode rules (one `CrashDetected` per crash; owner decision 2026-11-03):
 //! - **Fatal** events open an episode and emit promptly: a new crash report or hs_err file, or a
 //!   `latest.log` line matching a `Fatal` anchor. Emission waits `FATAL_SETTLE` (2 s) to coalesce
-//!   the crash file, the header line and the process exit that usually arrive together, or
-//!   happens at once if the process exits first.
+//!   the crash file, the header line and the process exit that usually arrive together (at most
+//!   10 s after the first), or happens at once if the process exits first. Crash files are
+//!   re-listed whenever an exit is seen, so a crash report written just before the exit is the
+//!   episode's source.
 //! - **Contextual** anchor hits are recorded silently and never emit on their own. They emit only
 //!   if the instance's Java process exits within `CONTEXT_WINDOW` (30 s) of the latest
 //!   contextual hit, or if a crash file appears (which is fatal anyway). Hits older than the
-//!   window are discarded.
+//!   window are discarded, and all hits are forgotten when `latest.log` is replaced (a new run).
+//!   A process start does not clear them: the first lines of a run are often read before its
+//!   process is first seen.
 //! - A process exit with no fatal event and no contextual hit inside the window is a normal quit
 //!   and emits nothing. Without process tracking, contextual hits never emit.
-//! - After an emission, further triggers are suppressed until a new game process is seen or
-//!   60 s pass without a trigger.
+//! - After an emission the crash is suppressed: fatal lines, contextual lines and process exits
+//!   are dropped, and none of them extends the suppression.
+//!   - With process tracking it lasts until every game process that was running at emission
+//!     has exited, plus 5 s. (If none was running: 5 s after an emission caused by the exit,
+//!     else 60 s.) So an error screen left open for minutes and then closed is still one crash,
+//!     and no stream of log lines can suppress the next run.
+//!   - Without process tracking it lasts 60 s from the emission.
+//!   - A new game process (a pid not seen before) ends it at once.
+//!   - A crash report or hs_err file that appears more than 10 s after the episode opened (and
+//!     at least 2 s after its emission) is a new crash: it ends the suppression and opens a new
+//!     episode. One that appears earlier belongs to the reported crash.
+//!
+//! Known gap: a JVM that fails before Minecraft's logging starts (wrong Java version, a
+//! `LinkageError`/`UnsupportedClassVersionError` on the main class, bad JVM arguments) prints
+//! only to its stderr, which watch mode cannot see (the launcher owns the process), and may live
+//! for less than one process poll. Anchors such as "Error: LinkageError occurred while loading
+//! main class" therefore never fire from `latest.log`; such a start failure usually emits nothing.
 //!
 //! The UI then classifies the episode's source with `src/core` and sends a native notification
 //! only for an error-severity crash finding.
 
 /// Coalescing delay before a fatal episode is emitted (unless the process exits first). The
 /// delay restarts on each further fatal input, capped at `logs::episode` MAX_COALESCE_MS (10 s)
-/// after the first. After an emission, triggers are suppressed until a new game process appears
-/// or QUIET_MS (60 s) pass without a trigger.
+/// after the first. Post-emission suppression is described in the module docs
+/// (`logs::episode` QUIET_MS 60 s, EXIT_GRACE_MS 5 s).
 pub const FATAL_SETTLE_MS: u64 = 2_000;
 /// A contextual anchor hit only counts if the game process exits within this window after it.
 pub const CONTEXT_WINDOW_MS: u64 = 30_000;

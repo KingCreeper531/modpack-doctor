@@ -12,6 +12,10 @@
 //!   launch wrapper) matches when its working dir is the game dir, or the instance folder that
 //!   holds a `.minecraft` / `minecraft` game dir.
 //!
+//! Each match carries the process's working dir ([`ProcMatch::cwd`]), because the JVM writes
+//! `hs_err_pid<pid>.log` there, which for the vanilla launcher (and launchers built on it) is not
+//! the game dir. Watch mode records it per pid (`logs::watch::CwdLog`).
+//!
 //! Paths are compared canonically (symlinks resolved when the path exists, lexically otherwise),
 //! with `/` and `\` treated alike, case-insensitively on Windows and macOS.
 //!
@@ -147,6 +151,9 @@ impl ProcessSource for SysinfoSource {
 pub struct ProcMatch {
     pub pid: u32,
     pub reason: String,
+    /// The process's working dir, when readable. This is where the JVM writes
+    /// `hs_err_pid<pid>.log`, and it is not always the game dir (see the module docs).
+    pub cwd: Option<PathBuf>,
 }
 
 /// Pids of the Java processes running the instance whose game dir is `game_dir`.
@@ -184,6 +191,7 @@ pub fn match_processes(game_dir: &Path, procs: &[ProcInfo], fold_case: bool) -> 
                 out.push(ProcMatch {
                     pid: p.pid,
                     reason: format!("{} (pid {}) was started with {flag} {}", p.name, p.pid, resolved.display()),
+                    cwd: p.cwd.clone(),
                 });
             }
             continue;
@@ -194,6 +202,7 @@ pub fn match_processes(game_dir: &Path, procs: &[ProcInfo], fold_case: bool) -> 
             out.push(ProcMatch {
                 pid: p.pid,
                 reason: format!("{} (pid {}) is running in {}", p.name, p.pid, cwd.display()),
+                cwd: Some(cwd.clone()),
             });
         }
     }
@@ -218,6 +227,13 @@ fn game_dir_arg(cmd: &[String]) -> Option<(&'static str, String)> {
         }
     }
     found.filter(|(_, v)| !v.is_empty())
+}
+
+/// Whether `a` and `b` name the same directory (compared like process paths: canonical when
+/// they exist, `/` and `\` alike, case-insensitively on Windows and macOS).
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    let fold = fold_case();
+    path_key(a, fold) == path_key(b, fold)
 }
 
 /// Comparable form of a path: canonical if it exists, else lexically normalised; `/`
