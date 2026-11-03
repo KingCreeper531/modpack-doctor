@@ -122,7 +122,23 @@ const INTERNAL_CLASS = [
 ];
 
 const INTERNAL_MODULE = /^(?:java\.|jdk\.)|^(?:minecraft|forge|neoforge|fml_loader|fml_core|loader|mcp|cpw\.mods\..*|org\.spongepowered\.mixin)$/;
-const INTERNAL_JAR = /^(?:forge-|neoforge-|fmlloader-|fmlcore-|fancymodloader|loader-\d|client-|server-|minecraft|fabric-loader|quilt-loader|modlauncher-|securejarhandler-|bootstraplauncher-|mixin-|sponge-mixin|mixinextras-|javafmllanguage-|eventbus-|bus-)/i;
+/**
+ * Game, loader and library jars as they appear in frame brackets (never in `mods/`): the
+ * Minecraft client/server jars (`client-1.20.1-20230612.114412-srg.jar`, `client-intermediary.jar`,
+ * `minecraft-26.1.2-client.jar`, `minecraft-1.21.jar`), Forge/NeoForge/FML, Fabric/Quilt loader,
+ * ModLauncher and Mixin. Only versioned names match, so a mod such as `minecraft-comes-alive-7.0.jar`
+ * or `client-tweaks-1.0.jar` is not internal (and a jar found in the index is always a mod).
+ */
+const INTERNAL_JAR = new RegExp(
+  [
+    String.raw`^(?:client|server)-(?:\d[\w.+-]*|intermediary|extra|slim|srg|official|named|mojmap)\.jar$`,
+    String.raw`^minecraft(?:-\d[\w.+-]*?)?(?:-(?:client|server))?\.jar$`,
+    String.raw`^(?:neo)?forge-\d`,
+    String.raw`^(?:fmlloader|fmlcore|fmlearlydisplay|javafmllanguage|lowcodelanguage|mclanguage|fancymodloader|loader|modlauncher|securejarhandler|bootstraplauncher|eventbus|bus|coremods|accesstransformers)-\d`,
+    String.raw`^(?:fabric-loader|quilt-loader|sponge-mixin|mixin|mixinextras(?:-\w+)?)-\d`,
+  ].join('|'),
+  'i',
+);
 const INTERNAL_BRACKET_ID = /^(?:forge|minecraft|neoforge|mcp|fml)$/;
 
 export function isInternalClass(cls: string): boolean {
@@ -155,9 +171,10 @@ export function blameFrame(frame: Frame, index?: JarIndex): FrameHit | null {
     const jar = index ? jarsForModId(frame.module, index)[0] : undefined;
     if (jar || !index) return { ...(jar ? { jar } : {}), modId: frame.module, label: frame.module, via: 'module' };
   }
-  if (frame.jar && !INTERNAL_JAR.test(frame.jar)) {
+  if (frame.jar) {
     const jar = index ? jarByFileName(frame.jar, index) : undefined;
-    if (jar || !index) return { ...(jar ? { jar } : {}), label: frame.jar, via: 'jar' };
+    if (jar) return { jar, label: frame.jar, via: 'jar' };
+    if (!index && !INTERNAL_JAR.test(frame.jar)) return { label: frame.jar, via: 'jar' };
   }
   if (frame.bracketModId && !INTERNAL_BRACKET_ID.test(frame.bracketModId)) {
     const jar = index ? jarsForModId(frame.bracketModId, index)[0] : undefined;

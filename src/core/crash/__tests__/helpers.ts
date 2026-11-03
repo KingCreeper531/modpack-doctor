@@ -11,6 +11,8 @@ export interface JarSpec {
   loader?: LoaderKind;
   /** Parent jar id: makes this a nested (jar-in-jar) record. */
   parent?: string;
+  /** Declared JPMS module name (module-info / Automatic-Module-Name). */
+  moduleName?: string;
 }
 
 function mod(modId: string, name: string | undefined, loader: LoaderKind): ModMeta {
@@ -51,7 +53,7 @@ export function jar(spec: JarSpec): JarRecord {
     packages: spec.packages ?? [],
     mixinConfigs: spec.mixins ?? [],
     maxClassMajor: 61,
-    moduleName: null,
+    moduleName: spec.moduleName ?? null,
     jarjar: null,
     nested: [],
   };

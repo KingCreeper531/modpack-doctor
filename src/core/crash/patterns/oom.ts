@@ -5,6 +5,7 @@
 import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, finding, gate, logEvidence, manual, worst, type Ctx } from '../context';
 import { logLevel } from '../text';
+import { contextual, fatal } from '../tiers';
 
 type OomKind = 'heap' | 'gc' | 'metaspace' | 'class-space' | 'direct' | 'array' | 'threads' | 'native';
 
@@ -112,11 +113,10 @@ export const oomPattern: CrashPattern = {
   id: 'out-of-memory',
   codes: ['C-OOM'],
   anchors: [
-    'java.lang.OutOfMemoryError',
-    'There is insufficient memory for the Java Runtime Environment',
-    'Native memory allocation',
-    'Out of Memory Error',
-    'JVM Flags: ',
+    // hs_err header for a JVM that could not get memory: the process is gone.
+    ...fatal('There is insufficient memory for the Java Runtime Environment'),
+    // OutOfMemoryError mentions appear in healthy logs (heap-dump flags, caught errors).
+    ...contextual('java.lang.OutOfMemoryError', 'Native memory allocation', 'Out of Memory Error', 'JVM Flags: '),
   ],
   match(input) {
     const ctx = ctxOf(input);

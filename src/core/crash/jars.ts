@@ -86,11 +86,15 @@ export function automaticModuleName(fileName: string): string {
 
 /** Jars for a JPMS module name: mod id (FML names mod modules after the first mod id) or automatic name. */
 export function jarsForModule(name: string, index: JarIndex): JarRecord[] {
+  const byDeclared: JarRecord[] = [];
+  for (const jar of index.byId.values()) if (jar.moduleName === name) byDeclared.push(jar);
+  if (byDeclared.length > 0) return byDeclared.sort((a, b) => a.depth - b.depth);
   const byMod = jarsForModId(name, index);
   if (byMod.length > 0) return byMod;
   const out: JarRecord[] = [];
   for (const jar of index.byId.values()) {
-    if (automaticModuleName(jar.fileName) === name) out.push(jar);
+    // A jar that declares a module name is never known by its file-derived name.
+    if (!jar.moduleName && automaticModuleName(jar.fileName) === name) out.push(jar);
   }
   return out.sort((a, b) => a.depth - b.depth);
 }

@@ -8,6 +8,7 @@ import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, disable, finding, gate, listText, logEvidence, manual, refs, worst, type Ctx } from '../context';
 import { jarsForModId, uniqueTopLevel } from '../jars';
 import { contiguous, logMessage, stripFormatting } from '../text';
+import { contextual, fatal } from '../tiers';
 
 const MOD_ID_LINE = /^\s*Mod ID: '([^']+)', Requested by: '([^']+)', Expected range: '([^']*)', Actual version: '([^']*)'/;
 const TRANSLATED = /(?:^|[\s:-])Mod ([\w.-]+) requires ([\w.-]+) (.+?)\s*$/;
@@ -174,12 +175,15 @@ export const missingDepsPattern: CrashPattern = {
   id: 'missing-mandatory-deps',
   codes: ['C-MISSING-MANDATORY'],
   anchors: [
-    'Missing or unsupported mandatory dependencies',
-    'Unsupported installed optional dependencies',
-    "\tMod ID: '",
-    // The translated form shows up under `Failure message:` / `Loading errors encountered`
-    // (suspected.ts anchors) and `Currently, x is not installed`.
-    'is not installed',
+    // Owner's list: FML refuses to load.
+    ...fatal('Missing or unsupported mandatory dependencies'),
+    ...contextual(
+      'Unsupported installed optional dependencies',
+      "\tMod ID: '",
+      // The translated form shows up under `Failure message:` / `Loading errors encountered`
+      // (suspected.ts anchors) and `Currently, x is not installed`.
+      'is not installed',
+    ),
   ],
   match(input) {
     const ctx = ctxOf(input);

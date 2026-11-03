@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CRASH_ANCHORS } from '../anchors';
+import { CRASH_ANCHOR_TEXTS } from '../anchors';
 import { analyzeCrash, CRASH_PATTERNS } from '../analyze';
 import { blameFrame, mixinOwners, parseFrame } from '../frames';
 import { findingId, fnv1a32 } from '../id';
@@ -245,10 +245,10 @@ describe('ids, anchors and digests', () => {
   });
 
   it('anchors are a deduped literal list of a reasonable size', () => {
-    expect(CRASH_ANCHORS.length).toBeGreaterThan(60);
-    expect(CRASH_ANCHORS.length).toBeLessThanOrEqual(150);
-    expect(new Set(CRASH_ANCHORS).size).toBe(CRASH_ANCHORS.length);
-    expect(CRASH_ANCHORS.every((a) => a.length >= 4)).toBe(true);
+    expect(CRASH_ANCHOR_TEXTS.length).toBeGreaterThan(60);
+    expect(CRASH_ANCHOR_TEXTS.length).toBeLessThanOrEqual(150);
+    expect(new Set(CRASH_ANCHOR_TEXTS).size).toBe(CRASH_ANCHOR_TEXTS.length);
+    expect(CRASH_ANCHOR_TEXTS.every((a) => a.length >= 4)).toBe(true);
     for (const must of [
       'Suspected Mods: ',
       'Mixin apply failed',
@@ -262,10 +262,10 @@ describe('ids, anchors and digests', () => {
       'Crash report saved to',
       'A critical error occurred',
     ]) {
-      expect(CRASH_ANCHORS).toContain(must);
+      expect(CRASH_ANCHOR_TEXTS).toContain(must);
     }
     // Every pattern's anchors are included.
-    for (const p of CRASH_PATTERNS) for (const a of p.anchors) expect(CRASH_ANCHORS).toContain(a);
+    for (const p of CRASH_PATTERNS) for (const a of p.anchors) expect(CRASH_ANCHOR_TEXTS).toContain(a.text);
   });
 
   it('digestFromText numbers lines from 1 and strips CR', () => {

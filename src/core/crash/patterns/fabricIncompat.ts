@@ -11,6 +11,7 @@ import type { CrashPattern, Finding, Severity } from '../../model';
 import { ctxOf, disable, finding, gate, listText, logEvidence, manual, refs, worst, type Ctx } from '../context';
 import { jarByFileName, jarsForModId, jarsForModName, uniqueTopLevel } from '../jars';
 import { basename, logMessage } from '../text';
+import { contextual, fatal } from '../tiers';
 
 export const FABRIC_HEADERS: readonly string[] = [
   'Incompatible mods found!',
@@ -345,7 +346,19 @@ export const fabricIncompatPattern: CrashPattern = {
   id: 'fabric-incompatible',
   codes: ['C-FABRIC-INCOMPAT'],
   anchors: [
-    ...FABRIC_HEADERS,
+    // The loader refuses to start: every incompatible-mod-set header wording, the old Fabric
+    // resolver message, and the report file Quilt names in latest.log after a loader failure.
+    ...fatal(
+      'Incompatible mods found!',
+      'Incompatible mod set!',
+      'Some of your mods are incompatible',
+      'Mod resolution encountered an incompatible mod set',
+      'Could not find required mod',
+      '-quilt_loader.txt',
+    ),
+    // Detail lines: `recommends …, which is missing!` and friends are also logged as warnings.
+    ...contextual(
+    'Mod resolution failed',
     'A potential solution has been determined',
     'More details:',
     ', which is missing!',
@@ -358,8 +371,8 @@ export const fabricIncompatPattern: CrashPattern = {
     'is incompatible with',
     'transitively requires',
     'breaks with',
-    'Could not find required mod',
     'Duplicate mod: ',
+    ),
   ],
   match(input) {
     const ctx = ctxOf(input);

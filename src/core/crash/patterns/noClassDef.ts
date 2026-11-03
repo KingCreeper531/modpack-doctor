@@ -26,6 +26,7 @@ import {
 } from '../context';
 import { jarLabel, jarsForPackage, topLevel, uniqueTopLevel } from '../jars';
 import { normalizeClassName, packageOf, simpleName } from '../text';
+import { contextual } from '../tiers';
 
 const MISSING = /\b(NoClassDefFoundError|ClassNotFoundException)(?::\s*|\s+)([A-Za-z_$][\w$]*(?:[./][\w$]+)+)/;
 const INVALID_DIST = /Attempted to load class ([\w$/.]+) for invalid dist (\w+)/;
@@ -185,7 +186,8 @@ function toFinding(ctx: Ctx, m: Missing): Finding | null {
 export const noClassDefPattern: CrashPattern = {
   id: 'no-class-def',
   codes: ['C-NOCLASSDEF'],
-  anchors: ['NoClassDefFoundError', 'ClassNotFoundException', 'Attempted to load class', 'for invalid dist'],
+  // Healthy games log these for optional integrations.
+  anchors: contextual('NoClassDefFoundError', 'ClassNotFoundException', 'Attempted to load class', 'for invalid dist'),
   match(input) {
     const ctx = ctxOf(input);
     const found = new Map<string, Missing>();

@@ -22,6 +22,7 @@ import {
 } from '../context';
 import { jarByFileName, jarsForModId } from '../jars';
 import { basename, contiguous, isFrameLine, logMessage, stripFormatting, truncate } from '../text';
+import { contextual, fatal } from '../tiers';
 import { innermostCause } from './rootCause';
 
 type SuspectSource = 'analyser' | 'loader' | 'entrypoint';
@@ -239,21 +240,26 @@ export const suspectedPattern: CrashPattern = {
   id: 'suspected-mods',
   codes: ['C-SUSPECTED'],
   anchors: [
-    'Suspected Mod: ',
-    'Suspected Mods: ',
-    '-- MOD ',
-    '-- Mod loading issue',
-    'Mod File: ',
-    'Mod file: ',
-    'Failure message: ',
-    'Exception message: ',
-    'Loading errors encountered',
-    'has failed to load correctly',
-    'has class loading errors',
-    'encountered an error',
-    'Failed to create mod instance',
-    'Could not execute entrypoint stage',
-    'Exception while loading entries for entrypoint',
+    // NeoForge loading-error screen (owner's list); a Fabric/Quilt entrypoint failure aborts
+    // the launch.
+    ...fatal('Loading errors encountered', 'Could not execute entrypoint stage'),
+    // Crash-report section content (the report header is the fatal trigger) and loader lines
+    // that are followed by a fatal marker when loading really stops.
+    ...contextual(
+      'Suspected Mod: ',
+      'Suspected Mods: ',
+      '-- MOD ',
+      '-- Mod loading issue',
+      'Mod File: ',
+      'Mod file: ',
+      'Failure message: ',
+      'Exception message: ',
+      'has failed to load correctly',
+      'has class loading errors',
+      'encountered an error',
+      'Failed to create mod instance',
+      'Exception while loading entries for entrypoint',
+    ),
   ],
   match(input) {
     const ctx = ctxOf(input);
