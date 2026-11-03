@@ -123,11 +123,21 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
 
-    if let Err(e) = result {
-        eprintln!("Modpack Doctor failed to start: {e}");
-        std::process::exit(1);
+    match result {
+        Ok(app) => app.run(|handle, event| {
+            // Watchers are never persisted as running; stop their threads on the way out.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = handle.try_state::<state::AppState>() {
+                    state.watchers.stop_all();
+                }
+            }
+        }),
+        Err(e) => {
+            eprintln!("Modpack Doctor failed to start: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

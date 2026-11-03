@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::discovery::Discovered;
 use crate::error::{Error, Result};
 use crate::guard::PathGuard;
+use crate::logs::watch::Watchers;
 use crate::model::{DiscoveryReport, Instance};
+use crate::process::Processes;
 use crate::scan::ScanCache;
 use crate::settings::SettingsService;
 
@@ -30,6 +32,10 @@ pub struct AppState {
     pub scope_lock: Arc<tokio::sync::RwLock<()>>,
     /// Roots that are never unregistered by discovery (the app data dir).
     pub pinned_roots: Arc<RwLock<Vec<PathBuf>>>,
+    /// Java-process detection shared by watch mode and the running-game guard.
+    pub processes: Processes,
+    /// Live crash watchers by instance id (started only by `set_watch`).
+    pub watchers: Arc<Watchers>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -76,6 +82,14 @@ impl AppState {
         let pinned = self.pinned();
         let mut reg = self.registry.write().map_err(|_| poisoned("instance registry"))?;
         apply_registry(&self.guard, &mut reg, next, &pinned);
+        // An instance that is no longer discovered can't be watched: its roots are gone.
+        let known = reg.ids();
+        drop(reg);
+        for id in self.watchers.ids() {
+            if !known.contains(&id) {
+                self.watchers.stop(&id);
+            }
+        }
         Ok(discovered.report)
     }
 }
