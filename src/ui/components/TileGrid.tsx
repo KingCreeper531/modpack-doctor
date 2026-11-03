@@ -51,6 +51,12 @@ export interface Tile {
 export interface TileGridProps {
   tiles: readonly Tile[];
   selectedId?: string | null;
+  /**
+   * Show a tile as hovered / keyboard-focused without a pointer or key press (the /design sheet
+   * and render tests). Real interaction replaces it.
+   */
+  previewHoverId?: string | null;
+  previewFocusId?: string | null;
   onSelect?: (id: string) => void;
   /** Accessible name, e.g. `Scan grid, 214 jars`. */
   label?: string;
@@ -119,7 +125,7 @@ function frame(ctx: CanvasRenderingContext2D, x: number, y: number, out: number,
   ctx.rect(x0 + s - w, y0 + w, w, s - w * 2);
 }
 
-export function TileGrid({ tiles, selectedId = null, onSelect, label, className }: TileGridProps) {
+export function TileGrid({ tiles, selectedId = null, previewHoverId = null, previewFocusId = null, onSelect, label, className }: TileGridProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -338,6 +344,21 @@ export function TileGrid({ tiles, selectedId = null, onSelect, label, className 
     schedule();
   }, [tiles, selectedId, schedule]);
 
+  useLayoutEffect(() => {
+    const e = eng.current;
+    const hover = previewHoverId === null ? -1 : e.ids.indexOf(previewHoverId);
+    const focus = previewFocusId === null ? -1 : e.ids.indexOf(previewFocusId);
+    if (hover >= 0) e.hover = hover;
+    if (focus >= 0) {
+      e.focus = focus;
+      e.showFocus = true;
+    }
+    if (hover >= 0 || focus >= 0) {
+      setTip(hover >= 0 ? hover : focus);
+      schedule();
+    }
+  }, [previewHoverId, previewFocusId, tiles, schedule]);
+
   // Backing-store size.
   useLayoutEffect(() => {
     const e = eng.current;
@@ -376,8 +397,11 @@ export function TileGrid({ tiles, selectedId = null, onSelect, label, className 
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        role="img"
-        aria-label={label ?? `Scan grid, ${tiles.length} jars`}
+        // A keyboard-operated custom widget: arrow keys move a focus tile, Enter selects, and the
+        // live region below announces the focused tile.
+        role="application"
+        aria-roledescription="scan grid"
+        aria-label={`${label ?? `Scan grid, ${tiles.length} jars`}. Arrow keys move between tiles, Enter selects.`}
         className="block"
         onPointerMove={(ev) => setHover(indexAt(ev.clientX, ev.clientY))}
         onPointerLeave={() => setHover(null)}

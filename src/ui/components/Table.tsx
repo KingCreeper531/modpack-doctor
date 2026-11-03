@@ -3,7 +3,7 @@
  * split by hairlines, sortable headers with ▲/▼ in fg-faint, numbers right-aligned and tabular.
  * Columns are a CSS grid so the virtualised ModTable can share the header exactly.
  */
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import { createContext, useContext, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 
 import { cx } from './cx';
 import { ariaSort, nextSort, type SortState } from './sort';
@@ -27,11 +27,18 @@ export function gridTemplate(columns: ReadonlyArray<{ width: string }>): CSSProp
   return { gridTemplateColumns: columns.map((c) => c.width).join(' ') };
 }
 
+/**
+ * `table` for read-only lists; `grid` when rows are selectable (ARIA only allows `aria-selected`
+ * on rows of a grid). Rows and cells read it to pick `aria-selected` and `cell` / `gridcell`.
+ */
+export type TableRole = 'table' | 'grid';
+export const TableRoleContext = createContext<TableRole>('table');
+
 const ALIGN = { left: 'justify-start text-left', right: 'justify-end text-right', center: 'justify-center text-center' };
 
 export function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return (
-    <span aria-hidden className={cx('w-2 font-mono text-[10px] text-fg-faint', !dir && 'invisible')}>
+    <span aria-hidden className={cx('w-2 t-label text-fg-faint', !dir && 'invisible')}>
       {dir === 'desc' ? '▼' : '▲'}
     </span>
   );
@@ -97,11 +104,12 @@ export interface TableRowProps {
  * signal outline plus `raised` instead (utilities beat the base-layer `:focus-visible` rule).
  */
 export function TableRow({ style, selected = false, onClick, onKeyDown, focusable = false, className, children, ...aria }: TableRowProps) {
+  const isGrid = useContext(TableRoleContext) === 'grid';
   return (
     <div
       role="row"
       tabIndex={focusable ? 0 : undefined}
-      aria-selected={selected || undefined}
+      aria-selected={isGrid ? selected : undefined}
       onClick={onClick}
       onKeyDown={onKeyDown}
       style={style}
@@ -120,8 +128,9 @@ export function TableRow({ style, selected = false, onClick, onKeyDown, focusabl
 }
 
 export function Cell({ align = 'left', flush = false, className, children }: { align?: Column<unknown>['align']; flush?: boolean; className?: string; children: ReactNode }) {
+  const role = useContext(TableRoleContext) === 'grid' ? 'gridcell' : 'cell';
   return (
-    <div role="cell" className={cx('flex h-full min-w-0 items-center', !flush && 'px-2', ALIGN[align], align === 'right' && 'tabular-nums', className)}>
+    <div role={role} className={cx('flex h-full min-w-0 items-center', !flush && 'px-2', ALIGN[align], align === 'right' && 'tabular-nums', className)}>
       {children}
     </div>
   );
@@ -142,34 +151,37 @@ export interface TableProps<T, K extends string> {
 /** Non-virtual table for short lists (probes, data plates). Long lists: ModTable. */
 export function Table<T, K extends string>({ columns, rows, rowKey, sort, onSort, selectedKey, onRowClick, label, className }: TableProps<T, K>) {
   const style = gridTemplate(columns);
+  const role: TableRole = onRowClick ? 'grid' : 'table';
   return (
-    <div role="table" aria-label={label} className={cx('min-w-0', className)}>
-      <TableHeader columns={columns} sort={sort ?? null} {...(onSort ? { onSort } : {})} />
-      <div role="rowgroup">
-        {rows.map((row) => {
-          const key = rowKey(row);
-          return (
-            <TableRow
-              key={key}
-              style={style}
-              selected={selectedKey === key}
-              {...(onRowClick ? { onClick: () => onRowClick(row), focusable: true } : {})}
-              onKeyDown={(e) => {
-                if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
-                  e.preventDefault();
-                  onRowClick(row);
-                }
-              }}
-            >
-              {columns.map((c) => (
-                <Cell key={c.key} align={c.align ?? 'left'} flush={c.flush ?? false}>
-                  {c.render(row)}
-                </Cell>
-              ))}
-            </TableRow>
-          );
-        })}
+    <TableRoleContext.Provider value={role}>
+      <div role={role} aria-label={label} className={cx('min-w-0', className)}>
+        <TableHeader columns={columns} sort={sort ?? null} {...(onSort ? { onSort } : {})} />
+        <div role="rowgroup">
+          {rows.map((row) => {
+            const key = rowKey(row);
+            return (
+              <TableRow
+                key={key}
+                style={style}
+                selected={selectedKey === key}
+                {...(onRowClick ? { onClick: () => onRowClick(row), focusable: true } : {})}
+                onKeyDown={(e) => {
+                  if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onRowClick(row);
+                  }
+                }}
+              >
+                {columns.map((c) => (
+                  <Cell key={c.key} align={c.align ?? 'left'} flush={c.flush ?? false}>
+                    {c.render(row)}
+                  </Cell>
+                ))}
+              </TableRow>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </TableRoleContext.Provider>
   );
 }

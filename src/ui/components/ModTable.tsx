@@ -15,7 +15,7 @@ import { LOADER_ABBR, LOADER_NAME } from '../glyphs/loaders';
 import { cx } from './cx';
 import { SeverityRail } from './Severity';
 import { flattenTree, type SortState, type SortValue } from './sort';
-import { Cell, gridTemplate, TableHeader, TableRow } from './Table';
+import { Cell, gridTemplate, TableHeader, TableRoleContext, TableRow } from './Table';
 import { Toggle } from './Toggle';
 
 export type ModrinthMatch =
@@ -157,98 +157,100 @@ export function ModTable({
   const template = gridTemplate(COLUMNS);
 
   return (
-    <div role="table" aria-label="Mods" aria-rowcount={flat.length + 1} className={cx('flex min-w-0 flex-col', className)}>
-      <TableHeader<string> columns={COLUMNS} sort={sort} onSort={(s) => onSort(s as SortState<ModSortKey>)} />
-      <div ref={scrollRef} className="overflow-y-auto" style={{ height }}>
-        <div role="rowgroup" className="relative w-full" style={{ height: virtual.getTotalSize() }}>
-          {virtual.getVirtualItems().map((v) => {
-            const f = flat[v.index]!;
-            const r = f.row;
-            const worst = worstSeverity(r.findings);
-            return (
-              <TableRow
-                key={r.id}
-                aria-label={r.name}
-                focusable
-                selected={selectedId === r.id}
-                onClick={() => onSelect?.(r.id)}
-                onKeyDown={(e) => {
-                  if (e.target !== e.currentTarget) return;
-                  if (e.key === 'Enter') onSelect?.(r.id);
-                  else if (f.hasChildren && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) toggleOpen(r.id, e.key === 'ArrowRight');
-                }}
-                className="absolute top-0 left-0 w-full"
-                style={{ ...template, transform: `translateY(${v.start}px)` }}
-              >
-                <Cell flush className="items-stretch">
-                  <SeverityRail severity={worst} />
-                </Cell>
-                <Cell flush align="center" className={r.enabled ? 'text-fg-dim' : 'text-fg-faint'}>
-                  {r.iconUrl ? (
-                    <img src={r.iconUrl} alt="" width={16} height={16} className="size-4 rounded-1" />
-                  ) : (
-                    <LoaderGlyph kind={r.loader} size={16} />
-                  )}
-                </Cell>
-                <Cell>
-                  <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: f.depth * 16 }}>
-                    {f.depth > 0 ? (
-                      <span aria-hidden className="t-mono text-fg-faint">
-                        └
+    <TableRoleContext.Provider value="grid">
+      <div role="grid" aria-label="Mods" aria-rowcount={flat.length + 1} className={cx('flex min-w-0 flex-col', className)}>
+        <TableHeader<string> columns={COLUMNS} sort={sort} onSort={(s) => onSort(s as SortState<ModSortKey>)} />
+        <div ref={scrollRef} className="overflow-y-auto" style={{ height }}>
+          <div role="rowgroup" className="relative w-full" style={{ height: virtual.getTotalSize() }}>
+            {virtual.getVirtualItems().map((v) => {
+              const f = flat[v.index]!;
+              const r = f.row;
+              const worst = worstSeverity(r.findings);
+              return (
+                <TableRow
+                  key={r.id}
+                  aria-label={r.name}
+                  focusable
+                  selected={selectedId === r.id}
+                  onClick={() => onSelect?.(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter') onSelect?.(r.id);
+                    else if (f.hasChildren && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) toggleOpen(r.id, e.key === 'ArrowRight');
+                  }}
+                  className="absolute top-0 left-0 w-full"
+                  style={{ ...template, transform: `translateY(${v.start}px)` }}
+                >
+                  <Cell flush className="items-stretch">
+                    <SeverityRail severity={worst} />
+                  </Cell>
+                  <Cell flush align="center" className={r.enabled ? 'text-fg-dim' : 'text-fg-faint'}>
+                    {r.iconUrl ? (
+                      <img src={r.iconUrl} alt="" width={16} height={16} className="size-4 rounded-1" />
+                    ) : (
+                      <LoaderGlyph kind={r.loader} size={16} />
+                    )}
+                  </Cell>
+                  <Cell>
+                    <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: f.depth * 16 }}>
+                      {f.depth > 0 ? (
+                        <span aria-hidden className="t-mono text-fg-faint">
+                          └
+                        </span>
+                      ) : null}
+                      {f.hasChildren ? (
+                        <button
+                          type="button"
+                          aria-label={f.expanded ? `Collapse nested jars of ${r.name}` : `Expand nested jars of ${r.name}`}
+                          aria-expanded={f.expanded}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOpen(r.id);
+                          }}
+                          className="-ml-1 flex size-4 shrink-0 items-center justify-center text-fg-faint hover:text-fg"
+                        >
+                          {f.expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+                        </button>
+                      ) : null}
+                      <span className={cx('truncate', r.enabled ? 'text-fg' : 'text-fg-dim')}>{r.name}</span>
+                      {r.modId ? <span className="shrink-[2] truncate t-mono text-fg-faint">{r.modId}</span> : null}
+                      {f.hasChildren && !f.expanded ? (
+                        <span className="shrink-0 t-mono text-fg-faint">+{r.children?.length}</span>
+                      ) : null}
+                    </span>
+                  </Cell>
+                  <Cell>
+                    <span className="truncate t-mono text-fg-dim">{r.version ?? '—'}</span>
+                  </Cell>
+                  <Cell>
+                    <span className="flex items-center gap-1 t-mono text-fg-dim" title={r.loader ? LOADER_NAME[r.loader] : 'No metadata'}>
+                      <LoaderGlyph kind={r.loader} size={12} />
+                      {r.loader ? LOADER_ABBR[r.loader] : '—'}
+                    </span>
+                  </Cell>
+                  <Cell>
+                    <ModrinthCell m={r.modrinth} />
+                  </Cell>
+                  <Cell align="right">
+                    <StatusCounts f={r.findings} />
+                  </Cell>
+                  <Cell align="center" flush>
+                    {f.depth === 0 ? (
+                      <span onClick={(e) => e.stopPropagation()} className="flex">
+                        <Toggle on={r.enabled} label={r.name} onChange={(next) => onToggleEnabled?.(r.id, next)} />
                       </span>
-                    ) : null}
-                    {f.hasChildren ? (
-                      <button
-                        type="button"
-                        aria-label={f.expanded ? `Collapse nested jars of ${r.name}` : `Expand nested jars of ${r.name}`}
-                        aria-expanded={f.expanded}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleOpen(r.id);
-                        }}
-                        className="-ml-1 flex size-4 shrink-0 items-center justify-center text-fg-faint hover:text-fg"
-                      >
-                        {f.expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-                      </button>
-                    ) : null}
-                    <span className={cx('truncate', r.enabled ? 'text-fg' : 'text-fg-dim')}>{r.name}</span>
-                    {r.modId ? <span className="shrink-[2] truncate t-mono text-fg-faint">{r.modId}</span> : null}
-                    {f.hasChildren && !f.expanded ? (
-                      <span className="shrink-0 t-mono text-fg-faint">+{r.children?.length}</span>
-                    ) : null}
-                  </span>
-                </Cell>
-                <Cell>
-                  <span className="truncate t-mono text-fg-dim">{r.version ?? '—'}</span>
-                </Cell>
-                <Cell>
-                  <span className="flex items-center gap-1 t-mono text-fg-dim" title={r.loader ? LOADER_NAME[r.loader] : 'No metadata'}>
-                    <LoaderGlyph kind={r.loader} size={12} />
-                    {r.loader ? LOADER_ABBR[r.loader] : '—'}
-                  </span>
-                </Cell>
-                <Cell>
-                  <ModrinthCell m={r.modrinth} />
-                </Cell>
-                <Cell align="right">
-                  <StatusCounts f={r.findings} />
-                </Cell>
-                <Cell align="center" flush>
-                  {f.depth === 0 ? (
-                    <span onClick={(e) => e.stopPropagation()} className="flex">
-                      <Toggle on={r.enabled} label={r.name} onChange={(next) => onToggleEnabled?.(r.id, next)} />
-                    </span>
-                  ) : (
-                    <span className="t-mono text-fg-faint" title="Nested jars follow their parent">
-                      ·
-                    </span>
-                  )}
-                </Cell>
-              </TableRow>
-            );
-          })}
+                    ) : (
+                      <span className="t-mono text-fg-faint" title="Nested jars follow their parent">
+                        ·
+                      </span>
+                    )}
+                  </Cell>
+                </TableRow>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
+    </TableRoleContext.Provider>
   );
 }

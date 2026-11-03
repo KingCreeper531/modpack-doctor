@@ -54,6 +54,7 @@ export function TriageRow({
         focused && 'outline-1 -outline-offset-1 outline-signal',
       )}
       data-severity={finding.severity}
+      aria-current={selected || undefined}
     >
       <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1', RAIL_BG[finding.severity])} />
       <div className="flex h-8 items-center pl-1">
@@ -89,7 +90,7 @@ export function TriageRow({
         inert={!expanded}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-30">
+          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-38">
             <p className="max-w-[72ch] t-body text-fg">{finding.explanation}</p>
             {finding.evidence.map((ev, i) => (
               <EvidenceView key={i} evidence={ev} jarLabel={name} {...(onJarClick ? { onJarClick } : {})} />

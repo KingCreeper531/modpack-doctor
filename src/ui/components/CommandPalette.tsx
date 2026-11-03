@@ -68,7 +68,8 @@ export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed',
         className,
       )}
     >
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-4 text-fg-faint">
+      {/* The focus ring sits on the input row (focus-within): an offset ring would be clipped by the overlay. */}
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-4 text-fg-faint focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-signal">
         <MagnifyingGlass size={16} aria-hidden />
         <Command.Input
           value={query}
