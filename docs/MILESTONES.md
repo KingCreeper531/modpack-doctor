@@ -102,3 +102,54 @@ result.
   - M4: the watch episode state machine and process detection; also removing a manual instance should
     clean up its `watched` and `overrides` entries.
   - M5: a Modrinth "unreachable" notice, and a review of E's extra alias slugs against the live API.
+
+## M4 — Crash analysis, evidence view, watch mode
+
+- **Agents:**
+  - D (crash library, `src/core/crash/**`): real-log false positives fixed (Suspected Mods, frame
+    blame, session-kept-running gate). The real crash smoke over your instances' logs shows
+    **0 false positives** on logs that reached the game.
+  - K (Rust, `logs/{sources,tail,episode,watch}.rs`, `process/**`, `commands/logs.rs`): log sources,
+    bounded digest command, tiered watch mode with the episode state machine, Java process detection
+    shared with the M6 running-game guard.
+  - L (UI, `src/ui/**` + `src/core/crash/summary.ts`): FINDINGS/CRASHES tabs, source list,
+    Diagnosis/Log switch, virtualised log viewer, crash inspector, watch toggle, notifications with a
+    denied-permission banner, mock crash scenario (`?scenario=crash`). Fixed the flaky
+    override-editor test (it raced the mock's deferred settings patch).
+  - Independent reviewer, then K2 (Rust) and L2 (UI) for its findings; the reviewer re-checked
+    the fixes.
+- **Review findings fixed:**
+  - Suppression is now tied to the Java processes running at emission (5 s grace), not a quiet
+    timer that dropped triggers kept alive. One crash = one notification, including an FML error
+    screen left open before quitting.
+  - hs_err files in the JVM's working dir (vanilla launcher runs in `.minecraft`) are picked up on
+    exit and readable as `@cwd/hs_err_pid<pid>.log`.
+  - `latest.log` goes through the PathGuard; only `crash-*.txt` are crash reports; a stopped
+    watcher can never emit; contextual hits survive a process start.
+  - UI: a race that could lose the notification; re-arm after every discovery; notification
+    titled "<instance> crashed"; no alert for the instance already open; keyboard radio/tab
+    patterns; log scroll no longer jumps on re-analysis; `.mrpack` has no watch toggle.
+  - Mine: crash rows keep their title in narrow panes, scan grid caps at 25vh on small windows,
+    the two vanilla crash-handler lines became contextual anchors (a crash report follows).
+- **Known gaps (CONTRACTS invariant 11):** JVM failures that only reach stderr (wrong Java);
+  hs_err in a working dir outside every guard root (CurseForge's `Install` dir) — fixing that
+  means registering launcher folders as roots, which needs an owner decision.
+- **Re-review:** confirmed every finding fixed (#11 deferred). Its new minor and nits are fixed
+  too: a new `latest.log` lifts a suppression when no reported process is running (relaunch of
+  an unmatched game), crash files stay quiet through the coalesce window after an exit-only
+  emission, a working dir is recorded once sysinfo reports it, and `@cwd/` ids read as
+  "launcher folder". Not done: caching the hs_err header reads in a shared `.minecraft`.
+- **Contract changes during M4:** `@cwd/hs_err_pid<pid>.log` source ids (invariant 5);
+  process-tied suppression, guarded tail, `crash-*.txt`, re-arm after every discovery and the
+  known gaps (invariant 11). Bindings changed only in doc comments.
+- **Gates:**
+  - 315 Rust tests and clippy `-D warnings` (including examples) clean;
+  - 1589 Vitest tests, green on repeated runs (the override-editor flake is gone);
+  - both typechecks clean; the production build contains no mock data;
+  - a full `tauri build` produces `.msi` (6.00 MiB) and `.exe` (4.32 MiB);
+  - the real crash smoke reports 0 false positives.
+
+  Screenshots at 960×600, 1280×800 and 1920×1080 in both themes (`docs/screenshots/m4/`,
+  untracked), plus a capture of the release build on your instances.
+- **Deferred to M6:** `game_running`'s exclusive-open jar probe could disturb a game that is
+  starting; revisit when the guard is used.
