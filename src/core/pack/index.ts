@@ -28,4 +28,15 @@ export function buildJarIndex(scan: ScanResult): JarIndex {
 export { describeLoader, describePack } from './describe';
 export { describeFallback, evaluateRange, FML_VERSION_SUPPORT_MATRIX, fmlFallbacks, type RangeVerdict } from './fmlCompat';
 export { isActive, isDisabledChain, topLevelOf } from './active';
-export { LOADER_DEP_IDS, LOADER_NAMES, loaderAccepts, mcCompare, mcIs, versionSyntaxFor } from './loaders';
+export {
+  entryRelevant,
+  LOADER_DEP_IDS,
+  LOADER_NAMES,
+  loaderAccepts,
+  loaderReadsFile,
+  mcCompare,
+  mcIs,
+  metadataFilesRead,
+  presentMetadataFiles,
+  versionSyntaxFor,
+} from './loaders';
