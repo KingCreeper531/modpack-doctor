@@ -20,9 +20,10 @@ export function ErrorRow({ error, action, className }: ErrorRowProps) {
       <span aria-hidden className="w-1 shrink-0 bg-err" />
       <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 py-1 pr-2 pl-4">
         <span className="w-24 shrink-0 t-mono text-err-text">{error.kind}</span>
-        <span className="min-w-0 flex-1 t-body text-fg">{error.message}</span>
+        {/* The message never shrinks below half the row; a long path wraps under it instead. */}
+        <span className="min-w-[50%] flex-1 t-body text-fg">{error.message}</span>
         {error.path ? (
-          <span className="max-w-full truncate t-mono text-fg-dim" title={error.path}>
+          <span className="min-w-0 max-w-full truncate t-mono text-fg-dim" title={error.path}>
             {error.path}
           </span>
         ) : null}

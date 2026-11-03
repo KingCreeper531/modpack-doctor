@@ -149,7 +149,11 @@ export function TileGrid({ tiles, selectedId = null, previewHoverId = null, prev
     raf: 0,
   });
 
-  const draw = useCallback((now: number) => {
+  const draw = useCallback((frameTime: number) => {
+    // Fades start at `performance.now()` (layout effect); a frame's timestamp is its start time
+    // and can trail that clock (by a frame normally, indefinitely under headless virtual time),
+    // so take whichever is later to keep fades on the same time base and finite.
+    const now = Math.max(frameTime, performance.now());
     const e = eng.current;
     e.raf = 0;
     const canvas = canvasRef.current;

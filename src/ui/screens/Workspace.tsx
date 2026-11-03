@@ -1,0 +1,103 @@
+/**
+ * Workspace (DESIGN.md §5): instance heading + summary strip, then the scan grid, the triage
+ * list and the mod table (or an open work order in its place, §6.4).
+ */
+import { ArrowClockwise } from '@phosphor-icons/react';
+import { useMemo } from 'react';
+
+import type { Instance } from '../../bindings';
+import { Button } from '../components/Button';
+import { ErrorRow } from '../components/ErrorRow';
+import { SummaryStrip } from '../components/SummaryStrip';
+import { WorkOrderPanel } from '../components/WorkOrderPanel';
+import { severityCounts } from '../app/derive';
+import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import { useNow } from './hooks';
+import { ModsPanel } from './ModsPanel';
+import { ScanPanel } from './ScanPanel';
+import { TriagePanel } from './TriagePanel';
+
+function Summary({ instance }: { instance: Instance }) {
+  const s = useAppShallow((st) => {
+    const sc = st.scans[instance.id];
+    return {
+      status: sc?.status ?? 'idle',
+      done: sc?.done ?? 0,
+      total: sc?.total ?? 0,
+      findings: sc?.findings,
+      pack: sc?.pack ?? null,
+      finishedAt: sc?.finishedAt ?? null,
+      result: sc?.result ?? null,
+      stubCount: sc?.stubs.length ?? 0,
+    };
+  });
+  const modrinthEnabled = useApp((st) => st.settings.modrinthEnabled);
+  const now = useNow(1000, s.status === 'done');
+  const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
+  const modCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : s.stubCount || instance.modCount;
+  return (
+    <SummaryStrip
+      mcVersion={s.pack?.mcVersion ?? instance.mcVersion}
+      loader={s.pack?.loader ?? instance.loader}
+      modCount={modCount}
+      {...(s.status === 'done' ? { counts } : {})}
+      {...(s.status === 'done' && s.finishedAt !== null ? { scannedAgoMs: now - s.finishedAt } : {})}
+      scanning={s.status === 'scanning' ? { done: s.done, total: s.total } : null}
+      failed={s.status === 'error'}
+      offline={!modrinthEnabled}
+      offlineNotice="Modrinth off — static checks only"
+    />
+  );
+}
+
+function Header({ instance }: { instance: Instance }) {
+  const scanning = useApp((s) => s.scans[instance.id]?.status === 'scanning');
+  const a = useActions();
+  return (
+    <header className="shrink-0 border-b border-line bg-panel px-4 pt-2">
+      <div className="flex h-6 min-w-0 items-center gap-4">
+        <h1 className="shrink-0 truncate t-head text-fg">{instance.name}</h1>
+        <span className="min-w-0 truncate t-mono text-fg-faint" title={instance.root}>
+          {instance.root}
+        </span>
+        <Button size={24} icon={<ArrowClockwise size={16} />} className="ml-auto" disabled={scanning} onClick={() => void a.scan(instance.id)}>
+          Rescan
+        </Button>
+      </div>
+      <Summary instance={instance} />
+    </header>
+  );
+}
+
+function OrderPanel() {
+  const order = useApp((s) => s.order);
+  const a = useActions();
+  if (!order) return null;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {order.error ? <ErrorRow error={order.error} /> : null}
+      <WorkOrderPanel
+        order={order.order}
+        statuses={order.statuses}
+        phase={order.phase}
+        rolledBack={order.rolledBack}
+        onExecute={() => void a.executeOrder()}
+        onCancel={() => void a.cancelOrder()}
+      />
+    </div>
+  );
+}
+
+export function Workspace({ instanceId }: { instanceId: string }) {
+  const instance = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId) ?? null);
+  const orderOpen = useApp((s) => s.order?.instanceId === instanceId);
+  if (!instance) return null;
+  return (
+    <>
+      <Header instance={instance} />
+      <ScanPanel instanceId={instanceId} className="shrink-0 border-b border-line" />
+      <TriagePanel key={instanceId} instanceId={instanceId} className="max-h-[45%] min-h-24 shrink border-b border-line" />
+      {orderOpen ? <OrderPanel /> : <ModsPanel instanceId={instanceId} className="min-h-40 flex-1" />}
+    </>
+  );
+}
