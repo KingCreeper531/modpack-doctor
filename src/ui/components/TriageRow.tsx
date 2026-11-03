@@ -5,11 +5,12 @@
  * ease-out via a 0fr → 1fr grid track (`--dur` is 0ms under reduced motion).
  * Focused (J/K, owned by the list): `raised` plus an inset 1px `signal` outline.
  */
-import type { FixAction } from '../../bindings';
+import type { AppError, FixAction } from '../../bindings';
 import type { Finding } from '../../core/model';
 import { Button } from './Button';
 import { Chip } from './Chip';
 import { cx } from './cx';
+import { ErrorRow } from './ErrorRow';
 import { EvidenceView } from './EvidenceView';
 import { basename } from './format';
 import { fixLabel } from './labels';
@@ -30,6 +31,8 @@ export interface TriageRowProps {
   onFix?: (fix: FixAction, index: number) => void;
   /** Disable fix buttons, e.g. while a work order is open. */
   fixesDisabled?: boolean;
+  /** Why the last fix could not be planned (`plan_work_order` error), shown under the buttons. */
+  fixError?: AppError | null;
 }
 
 export function TriageRow({
@@ -43,6 +46,7 @@ export function TriageRow({
   onJarClick,
   onFix,
   fixesDisabled = false,
+  fixError = null,
 }: TriageRowProps) {
   const name = (id: string) => jarNames[id] ?? basename(id);
   const bodyId = `triage-${finding.id}`;
@@ -113,6 +117,7 @@ export function TriageRow({
                 ) : null}
               </div>
             ) : null}
+            {fixError ? <ErrorRow error={fixError} className="border-t" /> : null}
             {finding.fixes.flatMap((f) => (f.kind === 'manual' ? f.steps : [])).length > 0 ? (
               <ol className="flex flex-col gap-1 t-mono text-fg-dim">
                 {finding.fixes

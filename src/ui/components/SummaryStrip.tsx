@@ -22,10 +22,22 @@ export interface SummaryStripProps {
   scanning?: { done: number; total: number } | null;
   /** Modrinth unreachable: static checks only. */
   offline?: boolean;
+  /** Replaces the offline notice text, e.g. when Modrinth is switched off in settings. */
+  offlineNotice?: string;
   className?: string;
 }
 
-export function SummaryStrip({ mcVersion, loader, modCount, counts, scannedAgoMs, scanning = null, offline = false, className }: SummaryStripProps) {
+export function SummaryStrip({
+  mcVersion,
+  loader,
+  modCount,
+  counts,
+  scannedAgoMs,
+  scanning = null,
+  offline = false,
+  offlineNotice = 'Modrinth unreachable — static checks only',
+  className,
+}: SummaryStripProps) {
   const segments: Array<{ key: string; node: ReactNode }> = [
     { key: 'mc', node: <span className="text-fg">{mcVersion ?? 'MC unknown'}</span> },
     {
@@ -69,7 +81,7 @@ export function SummaryStrip({ mcVersion, loader, modCount, counts, scannedAgoMs
       {offline ? (
         <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status">
           <Pip tone="info" />
-          Modrinth unreachable — static checks only
+          {offlineNotice}
         </p>
       ) : null}
     </div>
