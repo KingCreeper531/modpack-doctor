@@ -1,6 +1,7 @@
 /**
  * Design gate (DESIGN.md §11–§12). Grep-level checks that the banned look can't creep in:
- * runs over every .ts/.tsx/.css file under src/ (tokens.css is the only file allowed raw hex).
+ * runs over every .ts/.tsx/.css file under src/ui, src/styles and src/main.tsx (presentation
+ * code; src/core has no styling). tokens.css is the only file allowed raw hex.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -16,6 +17,8 @@ function files(dir: string): string[] {
   });
 }
 
+const SCANNED = [...files(join(SRC, 'ui')), ...files(join(SRC, 'styles')), join(SRC, 'main.tsx')];
+
 const BANNED: Array<[RegExp, string]> = [
   [/\brounded-(?!1\b|2\b|none\b)[\w[\]-]+/, 'radius above 4px (use rounded-1 / rounded-2)'],
   [/\b(bg|from|via|to)-(linear|radial|conic|gradient)/, 'gradient utility'],
@@ -28,11 +31,12 @@ const BANNED: Array<[RegExp, string]> = [
   [/lucide/i, 'Lucide icons'],
   [/['"]Inter['"]|\bGeist\b|font-family:\s*system-ui/, 'banned font'],
   [/\b(?:[pm][trblxy]?|gap(?:-[xy])?|space-[xy])-(?:\d+\.\d+|[3579]|1[13579])\b/, 'spacing off the 8px grid'],
-  [/✨|\p{Extended_Pictographic}/u, 'emoji / sparkle'],
+  // Emoji_Presentation (not Extended_Pictographic): arrows like ↔ and ↵ are typographic glyphs.
+  [/✨|\p{Emoji_Presentation}|️/u, 'emoji / sparkle'],
 ];
 
 describe('design lint', () => {
-  for (const file of files(SRC)) {
+  for (const file of SCANNED) {
     const rel = relative(SRC, file).split(sep).join('/');
     const src = readFileSync(file, 'utf8');
     // tailwind.css names the defaults it wipes (`--animate-*: initial`), so it is exempt.
