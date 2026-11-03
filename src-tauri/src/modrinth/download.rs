@@ -15,7 +15,7 @@ use super::{validate, ModrinthClient};
 use crate::error::{Error, Result};
 use crate::model::ProjectLookup;
 
-/// No mod jar we will ever install is anywhere near this.
+/// Hard cap on any download (`Tuning::max_download`). No mod jar is anywhere near this.
 pub(crate) const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 /// Allowed difference between the API's `size` and the bytes actually served.
 const SIZE_SLACK: u64 = 64 * 1024;
@@ -63,18 +63,23 @@ impl ModrinthClient {
     /// Download `url` (must be `https://<cdn_host>/…`) into `<dest_dir>/.<file_name>.part`,
     /// verifying size and SHA-512 while streaming, then fsync. Returns the temp path; the caller
     /// renames it into place. On any failure the temp file is removed.
+    ///
+    /// `expected_size`: `Some(n)` (the API's `MrFile.size`) allows at most `n` + 64 KiB;
+    /// `None` (size unknown) enforces only the 512 MiB hard cap. The SHA-512 check is what
+    /// actually proves the content either way.
     pub async fn download_verified(
         &self,
         url: &str,
         expected_sha512: &str,
-        expected_size: u64,
+        expected_size: Option<u64>,
         dest_dir: &Path,
         file_name: &str,
     ) -> Result<PathBuf> {
         validate::file_name(file_name)?;
         let expected = validate::sha512(expected_sha512)?;
-        if expected_size > MAX_DOWNLOAD {
-            return Err(Error::Invalid(format!("{file_name} is larger than the {} MB download limit", MAX_DOWNLOAD >> 20)));
+        let cap = self.inner.max_download;
+        if expected_size.is_some_and(|n| n > cap) {
+            return Err(Error::Invalid(format!("{file_name} is larger than the {} MB download limit", cap >> 20)));
         }
         let parsed = self.inner.cdn.parse(url).ok_or_else(|| {
             Error::Invalid(format!(
@@ -85,7 +90,7 @@ impl ModrinthClient {
         if !self.inner.online {
             return Err(Error::Offline);
         }
-        let limit = expected_size.saturating_add(SIZE_SLACK).min(MAX_DOWNLOAD);
+        let limit = expected_size.map_or(cap, |n| n.saturating_add(SIZE_SLACK).min(cap));
         let temp = dest_dir.join(format!(".{file_name}.part"));
 
         let client = self.inner.http.clone();
@@ -95,7 +100,10 @@ impl ModrinthClient {
             .map_err(|e| e.into_error(&format!("the download of {file_name}")))?;
         let too_big = || Error::Corrupt {
             path: file_name.to_string(),
-            reason: format!("the server sent more than the {expected_size} bytes Modrinth reported"),
+            reason: match expected_size {
+                Some(n) => format!("the server sent more than the {n} bytes Modrinth reported"),
+                None => format!("the server sent more than the {} MB download limit", cap >> 20),
+            },
         };
         if resp.content_length().is_some_and(|n| n > limit) {
             return Err(too_big());

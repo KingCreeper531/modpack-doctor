@@ -8,12 +8,15 @@
 //!   data. They fail only on invalid input, an HTTP 410 (API retired), or when *every* batch was
 //!   rate limited (`Error::RateLimited`).
 //! - Disk cache layout and TTLs: see `cache.rs` and the `TTL_*` constants below.
+//! - `resolve_mod_id` maps a loader mod id (`cloth_config`) to a project: slug guesses + alias
+//!   table, then `/v2/search` (see `resolve.rs`).
 //! - Downloads and icons only from `https://<cdn_host>/…`; redirects never leave the origin.
 
 mod api;
 mod cache;
 mod download;
 mod http;
+mod resolve;
 mod validate;
 
 #[cfg(test)]
@@ -104,11 +107,18 @@ pub(crate) struct Tuning {
     pub policy: RetryPolicy,
     /// Epoch milliseconds, used for cache TTLs.
     pub clock: Clock,
+    /// Hard cap for `download_verified` (bytes).
+    pub max_download: u64,
 }
 
 impl Default for Tuning {
     fn default() -> Self {
-        Tuning { allow_http: false, policy: RetryPolicy::default(), clock: Arc::new(epoch_ms) }
+        Tuning {
+            allow_http: false,
+            policy: RetryPolicy::default(),
+            clock: Arc::new(epoch_ms),
+            max_download: download::MAX_DOWNLOAD,
+        }
     }
 }
 
@@ -129,6 +139,7 @@ pub(crate) struct Inner {
     sem: Arc<Semaphore>,
     policy: RetryPolicy,
     clock: Clock,
+    max_download: u64,
 }
 
 impl Inner {
@@ -250,6 +261,7 @@ impl ModrinthClient {
                 sem: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
                 policy: t.policy,
                 clock: t.clock,
+                max_download: t.max_download,
             }),
         })
     }
@@ -314,7 +326,20 @@ impl ModrinthClient {
         for k in &keys {
             validate::id_or_slug(k)?;
         }
-        let keys = dedup_keep_order(keys);
+        let l = self.project_records(dedup_keep_order(keys), refresh).await?;
+        let mut icons = BTreeMap::new();
+        let mut found = BTreeMap::new();
+        for (k, rec) in l.found {
+            if let Some(u) = rec.icon_url {
+                icons.insert(rec.project.id.clone(), u);
+            }
+            found.insert(k, rec.project);
+        }
+        Ok((ProjectLookup { found, failed: l.failed, offline: l.offline }, icons))
+    }
+
+    /// Batched, cached `GET /v2/projects` returning full records. `keys` must be validated.
+    async fn project_records(&self, keys: Vec<String>, refresh: bool) -> Result<Lookup<ProjectRecord>> {
         let url = self.inner.endpoint("/v2/projects")?;
         let inner = Arc::clone(&self.inner);
         let fetch: FetchFn<ProjectRecord> = Arc::new(move |chunk: Vec<String>, abort: Arc<AtomicBool>| -> FetchFuture<ProjectRecord> {
@@ -346,16 +371,7 @@ impl ModrinthClient {
                 Ok(out)
             })
         });
-        let l = self.keyed_lookup(keys, refresh, NS_PROJECTS, TTL_PROJECTS, PROJECT_BATCH, fetch).await?;
-        let mut icons = BTreeMap::new();
-        let mut found = BTreeMap::new();
-        for (k, rec) in l.found {
-            if let Some(u) = rec.icon_url {
-                icons.insert(rec.project.id.clone(), u);
-            }
-            found.insert(k, rec.project);
-        }
-        Ok((ProjectLookup { found, failed: l.failed, offline: l.offline }, icons))
+        self.keyed_lookup(keys, refresh, NS_PROJECTS, TTL_PROJECTS, PROJECT_BATCH, fetch).await
     }
 
     /// `GET /v2/project/{id|slug}/version?include_changelog=false`, newest first (API order),

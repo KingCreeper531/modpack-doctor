@@ -41,8 +41,11 @@ pub(crate) fn version_id(s: &str) -> Result<()> {
 
 /// A project id or slug (also used for loader mod-id guesses such as `cloth_config`).
 pub(crate) fn id_or_slug(s: &str) -> Result<()> {
+    // A leading dot also rules out `.`, `..` and all-dot names, which would act as URL path
+    // segments in `/v2/project/{id}/version`.
     let ok = !s.is_empty()
         && s.len() <= 64
+        && !s.starts_with('.')
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'+'));
     if ok {
         Ok(())
@@ -124,6 +127,10 @@ mod tests {
         assert!(id_or_slug("fabric-api").is_ok());
         assert!(id_or_slug("cloth_config").is_ok());
         assert!(id_or_slug("a/b").is_err());
+        for dots in [".", "..", "...", ".hidden"] {
+            assert!(id_or_slug(dots).is_err(), "{dots} accepted");
+        }
+        assert!(id_or_slug("mod.v2").is_ok());
         assert!(id_or_slug("").is_err());
     }
 
