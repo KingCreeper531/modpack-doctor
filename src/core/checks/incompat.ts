@@ -30,7 +30,7 @@ export const incompatCheck: Check = {
         if (dep.modId === e.mod.modId || !depSideApplies(dep, ctx.pack.side)) continue;
         if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // Connector: breaks on aliased ids not enforced
         const targets = ctx
-          .providers(dep.modId)
+          .providers(dep.modId, ctx.connector.via(e.jar))
           .filter((p) => p.top.id !== e.top.id && versionApi.satisfies(p.mod.version, dep.range, 'other') === true);
         if (targets.length === 0) continue;
         const hard = dep.kind !== 'conflicts';

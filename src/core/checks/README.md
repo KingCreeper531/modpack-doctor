@@ -16,6 +16,8 @@ The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously afte
 | `context.ts` | `contextFor(input)`: the per-input view every check shares — jar index, active/loaded jars, loader- and side-filtered metadata entries, nested-copy de-duplication, providers, pack note. Cached per input. |
 | `evidence.ts` | Helpers: `makeFinding`, `jarRef`/`entryRef`, `metadataEvidence` + line finders (`dependencyLines`, `modIdLines`, `environmentLines`), `disable`/`manual` fixes, wording helpers. |
 | `builtins.ts` | Dependency ids the game/loader provide (never "missing"). |
+| `duplicates.ts` | Duplicate-id groups, loader mode and ranking; which copies the loader drops. |
+| `connector.ts` | Sinytra Connector: which Fabric jars it loads or skips, id normalisation, aliases. |
 | `<name>.ts` | One file per check. Its header comment is the rule's specification. |
 | `__tests__/fixtures.ts` | Realistic `JarRecord` builders (Forge, NeoForge, Fabric, Quilt, multi-loader, nested JarJar/JiJ, disabled, corrupt) with metadata excerpts in the real file formats. |
 | `../pack/` | `resolvePack`, `buildJarIndex`, loader compatibility (`loaderAccepts`), FML compatibility table (`fmlCompat.ts`), pack description. |
@@ -49,16 +51,23 @@ an error.
 - **Sinytra Connector** (`connector.ts`): with mod id `connector` / `connectormod` present on
   Forge/NeoForge, Fabric-only jars are loaded (no E-WRONG-LOADER). Skipped silently: upstream
   Fabric API, `mixinextras` on 1.21.x, ids (`-`→`_`) already loaded natively. Dependency ids
-  match with `-`→`_`; cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
+  of those Fabric jars (only — native FML deps stay exact) match with `-`→`_`
+  (`ctx.providers(id, ctx.connector.via(jar))`); cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
   widened; `fabricloader` deps ignored; `minecraft` strict (Fabric semantics); other
   depends/breaks stay errors.
 - **FML side filter**: dependencies with `side = "CLIENT"` are skipped on a server pack and
   `SERVER` on a client pack — including the `minecraft` and loader dependencies behind
   `mcRange` / `loaderRange`.
 - **FML optional dependencies** are enforced when the mod is present (E-DEP-RANGE error);
-  `discouraged` is a warning.
-- **Duplicate ids**: FML keeps the newest file per *first* mod id (warning); a duplicate that is a
-  secondary mod in some file is an error; Fabric keeps one (warning); Quilt refuses (error).
+  `discouraged` is a warning. A provider whose version is an unresolved `${…}` placeholder or
+  `0.0NONE` passes (FML substitutes `0.0NONE`, which passes every check).
+- **Duplicate ids** (`duplicates.ts`, computed once in the context): FML keeps the newest file per
+  *first* mod id (warning); a duplicate that is a secondary mod in some file is an error; Fabric
+  keeps one (warning); Quilt and legacy FML refuse (error). The copies FML/Fabric drop are not
+  loaded: `ctx.isLoaded`, `effective` and `providers` exclude them, so no other check reports
+  them (E-DUP-ID still does). Placeholder versions rank lowest, then file mtime.
+- **Java class versions**: the top-level jar's own classes decide W-JAVA-CLASS (warning); a
+  newer *bundled* module alone is info ("it may be optional").
 
 ### Known gaps
 

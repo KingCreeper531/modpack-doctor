@@ -9,6 +9,8 @@
  *   owned by E-MC-RANGE / E-LOADER-RANGE; any other such dep is evaluated here against the pack
  *   with the same FML `VersionSupportMatrix` rule (`platformFinding`). Other built-ins (java,
  *   fabricloader, …) are skipped.
+ * - FML entries: a provider whose version is an unresolved placeholder (contains `${`) or
+ *   `0.0NONE` passes (FML substitutes `0.0NONE`, which passes every dependency check).
  * - Which version: `CheckContext.versionProviders` — a top-level provider wins over bundled
  *   copies; among JarJar copies only the one FML selects (highest version inside every copy's
  *   JarJar range); among Fabric/Quilt JiJ copies any one may be chosen by the resolver. For a
@@ -22,6 +24,7 @@ import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES } from '.
 import { versionApi } from '../version';
 import { isBuiltinDependency } from './builtins';
 import { aliasGroup } from './connector';
+import { isPlaceholderVersion } from './duplicates';
 import { contextFor, type CheckContext, type ModEntry } from './context';
 import {
   dependencyLines,
@@ -105,7 +108,9 @@ export const depRangeCheck: Check = {
         }
         if (isBuiltinDependency(dep.modId, ctx.pack)) continue;
         if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // widened to * by Connector
-        const providers = ctx.versionProviders(dep.modId).filter((p) => p.jar.id !== e.jar.id);
+        const providers = ctx.versionProviders(dep.modId, ctx.connector.via(e.jar)).filter((p) => p.jar.id !== e.jar.id);
+        // FML: an unresolved `${file.jarVersion}` becomes `0.0NONE`, which passes every check.
+        if (fml && providers.some((p) => isPlaceholderVersion(p.mod.version))) continue;
         if (providers.length === 0) continue;
         if (providers.some((p) => versionApi.satisfies(p.mod.version, dep.range, 'other') !== false)) continue;
 

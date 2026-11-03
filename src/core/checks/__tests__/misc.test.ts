@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TITLE_NOT_ON_MODRINTH } from '../notOnModrinth';
-import { fabric, forge, modrinth, mrVersion, nested, notes, only, pack, run } from './fixtures';
+import { fabric, forge, modrinth, mrVersion, neoforge, nested, notes, only, pack, run } from './fixtures';
 
 describe('W-CORRUPT-JAR', () => {
   const p = pack('forge', '1.20.1', '47.3.0');
@@ -53,12 +53,30 @@ describe('W-JAVA-CLASS', () => {
     expect(f?.fixes[0]?.kind).toBe('manual');
   });
 
-  it('a newer bundled jar is reported once against its parent', () => {
+  it('a newer bundled jar only → one info finding against its parent ("may be optional")', () => {
     const host = fabric({ file: 'host.jar', mods: [{ id: 'host' }], maxClassMajor: 61 });
     const inner = nested(host, { file: 'inner.jar', mods: [{ id: 'inner' }], maxClassMajor: 65 }, 'fabric');
     const found = only(run([host, inner], pack('fabric', '1.20.1')), 'W-JAVA-CLASS');
     expect(found).toHaveLength(1);
-    expect(found[0]?.explanation).toContain('META-INF/jars/inner.jar (bundled in host.jar)');
+    expect(found[0]?.severity).toBe('info');
+    expect(found[0]?.title).toBe('host.jar: a bundled module (inner.jar) needs Java 21; it may be optional');
+    expect(found[0]?.explanation).toContain('META-INF/jars/inner.jar');
+  });
+
+  it('c2me-neoforge on NeoForge 1.21.1: top jar at 65, nested natives-math at 69 → info, not a warning', () => {
+    const c2me = neoforge({ file: 'c2me-neoforge-mc1.21.1-0.3.0+alpha.0.362.jar', mods: [{ id: 'c2me' }], maxClassMajor: 65 });
+    const natives = nested(c2me, { file: 'c2me-opts-natives-math-mc1.21.1-0.3.0.jar', mods: [{ id: 'c2me_opts_natives_math' }], maxClassMajor: 69, jarjar: { group: 'com.ishland.c2me', artifact: 'c2me-opts-natives-math' } }, 'neoforge');
+    const found = only(run([c2me, natives], pack('neoforge', '1.21.1', '21.1.235')), 'W-JAVA-CLASS');
+    expect(found.map((f) => [f.severity, f.title])).toEqual([
+      ['info', 'c2me-neoforge-mc1.21.1-0.3.0+alpha.0.362.jar: a bundled module (c2me-opts-natives-math-mc1.21.1-0.3.0.jar) needs Java 25; it may be optional'],
+    ]);
+  });
+
+  it("the top jar's own classes decide the warning (a nested jar does not raise it)", () => {
+    const host = fabric({ file: 'host.jar', mods: [{ id: 'host' }], maxClassMajor: 65 });
+    const inner = nested(host, { file: 'inner.jar', mods: [{ id: 'inner' }], maxClassMajor: 69 }, 'fabric');
+    const found = only(run([host, inner], pack('fabric', '1.20.1')), 'W-JAVA-CLASS');
+    expect(found.map((f) => [f.severity, f.title])).toEqual([['warning', 'host.jar needs Java 21, but Minecraft 1.20.1 ships with Java 17']]);
   });
 
   it('unknown MC version or no sampled classes → nothing', () => {
