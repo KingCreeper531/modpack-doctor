@@ -11,6 +11,8 @@ import { resolutionPattern } from './patterns/resolution';
 import { crashTraceSpan, rootCausePattern } from './patterns/rootCause';
 import { suspectedPattern } from './patterns/suspected';
 
+import { ctxOf, sessionKeptRunning } from './context';
+
 export { digestFromText } from './text';
 
 /** Most specific first; C-ROOT-CAUSE last (fallback only). */
@@ -60,6 +62,14 @@ function cites(f: Finding, span: readonly [number, number] | null): boolean {
   );
 }
 
+const KEPT_RUNNING_NOTE = ' The game kept running after this was logged, so it did not crash the game.';
+
+function asInfo(f: Finding): Finding {
+  if (f.severity === 'info') return f;
+  const explanation = `${f.explanation}${KEPT_RUNNING_NOTE}`;
+  return { ...f, severity: 'info', explanation: explanation.length > 600 ? `${explanation.slice(0, 599)}…` : explanation };
+}
+
 /**
  * Classifies a crash report / log digest. Findings are de-duplicated by id and ordered by
  * severity, then whether they explain the crash's own trace, then specificity (wrong Java,
@@ -73,12 +83,16 @@ export function analyzeCrash(input: CrashInput): Finding[] {
     if (pattern === rootCausePattern) continue;
     for (const f of pattern.match(input)) if (!byId.has(f.id)) byId.set(f.id, f);
   }
-  const span = crashTraceSpan(input);
+  // A session that reached the game and shows no crash marker afterwards did not crash: what it
+  // logged is at most informational, and there is no crash trace to fall back on.
+  const keptRunning = sessionKeptRunning(ctxOf(input));
+  const span = keptRunning ? null : crashTraceSpan(input);
   const errors = [...byId.values()].filter((f) => f.severity === 'error');
-  if (errors.length === 0 || (span && !errors.some((f) => cites(f, span)))) {
+  if (!keptRunning && (errors.length === 0 || (span && !errors.some((f) => cites(f, span))))) {
     for (const f of rootCausePattern.match(input)) if (!byId.has(f.id)) byId.set(f.id, f);
   }
-  const ranked = [...byId.values()].map((f) => ({ f, line: firstLine(f), tied: cites(f, span) ? 0 : 1 }));
+  const all = keptRunning ? [...byId.values()].map(asInfo) : [...byId.values()];
+  const ranked = all.map((f) => ({ f, line: firstLine(f), tied: cites(f, span) ? 0 : 1 }));
   ranked.sort(
     (a, b) =>
       SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] ||

@@ -20,7 +20,8 @@ import {
   worst,
   type Ctx,
 } from '../context';
-import { jarByFileName, jarsForModId } from '../jars';
+import type { JarRecord } from '../../../bindings';
+import { fileMatchesMod, jarByFileName, jarsForModLoose, uniqueTopLevel } from '../jars';
 import { basename, contiguous, isFrameLine, logMessage, stripFormatting, truncate } from '../text';
 import { contextual, fatal } from '../tiers';
 import { innermostCause } from './rootCause';
@@ -193,20 +194,69 @@ function collect(ctx: Ctx): Suspect[] {
       break;
     }
   }
-  return [...suspects.values()].filter((s) => !(s.modId && BUILTIN_IDS.has(s.modId)));
+  return mergeSameMod(
+    ctx,
+    [...suspects.values()].filter((s) => !(s.modId && BUILTIN_IDS.has(s.modId))),
+  );
+}
+
+function jarsOf(ctx: Ctx, s: Suspect): JarRecord[] {
+  const index = ctx.index;
+  if (!index) return [];
+  const byFile = s.file ? jarByFileName(s.file, index) : undefined;
+  if (byFile) return [byFile];
+  return s.modId || s.name ? uniqueTopLevel(jarsForModLoose(s.modId, s.name, index), index) : [];
+}
+
+/**
+ * One suspect per mod: a file-only suspect (`-- Mod loading issue --` + `Mod file:`) and a mod
+ * suspect (`X (x) failed to load`) for the same jar become one, keeping the mod's name and id.
+ */
+function mergeSameMod(ctx: Ctx, list: Suspect[]): Suspect[] {
+  const out: Suspect[] = [];
+  const sameMod = (a: Suspect, b: Suspect): boolean => {
+    if (a.modId && b.modId) {
+      if (a.modId === b.modId) return true;
+    } else {
+      const file = a.file ?? b.file;
+      const mod = a.modId ?? b.modId ?? a.name ?? b.name;
+      if (file && mod && fileMatchesMod(file, mod)) return true;
+      if (a.file && a.file === b.file) return true;
+    }
+    const ja = jarsOf(ctx, a)[0];
+    const jb = jarsOf(ctx, b)[0];
+    return ja !== undefined && jb !== undefined && ja.id === jb.id;
+  };
+  for (const s of list) {
+    const into = out.find((o) => sameMod(o, s));
+    if (!into) {
+      out.push(s);
+      continue;
+    }
+    // Prefer the entry that has the mod's identity as the base.
+    if (!into.modId && s.modId) {
+      into.key = s.key;
+      into.modId = s.modId;
+    }
+    into.name ??= s.name;
+    into.version ??= s.version;
+    into.file ??= s.file;
+    into.stage ??= s.stage;
+    into.failure ??= s.failure;
+    into.exception ??= s.exception;
+    if (into.source !== 'analyser' && s.source === 'analyser') into.source = s.source;
+    into.lineIdx.push(...s.lineIdx.filter((i) => !into.lineIdx.includes(i)));
+    into.frameIdx.push(...s.frameIdx.filter((i) => !into.frameIdx.includes(i)));
+    into.severity = worst(into.severity, s.severity);
+  }
+  for (const s of out) s.lineIdx.sort((a, b) => a - b);
+  return out;
 }
 
 function toFinding(ctx: Ctx, s: Suspect, rootText: string): Finding | null {
   if (!s.severity) return null;
   const index = ctx.index;
-  const jars = index
-    ? s.file
-      ? [jarByFileName(s.file, index)]
-      : s.modId
-        ? jarsForModId(s.modId, index)
-        : []
-    : [];
-  const culprits = refs(ctx, jars, s.modId);
+  const culprits = refs(ctx, jarsOf(ctx, s), s.modId);
   const label = s.name && s.modId && s.name !== s.modId ? `${s.name} (${s.modId})` : (s.modId ?? s.file ?? s.key);
   const fileText = culprits[0] ? ` (${culprits[0].fileName})` : s.file && s.modId ? ` (${s.file})` : '';
   let title: string;
@@ -222,6 +272,9 @@ function toFinding(ctx: Ctx, s: Suspect, rootText: string): Finding | null {
     const failure = s.failure ? ` The loader reported: ${truncate(s.failure, 200)}.` : '';
     const exception = s.exception ? ` Error: ${truncate(s.exception, 200)}.` : rootText;
     explanation = `The mod loader stopped while loading ${label}${fileText}.${failure}${exception} Disable it to get the game running, then look for an update.`;
+  }
+  if (index && culprits.length === 0) {
+    explanation += ` No jar for ${label} is in the mods folder now, so this report may be older than the current mods.`;
   }
   return finding(ctx, {
     code: 'C-SUSPECTED',
