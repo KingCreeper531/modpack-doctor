@@ -5,11 +5,18 @@
  * way the Rust scanner reports jars as rayon finishes them.
  *
  * URL parameters (screenshots and manual review):
- * - `?scenario=default|empty|scanning|errors|offline`
+ * - `?scenario=default|empty|scanning|errors|offline|crash`
  *   - `empty`: no instances, so the app shows the probes table.
  *   - `scanning`: the first scan freezes mid-way (about 55 % of jars reported).
- *   - `errors`: scanning the first instance fails with a permission error; fixes fail as always.
+ *   - `errors`: scanning the first instance fails with a permission error, and so does listing
+ *     its logs; fixes fail as always.
  *   - `offline`: Modrinth is switched off in settings (static checks only).
+ *   - `crash`: two instances are watched (`Settings.watched`); a few seconds after the UI re-arms
+ *     them, each "crashes": a new crash report appears in its log list, the game process goes
+ *     away and one `CrashDetected` is emitted per instance, as Rust watch mode would.
+ *
+ * Logs (M4): `list_log_sources` / `read_log_digest` serve real-format texts from fixtures/logs
+ * (mockLogs.ts); the digest is the whole file, as `digestFromText` builds it.
  * - `?theme=dark|light` seeds the stored theme preference.
  */
 import type {
@@ -17,7 +24,10 @@ import type {
   CrashDetected,
   DropRejected,
   GridSort,
+  GameStatus,
   InstanceAdded,
+  LogDigest,
+  LogSource,
   OpStatus,
   ScanProgress,
   ScanStarted,
@@ -28,11 +38,14 @@ import type {
   Settings,
   SettingsPatch,
   ThemePref,
+  WatchAnchor,
 } from '../../bindings';
+import { digestFromText } from '../../core/crash';
 import type { AppCommands, Backend, EventChannel, Result, Unlisten } from './ipc';
 import { mockDiscovery, mockJars, pickedFolderInstance, seeded } from './mockData';
+import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from './mockLogs';
 
-export type MockScenario = 'default' | 'empty' | 'scanning' | 'errors' | 'offline';
+export type MockScenario = 'default' | 'empty' | 'scanning' | 'errors' | 'offline' | 'crash';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -42,9 +55,11 @@ export interface MockOptions {
   /** Round-trip delay of every command. */
   latencyMs: number;
   gridSort?: GridSort;
+  /** `crash` scenario: override every instance's delay between arming and its crash. */
+  crashDelayMs?: number;
 }
 
-const SCENARIOS: readonly MockScenario[] = ['default', 'empty', 'scanning', 'errors', 'offline'];
+const SCENARIOS: readonly MockScenario[] = ['default', 'empty', 'scanning', 'errors', 'offline', 'crash'];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
   const p = new URLSearchParams(search);
@@ -87,6 +102,15 @@ export interface MockBackend extends Backend {
   options: MockOptions;
   /** Test hook: current in-memory settings. */
   settings(): Settings;
+  /** Test hook: instances with watch mode armed, and the anchors each was armed with. */
+  watches(): ReadonlyMap<string, readonly WatchAnchor[]>;
+  /**
+   * Test hook: make `instanceId` crash now (its scripted crash report appears, then one
+   * `CrashDetected`). Returns the event, or null when the instance has no scripted crash.
+   */
+  crash(instanceId: string, episode?: number): CrashDetected | null;
+  /** Test hook: emit any `CrashDetected` as Rust would (e.g. a repeated episode). */
+  emitCrashDetected(e: CrashDetected): void;
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
@@ -97,7 +121,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     theme: opts.theme,
     manualFolders: [],
     launcherRoots: [],
-    watched: [],
+    watched: opts.scenario === 'crash' ? mockCrashInstances() : [],
     overrides: {},
     modrinthEnabled: opts.scenario !== 'offline',
     includeBeta: false,
@@ -119,6 +143,53 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
 
   const lag = () => sleep(opts.latencyMs);
   const instances = () => [...discovery.instances, ...added];
+
+  /** Wall clock when the backend started; log ages are relative to it. */
+  const born = Date.now();
+  const watches = new Map<string, readonly WatchAnchor[]>();
+  /** Crash reports written since start (`crash` scenario / test hook), per instance. */
+  const appeared = new Map<string, Array<{ log: MockLog; at: number }>>();
+  const crashed = new Set<string>();
+  const timers = new Set<string>();
+  let episodes = 0;
+
+  /** Every log file of an instance, newest first (as Rust lists them). */
+  function sourcesOf(instanceId: string): Array<{ log: MockLog; source: LogSource }> {
+    const fresh = (appeared.get(instanceId) ?? []).map(({ log, at }) => ({ log, source: toSource(log, at) }));
+    const old = mockLogs(instanceId).map((log) => ({ log, source: toSource(log, born) }));
+    return [...fresh, ...old].sort((a, b) => b.source.modifiedMs - a.source.modifiedMs || a.source.id.localeCompare(b.source.id));
+  }
+
+  function crash(instanceId: string, episode?: number): CrashDetected | null {
+    const scripted = mockCrash(instanceId);
+    if (!scripted) return null;
+    const at = Date.now();
+    const list = (appeared.get(instanceId) ?? []).filter((a) => a.log.id !== scripted.log.id);
+    appeared.set(instanceId, [{ log: scripted.log, at }, ...list]);
+    crashed.add(instanceId);
+    const source = toSource(scripted.log, at);
+    const e: CrashDetected = {
+      instanceId,
+      episode: episode ?? ++episodes,
+      source,
+      triggers: [
+        { kind: 'newCrashReport', source_id: source.id },
+        { kind: 'processExit', pid: scripted.pid },
+      ],
+    };
+    ev.crashDetected.emit(e);
+    return e;
+  }
+
+  /** `crash` scenario: the first arming of a scripted instance schedules its crash. */
+  function schedule(instanceId: string) {
+    const scripted = mockCrash(instanceId);
+    if (opts.scenario !== 'crash' || !scripted || timers.has(instanceId) || crashed.has(instanceId)) return;
+    timers.add(instanceId);
+    setTimeout(() => {
+      if (watches.has(instanceId)) crash(instanceId);
+    }, opts.crashDelayMs ?? scripted.delayMs);
+  }
 
   async function scanInstance(instanceId: string): Promise<Result<ScanResult>> {
     await lag();
@@ -214,9 +285,34 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     pickMrpack: async () => notYet('Opening .mrpack files'),
     scanInstance,
-    listLogSources: async () => notYet('Crash and log analysis'),
-    readLogDigest: async () => notYet('Crash and log analysis'),
-    setWatch: async () => notYet('Watching for crashes'),
+    listLogSources: async (instanceId: string): Promise<Result<LogSource[]>> => {
+      await lag();
+      const inst = instances().find((i) => i.id === instanceId);
+      if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
+      if (inst.launcher === 'mrpack') return notYet('Reading logs of .mrpack files');
+      if (opts.scenario === 'errors' && instanceId === discovery.instances[0]?.id) {
+        return err('permission', 'Modpack Doctor cannot read the crash-reports folder. Check the folder permissions and try again.', `${inst.gameDir}\\crash-reports`);
+      }
+      return ok(sourcesOf(instanceId).map((s) => s.source));
+    },
+    readLogDigest: async (instanceId: string, sourceId: string, anchors: string[]): Promise<Result<LogDigest>> => {
+      await lag();
+      const hit = sourcesOf(instanceId).find((s) => s.source.id === sourceId);
+      if (!hit) return err('notFound', `${sourceId} is not in this instance's log list any more. Refresh the list and try again.`);
+      if (anchors.length === 0) return err('invalid', 'No anchors were given, so the log digest would be empty.');
+      return ok(digestFromText(hit.log.text, hit.source));
+    },
+    setWatch: async (instanceId: string, enabled: boolean, anchors: WatchAnchor[]): Promise<Result<null>> => {
+      await lag();
+      if (enabled && anchors.length === 0) return err('invalid', 'Watch mode needs the crash anchors from the rules core; none were given.');
+      if (enabled) {
+        watches.set(instanceId, [...anchors]);
+        schedule(instanceId);
+      } else watches.delete(instanceId);
+      const watched = settings.watched.filter((w) => w !== instanceId);
+      settings = { ...settings, watched: enabled ? [...watched, instanceId] : watched };
+      return ok(null);
+    },
     modrinthIdentify: async () => notYet('Modrinth lookups'),
     modrinthFindUpdates: async () => notYet('Modrinth update suggestions'),
     modrinthProjects: async () => notYet('Modrinth project details'),
@@ -229,7 +325,17 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     discardWorkOrder: async () => notYet('Applying fixes'),
     listBackups: async () => notYet('Backup history'),
     planUndo: async () => notYet('Undo'),
-    gameRunning: async () => notYet('Detecting a running game'),
+    gameRunning: async (instanceId: string): Promise<Result<GameStatus>> => {
+      await lag();
+      const inst = instances().find((i) => i.id === instanceId);
+      if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
+      const scripted = mockCrash(instanceId);
+      // `crash` scenario: the game is running until it crashes.
+      if (scripted && opts.scenario === 'crash' && !crashed.has(instanceId)) {
+        return ok({ running: true, pids: [scripted.pid], reason: `javaw.exe pid ${scripted.pid} with --gameDir ${inst.gameDir}` });
+      }
+      return ok({ running: false, pids: [], reason: null });
+    },
     getSettings: async () => {
       await lag();
       return ok(settings);
@@ -250,5 +356,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     commands,
     events: ev,
     settings: () => settings,
+    watches: () => watches,
+    crash,
+    emitCrashDetected: (e) => ev.crashDetected.emit(e),
   };
 }

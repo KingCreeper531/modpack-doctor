@@ -1,20 +1,28 @@
 /**
- * FINDINGS panel (DESIGN.md §6.2): one triage row per finding, sorted by the checks
- * (severity, code, file). Click expands inline and shows the finding in the inspector; chips
- * select the jar. Fix buttons go through `plan_work_order`; a refusal renders inline.
- * Scan failures render as an error row with a Retry button (§10).
+ * FINDINGS panel (DESIGN.md §6.2), with two legends as tabs:
+ * - FINDINGS: one triage row per static finding, sorted by the checks (severity, code, file).
+ *   Click expands inline and shows the finding in the inspector; chips select the jar. Fix
+ *   buttons go through `plan_work_order`; a refusal renders inline. Scan failures render as an
+ *   error row with a Retry button (§10).
+ * - CRASHES (M4): crash reports and logs and their crash findings (CrashesView.tsx).
+ * Crash analysis lives here rather than in a fourth stacked panel so the workspace keeps the
+ * §5 order (summary, scan grid, findings, mods) and still fits a 960×600 window.
  */
+import { ArrowClockwise } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../components/Button';
+import { cx } from '../components/cx';
 import { ErrorRow, isUnavailable } from '../components/ErrorRow';
 import { formatInt, plural } from '../components/format';
-import { Panel } from '../components/Panel';
+import { Panel, type PanelTab } from '../components/Panel';
+import { Pip } from '../components/Severity';
 import { TriageRow } from '../components/TriageRow';
 import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import { CrashesView } from './CrashesView';
 
-export function TriagePanel({ instanceId, className }: { instanceId: string; className?: string }) {
+function StaticFindings({ instanceId }: { instanceId: string }) {
   const s = useAppShallow((st) => {
     const sc = st.scans[instanceId];
     return {
@@ -45,7 +53,6 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
   }, [expandRequest, s.findings]);
 
   const findings = useMemo(() => s.findings ?? [], [s.findings]);
-  const counts = useMemo(() => severityCounts(findings), [findings]);
   const jarNames = useMemo(() => {
     const names: Record<string, string> = {};
     for (const j of s.result?.jars ?? []) names[j.id] = j.fileName;
@@ -61,10 +68,9 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
     });
 
   const topCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : 0;
-  const meta = s.status === 'done' || findings.length ? `${counts.error} E · ${counts.warning} W · ${counts.info} I` : undefined;
 
   return (
-    <Panel legend="Findings" meta={meta} flush className={className} bodyClassName="overflow-y-auto">
+    <>
       {s.error ? (
         <ErrorRow
           error={s.error}
@@ -111,6 +117,67 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
           ))}
         </div>
       ) : null}
+    </>
+  );
+}
+
+export function TriagePanel({ instanceId, className }: { instanceId: string; className?: string }) {
+  const tab = useApp((st) => st.findingsTab[instanceId] ?? 'findings');
+  const s = useAppShallow((st) => ({ status: st.scans[instanceId]?.status ?? 'idle', findings: st.scans[instanceId]?.findings }));
+  const crash = useAppShallow((st) => {
+    const c = st.crashes[instanceId];
+    const sel = c?.selectedSourceId ? c.analyses[c.selectedSourceId] : undefined;
+    return {
+      status: c?.sourcesStatus ?? 'idle',
+      count: c?.sources.length ?? 0,
+      findings: sel?.status === 'done' ? sel.findings : undefined,
+      alert: !!st.crashAlerts[instanceId],
+    };
+  });
+  const a = useActions();
+  const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
+  const crashCounts = useMemo(() => (crash.findings ? severityCounts(crash.findings) : null), [crash.findings]);
+  const findingsMeta = s.status === 'done' || s.findings?.length ? `${counts.error} E · ${counts.warning} W · ${counts.info} I` : undefined;
+  const crashMeta = crashCounts ? `${crashCounts.error} E · ${crashCounts.warning} W · ${crashCounts.info} I` : undefined;
+  const tabs: PanelTab[] = [
+    { id: 'findings', label: 'Findings' },
+    {
+      id: 'crashes',
+      label: 'Crashes',
+      badge: (
+        <>
+          {crash.status === 'done' ? <span className={tab === 'crashes' ? 'text-fg-dim' : 'text-fg-faint'}>{formatInt(crash.count)}</span> : null}
+          {crash.alert ? <Pip tone="error" label="new crash" /> : null}
+        </>
+      ),
+    },
+  ];
+  const panelId = `findings-panel-${instanceId}`;
+  return (
+    <Panel
+      legend="Findings"
+      tabs={tabs}
+      tab={tab}
+      onTab={(t) => a.setFindingsTab(instanceId, t === 'crashes' ? 'crashes' : 'findings')}
+      tabPanelId={panelId}
+      meta={tab === 'crashes' ? crashMeta : findingsMeta}
+      actions={
+        tab === 'crashes' ? (
+          <Button
+            size={24}
+            icon={<ArrowClockwise size={16} />}
+            disabled={crash.status === 'loading'}
+            onClick={() => void a.loadLogSources(instanceId)}
+          >
+            Refresh
+          </Button>
+        ) : undefined
+      }
+      flush
+      className={cx(className, tab === 'crashes' && 'h-[45%]')}
+      bodyClassName={tab === 'crashes' ? 'flex min-h-0 flex-col' : 'overflow-y-auto'}
+    >
+      {tab === 'crashes' ? <CrashesView instanceId={instanceId} /> : <StaticFindings instanceId={instanceId} />}
     </Panel>
   );
 }

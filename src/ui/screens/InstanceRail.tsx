@@ -23,9 +23,11 @@ function RailRow({ id }: { id: string }) {
   const instance = useApp((s) => s.discovery?.instances.find((i) => i.id === id));
   const status = useApp((s) => instanceStatus(s.scans[id]));
   const selected = useApp((s) => s.selectedInstanceId === id);
+  const crash = useApp((s) => s.crashAlerts[id]?.summary.headline ?? null);
+  const watching = useApp((s) => s.settings.watched.includes(id));
   const a = useActions();
   if (!instance) return null;
-  return <InstanceRailRow instance={instance} status={status} selected={selected} onSelect={a.selectInstance} />;
+  return <InstanceRailRow instance={instance} status={status} selected={selected} onSelect={a.selectInstance} crash={crash} watching={watching} />;
 }
 
 export function InstanceRail({ className }: { className?: string }) {

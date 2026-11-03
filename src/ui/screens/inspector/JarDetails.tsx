@@ -12,6 +12,7 @@ import { FindingCode, SeverityRail } from '../../components/Severity';
 import { Table, type Column } from '../../components/Table';
 import { LoaderGlyph } from '../../glyphs/LoaderGlyph';
 import { LOADER_NAME } from '../../glyphs/loaders';
+import { crashFindingsCiting, sourceName } from '../../app/crashState';
 import { javaRelease } from '../../app/derive';
 import { useActions, useApp } from '../../app/StoreContext';
 import { Plate, PlateRow, rangeText, SubLegend } from './Plate';
@@ -82,6 +83,39 @@ function CitingFindings({ instanceId, jarId }: { instanceId: string; jarId: stri
               <SeverityRail severity={f.severity} />
               <FindingCode code={f.code} severity={f.severity} className="flex w-36 shrink-0 items-center truncate pl-4" />
               <span className="flex min-w-0 flex-1 items-center truncate pr-4 t-small text-fg">{f.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Crash findings (any analysed log of the instance) that name this jar (M4). */
+function CitingCrashes({ instanceId, jarId }: { instanceId: string; jarId: string }) {
+  const crashes = useApp((s) => s.crashes[instanceId]);
+  const a = useActions();
+  const citing = useMemo(() => crashFindingsCiting(crashes, jarId), [crashes, jarId]);
+  if (!citing.length) return null;
+  return (
+    <section aria-label="Crash findings for this jar">
+      <SubLegend meta={citing.length}>Crash findings</SubLegend>
+      <ul>
+        {citing.map(({ sourceId, finding: f }) => (
+          <li key={`${sourceId}:${f.id}`}>
+            <button
+              type="button"
+              onClick={() => a.selectCrash(instanceId, sourceId, f.id)}
+              className="flex h-8 w-full items-stretch border-b border-line text-left hover:bg-raised focus-visible:bg-raised focus-visible:outline-1 focus-visible:-outline-offset-1"
+            >
+              <SeverityRail severity={f.severity} />
+              <span className="flex min-w-0 flex-1 flex-col justify-center pr-4 pl-4">
+                <span className="flex min-w-0 items-center gap-2">
+                  <FindingCode code={f.code} severity={f.severity} className="shrink-0" />
+                  <span className="min-w-0 truncate t-small text-fg">{f.title}</span>
+                </span>
+                <span className="truncate t-mono text-fg-faint">from {sourceName(sourceId)}</span>
+              </span>
             </button>
           </li>
         ))}
@@ -209,6 +243,7 @@ export function JarDetails({ instanceId, jarId }: { instanceId: string; jarId: s
         <JarFacts jar={jar} byId={byId} />
       </div>
       <CitingFindings instanceId={instanceId} jarId={jarId} />
+      <CitingCrashes instanceId={instanceId} jarId={jarId} />
       {jar.mods.length ? (
         <>
           <SubLegend meta={jar.mods.length}>Declared mods</SubLegend>

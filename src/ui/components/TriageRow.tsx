@@ -46,6 +46,8 @@ export interface TriageRowProps {
   fixError?: AppError | null;
   /** Note beside the fix buttons (e.g. how work orders behave), once fixes can run. */
   fixHint?: ReactNode;
+  /** Where a crash finding came from (log file name); shown as `from <origin>` after the title. */
+  origin?: string;
 }
 
 export function TriageRow({
@@ -61,6 +63,7 @@ export function TriageRow({
   fixesDisabled = false,
   fixError = null,
   fixHint = null,
+  origin,
 }: TriageRowProps) {
   const name = (id: string) => jarNames[id] ?? basename(id);
   const bodyId = `triage-${finding.id}`;
@@ -70,7 +73,7 @@ export function TriageRow({
   return (
     <div
       className={cx(
-        'relative border-b border-line',
+        '@container relative border-b border-line',
         focused || selected ? 'bg-raised' : 'bg-panel hover:bg-raised',
         focused && 'outline-1 -outline-offset-1 outline-signal',
       )}
@@ -87,7 +90,12 @@ export function TriageRow({
           className="flex h-8 min-w-0 flex-1 items-center text-left focus-visible:outline-1 focus-visible:-outline-offset-1"
         >
           <FindingCode code={finding.code} severity={finding.severity} className="w-36 shrink-0 truncate pl-1" />
-          <span className="min-w-0 flex-1 truncate pl-1 t-body text-fg">{finding.title}</span>
+          <span className={cx('min-w-0 flex-1 truncate pl-1 t-body text-fg', origin && 'min-w-[40%]')}>{finding.title}</span>
+          {origin ? (
+            <span className="max-w-[30%] min-w-0 shrink truncate pl-2 t-mono text-fg-faint" title={origin} data-testid="origin">
+              from {origin}
+            </span>
+          ) : null}
         </button>
         <div className="flex max-w-[45%] min-w-0 shrink-0 items-center gap-1 pr-4 pl-2" data-testid="culprits">
           {shown.map((c) => (
@@ -115,7 +123,8 @@ export function TriageRow({
         inert={!expanded}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-38">
+          {/* Aligned with the title column; in a narrow pane (crash view) it starts under the code. */}
+          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-4 @min-[560px]:pl-38">
             <p className="max-w-[72ch] t-body text-fg">{finding.explanation}</p>
             {hidden.length ? (
               <div className="flex flex-wrap gap-1" aria-label="All culprits">

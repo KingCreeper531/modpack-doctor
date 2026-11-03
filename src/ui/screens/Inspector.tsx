@@ -8,6 +8,7 @@ import type { CSSProperties, KeyboardEventHandler, ReactNode } from 'react';
 import { cx } from '../components/cx';
 import { Panel } from '../components/Panel';
 import { useApp } from '../app/StoreContext';
+import { CrashDetails } from './inspector/CrashDetails';
 import { FindingDetails } from './inspector/FindingDetails';
 import { JarDetails } from './inspector/JarDetails';
 import { PackPanel } from './inspector/PackPanel';
@@ -23,7 +24,7 @@ export interface InspectorProps {
 export function Inspector({ className, style, close, onKeyDown }: InspectorProps) {
   const instanceId = useApp((s) => s.selectedInstanceId);
   const selection = useApp((s) => s.selection);
-  const legend = selection?.kind === 'jar' ? 'Mod' : selection?.kind === 'finding' ? 'Finding' : 'Inspector';
+  const legend = selection?.kind === 'jar' ? 'Mod' : selection?.kind === 'finding' ? 'Finding' : selection?.kind === 'crash' ? 'Crash finding' : 'Inspector';
   return (
     <aside
       aria-label="Inspector"
@@ -34,6 +35,9 @@ export function Inspector({ className, style, close, onKeyDown }: InspectorProps
       <Panel legend={legend} end={close} flush className="shrink-0 border-b border-line">
         {instanceId && selection?.kind === 'jar' ? <JarDetails instanceId={instanceId} jarId={selection.id} /> : null}
         {instanceId && selection?.kind === 'finding' ? <FindingDetails instanceId={instanceId} findingId={selection.id} /> : null}
+        {instanceId && selection?.kind === 'crash' ? (
+          <CrashDetails instanceId={instanceId} sourceId={selection.sourceId} findingId={selection.id} />
+        ) : null}
         {!selection ? (
           <p className="px-4 py-2 t-small text-fg-faint">Select a tile, a finding or a mod to see its details here.</p>
         ) : null}

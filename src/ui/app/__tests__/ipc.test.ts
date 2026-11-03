@@ -112,7 +112,7 @@ describe('mock backend', () => {
     const b = createMockBackend({ latencyMs: 0 });
     const r = await b.commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
     expect(r).toEqual({ status: 'error', error: { kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null } });
-    expect(await b.commands.gameRunning('x')).toMatchObject({ error: { kind: 'unavailable', message: "Detecting a running game isn't available in this version of Modpack Doctor yet." } });
+    expect(await b.commands.listBackups('x')).toMatchObject({ error: { kind: 'unavailable', message: "Backup history isn't available in this version of Modpack Doctor yet." } });
     expect(await b.commands.modrinthIdentify([], false)).toMatchObject({ error: { kind: 'unavailable', message: "Modrinth lookups isn't available in this version of Modpack Doctor yet." } });
     const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
     expect(await b.commands.scanInstance(pack.id)).toMatchObject({ error: { kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet." } });

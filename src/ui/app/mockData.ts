@@ -486,6 +486,49 @@ function atm9(): JarSpec[] {
     { file: 'oculus-mc1.20.1-1.6.9.jar', mods: [{ modId: 'oculus', version: '1.6.9', name: 'Oculus', ...F.forge(), env: 'client' }], mixins: ['oculus.mixins.json'] },
     { file: 'jade-1.20.1-forge-11.8.0.jar', mods: [{ modId: 'jade', version: '11.8.0', name: 'Jade', ...F.forge() }] },
     { file: 'OptiFine_1.20.1_HD_U_I6.jar', mods: [], packages: ['net.optifine', 'net.optifine.shaders', 'net.optifine.util'], maxClass: 61 },
+    // Named by the crash reports and logs of the browser preview (mockLogs.ts, from fixtures/logs).
+    {
+      file: 'emberforge-1.20.1-2.4.0.jar',
+      mods: [{ modId: 'emberforge', version: '2.4.0', name: 'Emberforge', ...F.forge() }],
+      packages: ['com.cinderwick.emberforge', 'com.cinderwick.emberforge.block', 'com.cinderwick.emberforge.client', 'com.cinderwick.emberforge.mixin.client'],
+      mixins: ['emberforge.mixins.json'],
+    },
+    {
+      file: 'tidyterrain-1.20.1-1.8.2.jar',
+      mods: [{ modId: 'tidyterrain', version: '1.8.2', name: 'Tidy Terrain', ...F.forge() }],
+      packages: ['dev.tidy.terrain', 'dev.tidy.terrain.mixin', 'dev.tidy.terrain.worldgen'],
+      mixins: ['tidyterrain.mixins.json'],
+    },
+    {
+      file: 'pipeworks-1.20.1-2.3.1.jar',
+      mods: [{ modId: 'pipeworks', version: '2.3.1', name: 'Pipeworks', ...F.forge() }],
+      packages: ['net.brassgear.pipeworks', 'net.brassgear.pipeworks.block.entity', 'net.brassgear.pipeworks.network'],
+      mixins: ['pipeworks.mixins.json'],
+    },
+    {
+      file: 'hearthstone-hud-1.20.1-0.6.1.jar',
+      mods: [{ modId: 'hearthhud', version: '0.6.1', name: 'Hearthstone HUD', ...F.forge(), env: 'client' }],
+      packages: ['net.kilnworks.hearthhud', 'net.kilnworks.hearthhud.client', 'net.kilnworks.hearthhud.mixin'],
+      mixins: ['hearthhud.mixins.json'],
+    },
+    {
+      file: 'lanternlight-1.20.1-1.0.3.jar',
+      mods: [{ modId: 'lanternlight', version: '1.0.3', name: 'Lantern Light', ...F.forge() }],
+      packages: ['io.github.lumenworks.lanternlight', 'io.github.lumenworks.lanternlight.mixin'],
+      mixins: ['lanternlight.mixins.json'],
+    },
+    {
+      file: 'saplingsplus-forge-1.20.1-3.0.0.jar',
+      mods: [{ modId: 'saplingsplus', version: '3.0.0', name: 'Saplings Plus', ...F.forge() }],
+      packages: ['org.grovekeep.saplings', 'org.grovekeep.saplings.common'],
+      mixins: ['saplingsplus.mixins.json'],
+    },
+    {
+      file: 'Larder-Forge-1.20.1-4.2.17.jar',
+      mods: [{ modId: 'larder', version: '4.2.17', name: 'Larder', ...F.forge() }],
+      packages: ['net.pantrydev.larder', 'net.pantrydev.larder.api'],
+      mixins: ['larder.mixins.json'],
+    },
   ];
   const taken = new Set(named.flatMap((j) => j.mods.map((m) => m.modId)).concat(['flywheel', 'registrate', 'guideme', 'botarium']));
   return [...named, ...filler(512 - named.length, 9001, 'forge', '[1.20.1,1.21)', '[47,)', '1.20.1', taken)];
@@ -502,6 +545,10 @@ function fabric121(): JarSpec[] {
     // Fabric has no module layer: a shared package is informational (I-SPLIT-PKG).
     { file: 'entityculling-fabric-1.7.0-mc1.21.jar', mods: [{ modId: 'entityculling', version: '1.7.0', name: 'EntityCulling', ...fab(), env: 'client' }], packages: ['dev.tr7zw.entityculling', 'dev.tr7zw.util'], maxClass: 65 },
     { file: 'notenoughanimations-fabric-1.8.0-mc1.21.jar', mods: [{ modId: 'notenoughanimations', version: '1.8.0', name: 'NotEnoughAnimations', ...fab(), env: 'client' }], packages: ['dev.tr7zw.notenoughanimations', 'dev.tr7zw.util'], maxClass: 65 },
+    // Named by the crash reports of the browser preview (mockLogs.ts, from fixtures/logs).
+    { file: 'glintful-1.21.1-fabric-3.2.0.jar', mods: [{ modId: 'glintful', version: '3.2.0', name: 'Glintful', ...fab(), env: 'client' }], packages: ['me.prism.glintful', 'me.prism.glintful.client', 'me.prism.glintful.mixin'], mixins: ['glintful.mixins.json'], maxClass: 65 },
+    { file: 'trinketry-1.21.1-1.4.0.jar', mods: [{ modId: 'trinketry', version: '1.4.0', name: 'Trinketry', ...fab() }], packages: ['com.pebble.trinketry', 'com.pebble.trinketry.client', 'com.pebble.trinketry.slot'], mixins: ['trinketry.mixins.json'], maxClass: 65 },
+    { file: 'stackcount-1.21.1-1.0.2.jar', mods: [{ modId: 'stackcount', version: '1.0.2', name: 'Stack Count', ...fab(), env: 'client' }], packages: ['io.github.tallyho.stackcount'], mixins: ['stackcount.mixins.json'], maxClass: 65 },
   ];
   const taken = new Set(named.flatMap((j) => j.mods.map((m) => m.modId)));
   return [...named, ...filler(87 - named.length, 2101, 'fabric', '>=1.21', '>=0.15.0', '1.21.1', taken).map((j) => ({ ...j, maxClass: 65 }))];

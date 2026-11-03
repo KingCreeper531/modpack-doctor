@@ -16,6 +16,7 @@ import { Resizer } from '../components/Resizer';
 import { inspectorLayout, MIN_WORKSPACE, RAIL_WIDTH } from '../app/layout';
 import { NO_BACKEND } from '../app/ipc';
 import { useActions, useApp } from '../app/StoreContext';
+import { CrashBanner } from './CrashBanner';
 import { DrawerContext } from './drawer';
 import { useViewportWidth } from './hooks';
 import { InstanceRail } from './InstanceRail';
@@ -53,6 +54,7 @@ export function Shell() {
         ) : (
           <>
             <main className="flex min-w-0 flex-1 flex-col" aria-label="Workspace">
+              <CrashBanner />
               {selected ? <Workspace instanceId={selected} /> : null}
             </main>
             {drawer ? (

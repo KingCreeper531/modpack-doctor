@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { Shell } from '../screens/Shell';
 import { createBackend } from './ipc';
+import { browserNotifier, deniedNotifier, tauriNotifier } from './notify';
 import { createAppStore, type AppStore } from './store';
 import { StoreProvider, useApp, useAppStore } from './StoreContext';
 import { followTheme } from './theme';
@@ -25,11 +26,16 @@ function ThemeSync() {
   return null;
 }
 
-/** Tauri backend inside the app; in a browser the mock, with `?select=` honoured for screenshots. */
+/**
+ * Tauri backend inside the app; in a browser the mock, with `?select=` honoured for screenshots.
+ * Crash notifications: the Tauri plugin in the app, the Web Notification API in the browser
+ * preview, none without a backend.
+ */
 function createDefaultStore(): AppStore {
   const backend = createBackend();
   const initialSelect = backend.kind === 'mock' ? new URLSearchParams(window.location.search).get('select') : null;
-  return createAppStore({ backend, initialSelect });
+  const notifier = backend.kind === 'tauri' ? tauriNotifier() : backend.kind === 'mock' ? browserNotifier() : deniedNotifier();
+  return createAppStore({ backend, initialSelect, notifier });
 }
 
 export interface AppProps {

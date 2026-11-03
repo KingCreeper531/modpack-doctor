@@ -9,6 +9,7 @@ import type { Instance } from '../../bindings';
 import { Button } from '../components/Button';
 import { ErrorRow } from '../components/ErrorRow';
 import { SummaryStrip } from '../components/SummaryStrip';
+import { Toggle } from '../components/Toggle';
 import { WorkOrderPanel } from '../components/WorkOrderPanel';
 import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
@@ -65,6 +66,7 @@ function Header({ instance }: { instance: Instance }) {
         <span className="min-w-0 flex-1 truncate t-mono text-fg-faint" title={instance.root}>
           {instance.root}
         </span>
+        <WatchToggle instanceId={instance.id} />
         {/* While a scan runs, a click queues exactly one more (it would otherwise be dropped). */}
         <Button size={24} icon={<ArrowClockwise size={16} />} disabled={queued} onClick={() => void a.scan(instance.id)}>
           {queued ? 'Rescan queued' : scanning ? 'Rescan after this' : 'Rescan'}
@@ -83,6 +85,32 @@ function Header({ instance }: { instance: Instance }) {
       <Summary instance={instance} />
     </header>
   );
+}
+
+/**
+ * Live watch mode (M4): `set_watch` with the tiered crash anchors; Rust persists it in
+ * `Settings.watched`. Small and labelled, in the instance header.
+ */
+function WatchToggle({ instanceId }: { instanceId: string }) {
+  const on = useApp((s) => s.settings.watched.includes(instanceId));
+  const pending = useApp((s) => !!s.watchPending[instanceId]);
+  const a = useActions();
+  return (
+    <Toggle
+      on={on}
+      text="Watch for crashes"
+      label="Watch for crashes"
+      disabled={pending}
+      onChange={(next) => void a.setWatch(instanceId, next)}
+      className="shrink-0"
+    />
+  );
+}
+
+function WatchError({ instanceId }: { instanceId: string }) {
+  const error = useApp((s) => s.watchErrors[instanceId] ?? null);
+  if (!error) return null;
+  return <ErrorRow error={error} className="shrink-0" />;
 }
 
 function OrderPanel() {
@@ -111,6 +139,7 @@ export function Workspace({ instanceId }: { instanceId: string }) {
   return (
     <>
       <Header instance={instance} />
+      <WatchError instanceId={instanceId} />
       <ScanPanel instanceId={instanceId} className="shrink-0 border-b border-line" />
       <TriagePanel key={instanceId} instanceId={instanceId} className="max-h-[45%] min-h-24 shrink border-b border-line" />
       {orderOpen ? <OrderPanel /> : <ModsPanel instanceId={instanceId} className="min-h-40 flex-1" />}

@@ -26,15 +26,22 @@ export interface InstanceRailRowProps {
   status: ScanStatus;
   selected?: boolean;
   onSelect?: (id: string) => void;
+  /**
+   * Headline of a watched crash not looked at yet (M4). Shows a `crash` mark in `err-text` with
+   * an `err` pip on the name line; it clears when the instance is opened.
+   */
+  crash?: string | null;
+  /** Watch mode is on (a small `watching` word on the name line). */
+  watching?: boolean;
 }
 
-export function InstanceRailRow({ instance, status, selected = false, onSelect }: InstanceRailRowProps) {
+export function InstanceRailRow({ instance, status, selected = false, onSelect, crash = null, watching = false }: InstanceRailRowProps) {
   const loader = instance.loader;
   return (
     <button
       type="button"
       aria-current={selected || undefined}
-      aria-label={`${instance.name}, ${LAUNCHER_NAME[instance.launcher]}, ${STATUS_WORD[status]}`}
+      aria-label={`${instance.name}, ${LAUNCHER_NAME[instance.launcher]}, ${STATUS_WORD[status]}${crash ? `, ${crash}` : ''}`}
       title={instance.root}
       onClick={() => onSelect?.(instance.id)}
       className={cx(
@@ -44,7 +51,19 @@ export function InstanceRailRow({ instance, status, selected = false, onSelect }
       )}
     >
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate t-body font-medium text-fg">{instance.name}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate t-body font-medium text-fg">{instance.name}</span>
+          {crash ? (
+            <span className="flex shrink-0 items-center gap-1 t-mono text-err-text" title={crash} data-testid="rail-crash">
+              <Pip tone="error" />
+              crash
+            </span>
+          ) : watching ? (
+            <span className="shrink-0 t-mono text-fg-faint" title="Watching for crashes">
+              watching
+            </span>
+          ) : null}
+        </span>
         <span className="flex min-w-0 items-center gap-2 t-mono text-fg-faint">
           <span className="w-8 shrink-0 text-fg-dim">{LAUNCHER_ABBR[instance.launcher]}</span>
           <span className="shrink-0">{instance.mcVersion ?? '—'}</span>
