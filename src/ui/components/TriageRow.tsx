@@ -124,7 +124,7 @@ export function TriageRow({
       >
         <div className="min-h-0 overflow-hidden">
           {/* Aligned with the title column; in a narrow pane (crash view) it starts under the code. */}
-          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-4 @lg:pl-38">
+          <div className="flex flex-col gap-4 pt-1 pr-4 pb-4 pl-4 @min-[560px]:pl-38">
             <p className="max-w-[72ch] t-body text-fg">{finding.explanation}</p>
             {hidden.length ? (
               <div className="flex flex-wrap gap-1" aria-label="All culprits">
