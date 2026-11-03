@@ -31,6 +31,10 @@ export { isActive, isDisabledChain, topLevelOf } from './active';
 export {
   entryRelevant,
   FABRIC_JSON,
+  fmlEra,
+  fmlLoadsModType,
+  metadataLessJarLoaded,
+  type FmlEra,
   MCMOD_INFO,
   MODS_TOML,
   NEOFORGE_TOML,

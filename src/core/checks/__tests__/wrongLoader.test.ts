@@ -51,8 +51,8 @@ describe('E-WRONG-LOADER', () => {
   it('describes the jar, offers disable, and shows metadata + pack evidence', () => {
     const [f] = only(run([sodium], pack('forge', '1.20.1', '47.3.0')), 'E-WRONG-LOADER');
     expect(f).toMatchObject({
-      severity: 'error',
-      title: 'sodium-fabric-0.5.8.jar is a Fabric mod, but this pack runs Forge',
+      severity: 'info', // Forge 1.20.1 ignores Fabric jars silently
+      title: 'sodium-fabric-0.5.8.jar is a Fabric mod — ignored by Forge',
       culprits: [{ jarId: 'mods/sodium-fabric-0.5.8.jar', fileName: 'sodium-fabric-0.5.8.jar', modId: 'sodium' }],
       fixes: [{ kind: 'disable', jarId: 'mods/sodium-fabric-0.5.8.jar' }],
     });
