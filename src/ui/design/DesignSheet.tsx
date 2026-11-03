@@ -1,4 +1,97 @@
-/** Dev-only component sheet at /design. Owner: M2 agent F (replaces this stub). */
+/**
+ * Dev-only component sheet at /design (DESIGN.md §12 review target). Every component in every
+ * state, laid out like a parts catalogue: dense, ruled, left-aligned. Each section has an anchor
+ * id so screenshots can target it (#tiles, #triage, #log, #work-order, #mod-table, #rail,
+ * #summary, #controls, #palette, #about, #empty).
+ */
+import { Moon, Play, Sun } from '@phosphor-icons/react';
+import { useEffect, useState } from 'react';
+
+import type { ResolvedTheme } from '../../bindings';
+import { Button } from '../components/Button';
+import { formatInt } from '../components/format';
+import { AboutSection, EmptySection, ModTableSection, PaletteSection } from './CatalogueSections';
+import { ControlsSection } from './ControlsSection';
+import { LogSection, TilesSection, TriageSection } from './DiagnosisSections';
+import { RailSection, SummarySection } from './RailSummarySections';
+import { useScanSim } from './scanSim';
+import { WorkOrderSection } from './WorkOrderSection';
+
+const NAV: Array<[string, string]> = [
+  ['controls', 'Controls'],
+  ['rail', 'Rail'],
+  ['summary', 'Summary'],
+  ['tiles', 'Tiles'],
+  ['triage', 'Triage'],
+  ['log', 'Log'],
+  ['work-order', 'Work order'],
+  ['mod-table', 'Mods'],
+  ['palette', 'Palette'],
+  ['about', 'About'],
+  ['empty', 'Empty'],
+];
+
+function initialTheme(): ResolvedTheme {
+  const set = document.documentElement.getAttribute('data-theme');
+  if (set === 'dark' || set === 'light') return set;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function TopBar() {
+  const [theme, setTheme] = useState<ResolvedTheme>(initialTheme);
+  const { running, done, tiles, start } = useScanSim();
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  return (
+    <header className="sticky top-0 z-30 flex h-8 items-center gap-4 border-b border-line-strong bg-bg px-4">
+      <span className="t-label text-fg">Modpack Doctor</span>
+      <span className="t-mono text-fg-faint">/design</span>
+      <nav aria-label="Sections" className="flex min-w-0 items-center gap-4 overflow-x-auto">
+        {NAV.map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="shrink-0 t-label text-fg-faint hover:text-fg">
+            {label}
+          </a>
+        ))}
+      </nav>
+      <span className="ml-auto shrink-0 t-mono text-fg-faint" role="status">
+        {running ? `scanning ${formatInt(done)}/${formatInt(tiles.length)}` : `${formatInt(tiles.length)} tiles`}
+      </span>
+      <Button size={24} icon={<Play size={16} />} onClick={() => start(600)} disabled={running}>
+        Simulate scan
+      </Button>
+      <Button
+        size={24}
+        icon={theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+        aria-label={`Theme: ${theme}. Switch to ${theme === 'dark' ? 'light' : 'dark'}`}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      >
+        {theme}
+      </Button>
+    </header>
+  );
+}
+
 export default function DesignSheet() {
-  return <main className="h-screen bg-bg p-4 t-body text-fg">/design: component sheet pending (M2)</main>;
+  const [selectedJar, setSelectedJar] = useState<string | null>(null);
+  const sel = { selectedJar, onSelectJar: setSelectedJar };
+  return (
+    <div className="min-h-screen bg-bg text-fg">
+      <TopBar />
+      <main className="pb-16">
+        <ControlsSection />
+        <RailSection />
+        <SummarySection />
+        <TilesSection {...sel} />
+        <TriageSection {...sel} />
+        <LogSection onSelectJar={setSelectedJar} />
+        <WorkOrderSection />
+        <ModTableSection {...sel} />
+        <PaletteSection />
+        <AboutSection />
+        <EmptySection />
+      </main>
+    </div>
+  );
 }
