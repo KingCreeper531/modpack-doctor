@@ -308,7 +308,10 @@ fn mcmod_info_both_forms() {
     let list = r#"{"modListVersion":2,"modList":[{"modid":"a","version":"1"},{"modid":"b","version":"2","mcversion":"${mcversion}"}]}"#;
     let r = top(JarBuilder::new().mcmod_info(list));
     assert_eq!(r.mods.iter().map(|m| m.mod_id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
-    assert_eq!(r.mods[1].mc_range, None);
+    assert_eq!(
+        r.mods[1].mc_range,
+        Some(RawRange { syntax: RangeSyntax::Maven, raw: vec![], unrepresentable: Some("${mcversion}".into()) })
+    );
 }
 
 #[test]
@@ -457,10 +460,12 @@ fn unparseable_metadata_is_corrupt_but_lists_packages() {
     assert_eq!(r.packages, vec!["com.x"]);
     let r = top(JarBuilder::new().fabric_mod_json("{ \"version\": \"1\" }"));
     assert!(matches!(r.status, JarStatus::Corrupt { .. }));
-    // One good + one bad file: good mods kept, status corrupt.
+    // One good + one bad file: good mods kept, status Ok, the bad file listed.
     let r = top(JarBuilder::new().fabric_mod_json(r#"{"id":"ok","version":"1"}"#).quilt_mod_json("{nope"));
-    assert!(matches!(r.status, JarStatus::Corrupt { .. }));
+    assert_eq!(r.status, JarStatus::Ok);
     assert_eq!(r.mods[0].mod_id, "ok");
+    assert_eq!(r.metadata_errors.len(), 1);
+    assert_eq!(r.metadata_errors[0].file, "quilt.mod.json");
 }
 
 #[test]

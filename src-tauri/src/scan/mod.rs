@@ -24,6 +24,13 @@
 //! levels. Repeated declarations of one nested path produce one record. Over a limit the scan
 //! stops descending, keeps the records made so far and adds a `ScanIssue`.
 //!
+//! Metadata files are parsed independently. One that is empty, invalid TOML/JSON, missing a
+//! required field, or whose mod id is an unexpanded `${…}` placeholder becomes a
+//! `MetadataError` in `JarRecord.metadata_errors` (no `ScanIssue`); the jar is `Corrupt` only if
+//! it is not a valid zip or it has mod-metadata files and none of them produced a `ModMeta`.
+//! A `${…}` placeholder in a version is kept verbatim; in a range it yields
+//! `RawRange { raw: [], unrepresentable: Some(original text) }` ("unknown", never guessed).
+//!
 //! Notes for checks consuming the output:
 //! - A jar that ships both `META-INF/neoforge.mods.toml` and `META-INF/mods.toml` yields two
 //!   `ModMeta` with the same `modId` and different `loader`; duplicate-id checks must ignore
@@ -49,6 +56,8 @@ mod perf;
 mod tests;
 #[cfg(test)]
 mod tests_limits;
+#[cfg(test)]
+mod tests_metadata;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
