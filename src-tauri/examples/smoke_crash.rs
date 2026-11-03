@@ -67,9 +67,9 @@ fn main() {
 /// Newest 3 crash reports, latest.log, newest hs_err file.
 fn sources(game: &Path) -> Vec<(PathBuf, LogSource)> {
     let mut crashes = files(&game.join("crash-reports"), |n| n.ends_with(".txt"));
-    crashes.sort_by(|a, b| b.1.cmp(&a.1));
+    crashes.sort_by_key(|f| std::cmp::Reverse(f.1));
     let mut hs = files(game, |n| n.starts_with("hs_err_pid") && n.ends_with(".log"));
-    hs.sort_by(|a, b| b.1.cmp(&a.1));
+    hs.sort_by_key(|f| std::cmp::Reverse(f.1));
     let mut out = Vec::new();
     for (p, m, s) in crashes.into_iter().take(3) {
         out.push(source(game, p, m, s, LogKind::CrashReport));
