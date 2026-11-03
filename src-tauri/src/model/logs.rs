@@ -7,15 +7,31 @@
 //! Watch mode (Rust) *detects*; it never classifies. Per watched instance it:
 //! - watches `crash-reports/` and the game dir for new `crash-reports/*.txt` / `hs_err_pid*.log`;
 //! - tails `logs/latest.log` (resetting its offset when the file shrinks or is recreated on a
-//!   new launch) and matches every new line against the TS anchor list;
-//! - polls the shared process detection (the same code as the running-game guard) and treats
-//!   the instance's Java process exiting as a trigger.
+//!   new launch) and matches every new line against the tiered TS anchor list (`WatchAnchor`);
+//! - polls the shared process detection (the same code as the running-game guard) for the
+//!   instance's Java process starting and exiting.
 //!
-//! Debounce: triggers are collected into one *episode*. The episode is emitted as exactly one
-//! `CrashDetected` when the Java process exits, or 5 s after the last trigger if no process is
-//! being tracked (hard cap 20 s after the first trigger). Further triggers are suppressed until
-//! a new game process is seen or 60 s pass without a trigger. A process exit with no anchor hit
-//! and no new crash/hs_err file is a normal quit and emits nothing.
+//! Episode rules (one `CrashDetected` per crash; owner decision 2026-11-03):
+//! - **Fatal** events open an episode and emit promptly: a new crash report or hs_err file, or a
+//!   `latest.log` line matching a `Fatal` anchor. Emission waits `FATAL_SETTLE` (2 s) to coalesce
+//!   the crash file, the header line and the process exit that usually arrive together, or
+//!   happens at once if the process exits first.
+//! - **Contextual** anchor hits are recorded silently and never emit on their own. They emit only
+//!   if the instance's Java process exits within `CONTEXT_WINDOW` (30 s) of the latest
+//!   contextual hit, or if a crash file appears (which is fatal anyway). Hits older than the
+//!   window are discarded.
+//! - A process exit with no fatal event and no contextual hit inside the window is a normal quit
+//!   and emits nothing. Without process tracking, contextual hits never emit.
+//! - After an emission, further triggers are suppressed until a new game process is seen or
+//!   60 s pass without a trigger.
+//!
+//! The UI then classifies the episode's source with `src/core` and sends a native notification
+//! only for an error-severity crash finding.
+
+/// Coalescing delay before a fatal episode is emitted (unless the process exits first).
+pub const FATAL_SETTLE_MS: u64 = 2_000;
+/// A contextual anchor hit only counts if the game process exits within this window after it.
+pub const CONTEXT_WINDOW_MS: u64 = 30_000;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -112,15 +128,35 @@ pub struct LogDigest {
     pub chunks: Vec<LogChunk>,
 }
 
+/// How a watch-mode anchor hit is treated (see module docs). Set per anchor in `src/core/crash`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum AnchorTier {
+    /// The game cannot continue (crash header, ResolutionException, missing mandatory deps,
+    /// incompatible mod set, mod loading failed, …): opens an episode and emits promptly.
+    Fatal,
+    /// Often logged by healthy games (`Caused by`, mixin warnings, NoClassDefFoundError, …):
+    /// recorded silently; emits only if the process exits within `CONTEXT_WINDOW_MS`.
+    Contextual,
+}
+
+/// One anchor for `set_watch`: a literal, case-sensitive substring and its tier.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchAnchor {
+    pub text: String,
+    pub tier: AnchorTier,
+}
+
 /// Why watch mode opened a crash episode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CrashTrigger {
     NewCrashReport { source_id: String },
     NewHsErr { source_id: String },
-    /// A new `latest.log` line contained a TS anchor (first hit per anchor only).
+    /// A new `latest.log` line contained a TS anchor (first hit per anchor per episode only).
     #[serde(rename_all = "camelCase")]
-    LogAnchor { anchor: String, line: u32 },
+    LogAnchor { anchor: String, tier: AnchorTier, line: u32 },
     /// The instance's Java process exited (exit code is not observable for non-child processes).
     #[serde(rename_all = "camelCase")]
     ProcessExit { pid: u32 },

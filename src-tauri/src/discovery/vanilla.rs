@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::model::{Launcher, LoaderInfo, LoaderKind, ProbeResult, Side};
 
 use super::common::{
-    build, is_dir, json_get, json_str, location_key, read_json, Meta, NewInstance, Outcome,
+    build, is_dir, json_get, json_str, location_key, read_json, split_loader_mc, Meta, NewInstance, Outcome,
 };
 use super::env::{Env, Os};
 
@@ -123,14 +123,15 @@ pub(crate) fn probe(env: &Env, root: &Path) -> Outcome {
 
 /// MC version + loader from a `lastVersionId`, confirmed by `versions/<id>/<id>.json`.
 fn version_meta(root: &Path, id: &str) -> Meta {
-    let (mut mc, mut loader) = parse_version_id(id);
     let json = if is_safe_id(id) {
         read_json(&root.join("versions").join(id).join(format!("{id}.json"))).ok().flatten()
     } else {
         None
     };
+    let inherits = json.as_ref().and_then(|v| json_str(v, "inheritsFrom"));
+    let (mut mc, mut loader) = parse_version_id(id, inherits.as_deref());
     if let Some(v) = json {
-        match json_str(&v, "inheritsFrom") {
+        match inherits {
             Some(parent) => mc = Some(parent),
             None if loader.is_none() => mc = json_str(&v, "id").or(mc),
             None => {}
@@ -173,18 +174,16 @@ fn loader_from_libraries(v: &serde_json::Value) -> Option<LoaderInfo> {
 }
 
 /// `fabric-loader-0.15.11-1.20.1`, `quilt-loader-0.26.4-1.20.1`, `1.20.1-forge-47.3.0`,
-/// `1.12.2-forge1.12.2-14.23.5.2860`, `neoforge-21.1.77`, plain `1.20.1`.
-pub(crate) fn parse_version_id(id: &str) -> (Option<String>, Option<LoaderInfo>) {
+/// `1.12.2-forge1.12.2-14.23.5.2860`, `neoforge-21.1.77`, plain `1.20.1`. Fabric/Quilt loader
+/// and MC versions may both contain hyphens (`fabric-loader-0.16.0-beta.1-1.20.5-pre1`);
+/// `known_mc` (the version json's `inheritsFrom`) is matched as a suffix first.
+pub(crate) fn parse_version_id(id: &str, known_mc: Option<&str>) -> (Option<String>, Option<LoaderInfo>) {
     let id = id.trim();
     let lower = id.to_ascii_lowercase();
     for (prefix, kind) in [("fabric-loader-", LoaderKind::Fabric), ("quilt-loader-", LoaderKind::Quilt)] {
         if lower.starts_with(prefix) {
-            let rest = &id[prefix.len()..];
-            let (lv, mc) = match rest.split_once('-') {
-                Some((lv, mc)) => (lv, Some(mc.to_string()).filter(|m| !m.is_empty())),
-                None => (rest, None),
-            };
-            return (mc, Some(LoaderInfo { kind, version: Some(lv.to_string()).filter(|v| !v.is_empty()) }));
+            let (lv, mc) = split_loader_mc(&id[prefix.len()..], known_mc);
+            return (mc, Some(LoaderInfo { kind, version: Some(lv).filter(|v| !v.is_empty()) }));
         }
     }
     if lower.starts_with("neoforge-") {
@@ -233,8 +232,35 @@ mod tests {
     use super::*;
 
     fn lk(id: &str) -> (Option<String>, Option<(LoaderKind, Option<String>)>) {
-        let (mc, l) = parse_version_id(id);
+        lk_known(id, None)
+    }
+
+    fn lk_known(id: &str, known: Option<&str>) -> (Option<String>, Option<(LoaderKind, Option<String>)>) {
+        let (mc, l) = parse_version_id(id, known);
         (mc, l.map(|l| (l.kind, l.version)))
+    }
+
+    #[test]
+    fn hyphenated_loader_and_mc_versions() {
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(lk("fabric-loader-0.16.0-beta.1-1.20.1"), (s("1.20.1"), Some((LoaderKind::Fabric, s("0.16.0-beta.1")))));
+        assert_eq!(lk("fabric-loader-0.15.11-1.20.5-pre1"), (s("1.20.5-pre1"), Some((LoaderKind::Fabric, s("0.15.11")))));
+        assert_eq!(
+            lk("quilt-loader-0.26.4-beta.2-1.20.5-pre1"),
+            (s("1.20.5-pre1"), Some((LoaderKind::Quilt, s("0.26.4-beta.2"))))
+        );
+        assert_eq!(lk("fabric-loader-0.16.0-23w51a"), (s("23w51a"), Some((LoaderKind::Fabric, s("0.16.0")))));
+        assert_eq!(
+            lk("fabric-loader-0.16.0-rc.1-26.4-snapshot-6"),
+            (s("26.4-snapshot-6"), Some((LoaderKind::Fabric, s("0.16.0-rc.1"))))
+        );
+        // A loader suffix the heuristic cannot tell apart is settled by the known MC version.
+        assert_eq!(
+            lk_known("fabric-loader-0.16.0-1.2-1.20.1", Some("1.20.1")),
+            (s("1.20.1"), Some((LoaderKind::Fabric, s("0.16.0-1.2"))))
+        );
+        assert_eq!(lk("fabric-loader-0.16.0-1-1.20.1"), (s("1.20.1"), Some((LoaderKind::Fabric, s("0.16.0-1")))));
+        assert_eq!(lk("fabric-loader-0.16.0"), (None, Some((LoaderKind::Fabric, s("0.16.0")))));
     }
 
     #[test]

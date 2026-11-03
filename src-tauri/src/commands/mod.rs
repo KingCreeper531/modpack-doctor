@@ -97,10 +97,11 @@ pub async fn read_log_digest(
     not_yet("read_log_digest", "M4")
 }
 
-/// Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected`.
-/// `anchors` = `src/core/crash/anchors.ts`, matched against new `latest.log` lines. Rust never
-/// starts watchers on its own: at startup the UI re-arms every id in `Settings.watched` by
-/// calling this with `enabled = true` and the current anchors (ignored when disabling).
+/// Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
+/// episode rules in `model/logs.rs`. `anchors` = the tiered list from
+/// `src/core/crash/anchors.ts` (`CRASH_ANCHORS`), matched against new `latest.log` lines. Rust
+/// never starts watchers on its own: at startup the UI re-arms every id in `Settings.watched`
+/// by calling this with `enabled = true` and the current anchors (ignored when disabling).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_watch(
@@ -108,7 +109,7 @@ pub async fn set_watch(
     _state: State<'_, AppState>,
     _instance_id: String,
     _enabled: bool,
-    _anchors: Vec<String>,
+    _anchors: Vec<WatchAnchor>,
 ) -> Cmd<()> {
     not_yet("set_watch", "M4")
 }

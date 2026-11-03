@@ -15,6 +15,7 @@ import type {
   RawRange,
   ScanResult,
   Side,
+  WatchAnchor,
 } from '../bindings';
 
 export type Severity = 'error' | 'warning' | 'info';
@@ -170,11 +171,23 @@ export interface CrashInput {
   pack?: PackContext;
 }
 
+/**
+ * A literal, case-sensitive substring with its watch-mode tier (`WatchAnchor` in bindings).
+ * - `fatal`: the game cannot continue (crash report header, ResolutionException, missing
+ *   mandatory dependencies, incompatible mod set, mod loading failed / loading error screen,
+ *   hs_err header). Watch mode notifies promptly.
+ * - `contextual`: healthy games log these too (`Caused by`, mixin warnings, NoClassDefFound…).
+ *   Recorded silently; analysed only if the game process exits within the context window or a
+ *   crash file appears.
+ * The digest prefilter (`read_log_digest`) uses every anchor's `text` regardless of tier.
+ */
+export type CrashAnchor = WatchAnchor;
+
 export interface CrashPattern {
   id: string;
   codes: readonly FindingCode[];
-  /** Literal, case-sensitive substrings the Rust digest prefilter must keep. */
-  anchors: readonly string[];
+  /** Every anchor this pattern needs kept by the digest, each marked with its watch tier. */
+  anchors: readonly CrashAnchor[];
   match(input: CrashInput): Finding[];
 }
 

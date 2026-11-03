@@ -111,20 +111,32 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     and icons). Every request sends the User-Agent
     `KingCreeper531/modpack-doctor/<version> (github.com/KingCreeper531/modpack-doctor)`.
     Every static check works with no network.
-11. **Crash detection vs classification.** `src/core/crash/anchors.ts` is the single anchor
-    list. It goes to both `set_watch` and `read_log_digest`.
-    - Rust watch mode detects only. It tails `latest.log` against the anchors (surviving log
-      rotation), and watches for a new `crash-reports/*.txt` or `hs_err_pid*.log`.
-    - The instance's Java process exiting is also a trigger. Process detection is shared with the
+11. **Crash detection vs classification.** `src/core/crash/anchors.ts` (`CRASH_ANCHORS`) is
+    the single, **tiered** anchor list. Each pattern marks every anchor `fatal` or
+    `contextual` (`CrashAnchor` = `WatchAnchor`). The full list goes to `set_watch` with tiers,
+    and its texts go to `read_log_digest`. (Owner decision 2026-11-03.)
+    - **Fatal** anchors open an episode and notify promptly. They cover the crash report header,
+      ResolutionException, "Missing or unsupported mandatory dependencies", Fabric's incompatible
+      mod set (all wordings), FML "Mod loading has failed" / the NeoForge loading-error screen,
+      the hs_err header and `#@!@# Game crashed!`. New crash-report and hs_err files are fatal too.
+    - **Contextual** anchors (`Caused by`, mixin, NoClassDefFound, …) are recorded silently. They
+      lead to analysis only if the instance's Java process exits within `CONTEXT_WINDOW_MS`
+      (30 s), or a crash file appears.
+    - Rust watch mode detects only. It tails `latest.log` across log rotation, watches for new
+      crash files, and tracks the Java process. Process detection is shared with the
       running-game guard (`src-tauri/src/process/`, built in M4, reused by M6).
-    - Triggers are debounced into one `CrashDetected` per crash episode (rules in
-      `model/logs.rs`). A normal quit, meaning a process exit with no anchor hit and no new crash
-      file, emits nothing.
+    - The full episode rules are in `model/logs.rs`. They emit one `CrashDetected` per crash. A
+      normal quit emits nothing; a normal quit is a process exit with no fatal event and no
+      contextual hit inside the window.
     - The UI classifies the episode's `source` with `src/core` and sends a native notification
       only for an error-severity crash finding.
     - Rust never starts watchers by itself. The UI re-arms `Settings.watched` at startup.
-    - Required test: a load-time failure that appears **only** in `latest.log` (no crash report),
-      followed by process exit, must produce exactly one `CrashDetected`.
+    - Required tests: in M2 (TS), the tier marking itself. In M4, the Rust episode state machine
+      with an injected clock and process source:
+      - a healthy `latest.log` full of logged exceptions (contextual hits, game keeps running or
+        exits normally after the window) produces **no** `CrashDetected` and no notification;
+      - a load-time failure that appears **only** in `latest.log`, followed by process exit,
+        produces **exactly one**.
 12. **NeoForge/Forge.**
     - `ModMeta.loader` decides per entry. A `neoforge` dependency means NeoForge; a `forge`
       dependency, or neither, means Forge.
@@ -152,7 +164,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `scan_instance` | `instanceId` | `ScanResult` | `ScanStarted`, then `ScanProgress` | M3 |
 | `list_log_sources` | `instanceId` | `LogSource[]` | | M4 |
 | `read_log_digest` | `instanceId, sourceId, anchors, options?` | `LogDigest` | | M4 |
-| `set_watch` | `instanceId, enabled, anchors` | `null` | `CrashDetected` (one per episode) | M4 |
+| `set_watch` | `instanceId, enabled, anchors: WatchAnchor[]` | `null` | `CrashDetected` (one per episode) | M4 |
 | `modrinth_identify` | `sha1s, refresh` | `HashLookup` | | M5 |
 | `modrinth_find_updates` | `sha1s, loaders, gameVersions, versionTypes, refresh` | `HashLookup` | | M5 |
 | `modrinth_projects` | `ids, refresh` | `ProjectLookup` | | M5 |

@@ -48,12 +48,16 @@ struct ApiHashes {
 struct ApiFile {
     #[serde(default)]
     hashes: ApiHashes,
-    url: String,
-    filename: String,
+    // Optional so that one broken file entry is dropped (and counted), not the whole version.
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    filename: Option<String>,
     #[serde(default)]
     primary: bool,
+    /// Absent/null = unknown.
     #[serde(default)]
-    size: u64,
+    size: Option<u64>,
     #[serde(default)]
     file_type: Option<String>,
 }
@@ -103,10 +107,50 @@ struct ApiProject {
     server_side: Option<String>,
     #[serde(default)]
     icon_url: Option<String>,
+    #[serde(default)]
+    loaders: Option<Vec<String>>,
+    #[serde(default)]
+    game_versions: Option<Vec<String>>,
+}
+
+/// One `/v2/search` hit (only the fields we read).
+#[derive(Debug, Deserialize)]
+struct ApiSearchHit {
+    project_id: String,
+    slug: String,
+    title: String,
+    project_type: String,
+    #[serde(default)]
+    environment: Option<Vec<String>>,
+    #[serde(default)]
+    client_side: Option<String>,
+    #[serde(default)]
+    server_side: Option<String>,
 }
 
 fn is_hex_len(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A file we can offer for download: CDN URL, file name, valid sha1 + sha512.
+fn usable_file(f: ApiFile, cdn: &CdnCheck) -> Option<MrFile> {
+    let url = f.url.filter(|u| cdn.allows(u))?;
+    let filename = f.filename.filter(|n| !n.is_empty())?;
+    let sha1 = f.hashes.sha1?.to_ascii_lowercase();
+    let sha512 = f.hashes.sha512?.to_ascii_lowercase();
+    if !is_hex_len(&sha1, 40) || !is_hex_len(&sha512, 128) {
+        return None;
+    }
+    Some(MrFile {
+        url,
+        filename,
+        // The contract reserves 0 for nothing: a reported size of 0 is as good as unknown.
+        size: f.size.filter(|n| *n > 0),
+        primary: f.primary,
+        sha1,
+        sha512,
+        file_type: f.file_type,
+    })
 }
 
 /// Parse one Version object. `None` when it is malformed.
@@ -115,36 +159,14 @@ pub(crate) fn version_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<
     let listed = v.files.unwrap_or_default();
     let listed_count = listed.len();
     let mut primary_dropped = false;
-    let files: Vec<MrFile> = listed
-        .into_iter()
-        .filter_map(|f| {
-            let primary = f.primary;
-            let usable = (|| {
-                if !cdn.allows(&f.url) {
-                    return None;
-                }
-                let sha1 = f.hashes.sha1?.to_ascii_lowercase();
-                let sha512 = f.hashes.sha512?.to_ascii_lowercase();
-                if !is_hex_len(&sha1, 40) || !is_hex_len(&sha512, 128) {
-                    return None;
-                }
-                Some(MrFile {
-                    url: f.url,
-                    filename: f.filename,
-                    // TODO(M2 review, agent E): ApiFile.size should be Option so "absent" ≠ 0.
-                    size: Some(f.size).filter(|s| *s > 0),
-                    primary,
-                    sha1,
-                    sha512,
-                    file_type: f.file_type,
-                })
-            })();
-            if usable.is_none() && primary {
-                primary_dropped = true;
-            }
-            usable
-        })
-        .collect();
+    let mut files: Vec<MrFile> = Vec::with_capacity(listed_count);
+    for f in listed {
+        let primary = f.primary;
+        match usable_file(f, cdn) {
+            Some(file) => files.push(file),
+            None => primary_dropped |= primary,
+        }
+    }
     let dropped_files = u32::try_from(listed_count - files.len()).unwrap_or(u32::MAX);
     let dependencies = v
         .dependencies
@@ -182,11 +204,16 @@ fn side(s: Option<&str>) -> SideSupport {
     }
 }
 
-/// A parsed project plus its CDN icon URL (kept out of `MrProject`, which carries a local path).
+/// A parsed project plus what `MrProject` does not carry: its CDN icon URL (`MrProject` holds a
+/// local path instead) and the loaders/game versions used to validate mod-id guesses.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 pub(crate) struct ProjectRecord {
     pub project: MrProject,
     pub icon_url: Option<String>,
+    #[serde(default)]
+    pub loaders: Vec<String>,
+    #[serde(default)]
+    pub game_versions: Vec<String>,
 }
 
 pub(crate) fn project_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<ProjectRecord> {
@@ -204,6 +231,23 @@ pub(crate) fn project_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<
             icon_path: None,
         },
         icon_url,
+        loaders: p.loaders.unwrap_or_default(),
+        game_versions: p.game_versions.unwrap_or_default(),
+    })
+}
+
+/// Parse one search hit into a project. `None` when it is malformed.
+pub(crate) fn search_hit_from_json(v: serde_json::Value) -> Option<MrProject> {
+    let h: ApiSearchHit = serde_json::from_value(v).ok()?;
+    Some(MrProject {
+        client_side: side(h.client_side.as_deref()),
+        server_side: side(h.server_side.as_deref()),
+        id: h.project_id,
+        slug: h.slug,
+        title: h.title,
+        project_type: h.project_type,
+        environment: h.environment.unwrap_or_default(),
+        icon_path: None,
     })
 }
 
@@ -250,8 +294,69 @@ mod tests {
         let m = version_from_json(v, &cdn()).unwrap();
         assert_eq!(m.files.len(), 1);
         assert_eq!(m.files[0].sha1, "a".repeat(40));
+        assert_eq!(m.files[0].size, Some(10));
         assert_eq!(m.environment.as_deref(), Some("client_only"));
         assert_eq!(m.dependencies[0].dependency_type, "incompatible");
+        // Two secondary files dropped: counted, primary intact.
+        assert_eq!(m.dropped_files, 2);
+        assert!(!m.primary_dropped);
+    }
+
+    fn file(primary: bool, url: &str, sha512: Option<String>, size: Option<u64>) -> serde_json::Value {
+        let mut f = json!({"hashes": {"sha1": "a".repeat(40)}, "url": url, "filename": "f.jar", "primary": primary});
+        if let Some(h) = sha512 {
+            f["hashes"]["sha512"] = json!(h);
+        }
+        if let Some(n) = size {
+            f["size"] = json!(n);
+        }
+        f
+    }
+
+    fn version_with(files: Vec<serde_json::Value>) -> MrVersion {
+        let v = json!({"id": "OihdIimA", "project_id": "AANobbMI", "version_number": "1",
+            "version_type": "release", "files": files});
+        version_from_json(v, &cdn()).unwrap()
+    }
+
+    #[test]
+    fn primary_dropped_sets_flag() {
+        let ok = "https://cdn.modrinth.com/data/a.jar";
+        let good = Some("b".repeat(128));
+        // Primary on a foreign host.
+        let m = version_with(vec![file(true, "https://github.com/a.jar", good.clone(), Some(5)), file(false, ok, good.clone(), Some(5))]);
+        assert_eq!((m.files.len(), m.dropped_files, m.primary_dropped), (1, 1, true));
+        assert!(!m.files[0].primary);
+        // Primary without a sha512.
+        let m = version_with(vec![file(true, ok, None, Some(5))]);
+        assert_eq!((m.files.len(), m.dropped_files, m.primary_dropped), (0, 1, true));
+        // Primary with a malformed sha512.
+        let m = version_with(vec![file(true, ok, Some("xyz".into()), Some(5))]);
+        assert!(m.primary_dropped);
+        // Primary missing its URL entirely: the file is dropped, not the version.
+        let m = version_with(vec![json!({"hashes": {"sha1": "a".repeat(40), "sha512": "b".repeat(128)}, "filename": "f.jar", "primary": true})]);
+        assert_eq!((m.files.len(), m.dropped_files, m.primary_dropped), (0, 1, true));
+    }
+
+    #[test]
+    fn secondary_dropped_counts_only() {
+        let ok = "https://cdn.modrinth.com/data/a.jar";
+        let good = Some("b".repeat(128));
+        let m = version_with(vec![file(true, ok, good.clone(), Some(5)), file(false, "https://evil.example/x.jar", good, None)]);
+        assert_eq!((m.files.len(), m.dropped_files, m.primary_dropped), (1, 1, false));
+        assert!(m.files[0].primary);
+    }
+
+    #[test]
+    fn size_absent_null_or_zero_is_unknown() {
+        let ok = "https://cdn.modrinth.com/data/a.jar";
+        let good = Some("b".repeat(128));
+        let m = version_with(vec![file(true, ok, good.clone(), None)]);
+        assert_eq!(m.files[0].size, None);
+        let mut nulled = file(true, ok, good.clone(), None);
+        nulled["size"] = serde_json::Value::Null;
+        assert_eq!(version_with(vec![nulled]).files[0].size, None);
+        assert_eq!(version_with(vec![file(true, ok, good, Some(0))]).files[0].size, None);
     }
 
     #[test]

@@ -15,6 +15,8 @@ use super::*;
 
 const UA: &str = "KingCreeper531/modpack-doctor/0.0.0-test (github.com/KingCreeper531/modpack-doctor)";
 const DAY_MS: u64 = 24 * 3600 * 1000;
+/// Stands in for the 512 MiB production cap.
+const TEST_MAX_DOWNLOAD: u64 = 100 * 1024;
 
 struct Harness {
     server: MockServer,
@@ -54,6 +56,7 @@ impl Harness {
                 min_429_wait: Duration::ZERO,
             },
             clock: Arc::new(move || clock.load(Ordering::SeqCst)),
+            max_download: TEST_MAX_DOWNLOAD,
         };
         ModrinthClient::with_tuning(cfg, tuning).unwrap()
     }
@@ -544,7 +547,7 @@ async fn download_success_streams_to_part_file() {
         .await;
     let dest = TempDir::new().unwrap();
     let url = format!("{}/data/AANobbMI/versions/x/mod.jar", h.cdn());
-    let p = h.client(true).download_verified(&url, &sha512_hex(&body), body.len() as u64, dest.path(), "mod.jar").await.unwrap();
+    let p = h.client(true).download_verified(&url, &sha512_hex(&body), Some(body.len() as u64), dest.path(), "mod.jar").await.unwrap();
     assert_eq!(p, dest.path().join(".mod.jar.part"));
     assert_eq!(std::fs::read(&p).unwrap(), body);
     h.assert_ua().await;
@@ -560,7 +563,7 @@ async fn download_hash_mismatch_removes_temp() {
         .await;
     let dest = TempDir::new().unwrap();
     let url = format!("{}/data/a.jar", h.cdn());
-    let e = h.client(true).download_verified(&url, &sha512_hex(b"original"), 8, dest.path(), "a.jar").await.unwrap_err();
+    let e = h.client(true).download_verified(&url, &sha512_hex(b"original"), Some(8), dest.path(), "a.jar").await.unwrap_err();
     assert!(matches!(e, Error::HashMismatch { .. }), "{e:?}");
     assert!(!dest.path().join(".a.jar.part").exists());
     assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
@@ -579,15 +582,15 @@ async fn download_rejects_wrong_host_and_bad_input() {
         format!("ftp://{}/data/a.jar", h.server.address()),
         "file:///etc/passwd".to_string(),
     ] {
-        let e = c.download_verified(&url, &good, 1, dest.path(), "a.jar").await.unwrap_err();
+        let e = c.download_verified(&url, &good, Some(1), dest.path(), "a.jar").await.unwrap_err();
         assert!(matches!(e, Error::Invalid(_)), "{url}: {e:?}");
     }
     let url = format!("{}/data/a.jar", h.cdn());
-    assert!(matches!(c.download_verified(&url, "abc", 1, dest.path(), "a.jar").await, Err(Error::Invalid(_))));
-    assert!(matches!(c.download_verified(&url, &good, 1, dest.path(), "../a.jar").await, Err(Error::Invalid(_))));
-    assert!(matches!(c.download_verified(&url, &good, u64::MAX, dest.path(), "a.jar").await, Err(Error::Invalid(_))));
+    assert!(matches!(c.download_verified(&url, "abc", Some(1), dest.path(), "a.jar").await, Err(Error::Invalid(_))));
+    assert!(matches!(c.download_verified(&url, &good, Some(1), dest.path(), "../a.jar").await, Err(Error::Invalid(_))));
+    assert!(matches!(c.download_verified(&url, &good, Some(u64::MAX), dest.path(), "a.jar").await, Err(Error::Invalid(_))));
     assert!(h.requests().await.is_empty());
-    assert!(matches!(h.client(false).download_verified(&url, &good, 1, dest.path(), "a.jar").await, Err(Error::Offline)));
+    assert!(matches!(h.client(false).download_verified(&url, &good, Some(1), dest.path(), "a.jar").await, Err(Error::Offline)));
 }
 
 #[tokio::test]
@@ -595,7 +598,7 @@ async fn production_client_requires_https_cdn() {
     let dir = TempDir::new().unwrap();
     let c = ModrinthClient::new(ClientConfig::new(dir.path().to_path_buf(), true)).unwrap();
     let e = c
-        .download_verified("http://cdn.modrinth.com/data/a.jar", &"0".repeat(128), 1, dir.path(), "a.jar")
+        .download_verified("http://cdn.modrinth.com/data/a.jar", &"0".repeat(128), Some(1), dir.path(), "a.jar")
         .await
         .unwrap_err();
     assert!(matches!(e, Error::Invalid(_)));
@@ -615,7 +618,7 @@ async fn download_oversize_rejected() {
         .await;
     let dest = TempDir::new().unwrap();
     let url = format!("{}/data/big.jar", h.cdn());
-    let e = h.client(true).download_verified(&url, &sha512_hex(&body), 1000, dest.path(), "big.jar").await.unwrap_err();
+    let e = h.client(true).download_verified(&url, &sha512_hex(&body), Some(1000), dest.path(), "big.jar").await.unwrap_err();
     assert!(matches!(e, Error::Corrupt { .. }), "{e:?}");
     assert!(!dest.path().join(".big.jar.part").exists());
 }
@@ -647,13 +650,13 @@ async fn download_redirect_to_other_host_rejected() {
     let dest = TempDir::new().unwrap();
     let c = h.client(true);
     let e = c
-        .download_verified(&format!("{}/data/r.jar", h.cdn()), &sha512_hex(b"x"), 1, dest.path(), "r.jar")
+        .download_verified(&format!("{}/data/r.jar", h.cdn()), &sha512_hex(b"x"), Some(1), dest.path(), "r.jar")
         .await
         .unwrap_err();
     assert!(matches!(&e, Error::Network(m) if m.contains("redirected")), "{e:?}");
     assert!(other.received_requests().await.unwrap().is_empty(), "followed a cross-host redirect");
     assert!(!dest.path().join(".r.jar.part").exists());
-    let ok = c.download_verified(&format!("{}/data/same.jar", h.cdn()), &sha512_hex(b"x"), 1, dest.path(), "same.jar").await;
+    let ok = c.download_verified(&format!("{}/data/same.jar", h.cdn()), &sha512_hex(b"x"), Some(1), dest.path(), "same.jar").await;
     assert!(ok.is_ok(), "{ok:?}");
     h.assert_ua().await;
 }
@@ -728,5 +731,221 @@ async fn attach_icons_fills_icon_paths() {
     c.attach_icons(&mut r, &urls, icons.path()).await;
     let path = r.found["sodium"].icon_path.clone().unwrap();
     assert!(path.ends_with("AANobbMI.webp"), "{path}");
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn download_unknown_size_allowed_up_to_cap() {
+    let h = Harness::new().await;
+    let small = vec![1u8; 90 * 1024];
+    let big = vec![2u8; 120 * 1024];
+    Mock::given(method("GET")).and(path("/data/small.jar")).respond_with(ResponseTemplate::new(200).set_body_bytes(small.clone())).mount(&h.server).await;
+    Mock::given(method("GET")).and(path("/data/big.jar")).respond_with(ResponseTemplate::new(200).set_body_bytes(big.clone())).mount(&h.server).await;
+    let c = h.client(true);
+    let dest = TempDir::new().unwrap();
+    // Unknown size: only the hard cap applies (90 KiB is under the 100 KiB test cap)...
+    let p = c.download_verified(&format!("{}/data/small.jar", h.cdn()), &sha512_hex(&small), None, dest.path(), "small.jar").await.unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), small);
+    // ...and the hard cap still applies.
+    let e = c.download_verified(&format!("{}/data/big.jar", h.cdn()), &sha512_hex(&big), None, dest.path(), "big.jar").await.unwrap_err();
+    assert!(matches!(e, Error::Corrupt { .. }), "{e:?}");
+    assert!(!dest.path().join(".big.jar.part").exists());
+    // A known size keeps its own (tighter) limit: size + 64 KiB.
+    let e = c.download_verified(&format!("{}/data/small.jar", h.cdn()), &sha512_hex(&small), Some(1), dest.path(), "s2.jar").await.unwrap_err();
+    assert!(matches!(e, Error::Corrupt { .. }), "{e:?}");
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn dropped_primary_is_reported_end_to_end() {
+    let h = Harness::new().await;
+    let cdn = h.cdn();
+    Mock::given(method("GET"))
+        .and(path("/v2/version/OihdIimA"))
+        .respond_with(move |_: &Request| {
+            let mut v = version_json("OihdIimA", "AANobbMI", &sha(5), &cdn);
+            v["files"][0]["url"] = json!("https://github.com/x/mod.jar"); // primary off-CDN
+            let mut extra = version_json("OihdIimA", "AANobbMI", &sha(6), &cdn)["files"][0].clone();
+            extra["primary"] = json!(false);
+            extra["size"] = Value::Null;
+            v["files"].as_array_mut().unwrap().push(extra);
+            ResponseTemplate::new(200).set_body_json(v)
+        })
+        .mount(&h.server)
+        .await;
+    let v = h.client(true).version("OihdIimA").await.unwrap();
+    assert_eq!((v.files.len(), v.dropped_files, v.primary_dropped), (1, 1, true));
+    assert_eq!(v.files[0].size, None);
+}
+
+// ---------- search / resolve_mod_id ----------
+
+fn project_with_loaders(id: &str, slug: &str, title: &str, ptype: &str, loaders: &[&str]) -> Value {
+    json!({"id": id, "slug": slug, "title": title, "project_type": ptype, "client_side": "optional",
+           "server_side": "optional", "loaders": loaders, "game_versions": ["1.20.1"]})
+}
+
+fn hit(id: &str, slug: &str, title: &str) -> Value {
+    json!({"project_id": id, "slug": slug, "title": title, "project_type": "mod", "client_side": "required",
+           "server_side": "optional", "environment": ["client_and_server"], "categories": ["fabric"]})
+}
+
+/// `/v2/projects` that knows `projects`; `/v2/search` that answers `hits`.
+async fn mount_resolve(h: &Harness, projects: Vec<Value>, hits: Vec<Value>) {
+    Mock::given(method("GET"))
+        .and(path("/v2/projects"))
+        .and(header("user-agent", UA))
+        .respond_with(move |r: &Request| {
+            let ids: Vec<String> =
+                r.url.query_pairs().find(|(k, _)| k == "ids").map(|(_, v)| serde_json::from_str(&v).unwrap()).unwrap();
+            let found: Vec<Value> = projects
+                .iter()
+                .filter(|p| ids.iter().any(|i| i == p["id"].as_str().unwrap() || i.eq_ignore_ascii_case(p["slug"].as_str().unwrap())))
+                .cloned()
+                .collect();
+            ResponseTemplate::new(200).set_body_json(found)
+        })
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/search"))
+        .and(header("user-agent", UA))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"hits": hits, "offset": 0, "limit": 10, "total_hits": 1})))
+        .mount(&h.server)
+        .await;
+}
+
+async fn count(h: &Harness, p: &str) -> usize {
+    h.requests().await.iter().filter(|r| r.url.path() == p).count()
+}
+
+fn strs(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+fn query_map(r: &Request) -> std::collections::HashMap<String, String> {
+    r.url.query_pairs().into_owned().collect()
+}
+
+#[tokio::test]
+async fn resolve_by_slug_guess_in_one_batch() {
+    let h = Harness::new().await;
+    mount_resolve(&h, vec![project_with_loaders("9s6osm5g", "cloth-config", "Cloth Config API", "mod", &["fabric", "forge"])], vec![]).await;
+    let c = h.client(true);
+    let p = c.resolve_mod_id("cloth_config", &strs(&["forge"]), &strs(&["1.20.1"])).await.unwrap().unwrap();
+    assert_eq!(p.id, "9s6osm5g");
+    let reqs = h.requests().await;
+    assert_eq!(reqs.len(), 1, "guesses must go in one request and need no search");
+    let ids: Vec<String> = serde_json::from_str(&query_map(&reqs[0])["ids"]).unwrap();
+    assert_eq!(ids, vec!["cloth_config", "cloth-config"]);
+    // Cached.
+    assert_eq!(c.resolve_mod_id("cloth_config", &strs(&["forge"]), &strs(&["1.20.1"])).await.unwrap().unwrap().id, "9s6osm5g");
+    assert_eq!(h.requests().await.len(), 1);
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn resolve_uses_alias_table() {
+    let h = Harness::new().await;
+    mount_resolve(&h, vec![project_with_loaders("lhGA9TYQ", "architectury-api", "Architectury API", "mod", &["fabric", "forge"])], vec![]).await;
+    let p = h.client(true).resolve_mod_id("architectury", &strs(&["fabric"]), &[]).await.unwrap().unwrap();
+    assert_eq!(p.slug, "architectury-api");
+    assert_eq!(count(&h, "/v2/search").await, 0);
+}
+
+#[tokio::test]
+async fn resolve_rejects_wrong_loader_or_type_then_searches() {
+    let h = Harness::new().await;
+    // `jei` exists but is Forge-only here and `my_mod` is a resource pack: neither may satisfy
+    // a Fabric lookup; search must then find the right project by name.
+    mount_resolve(
+        &h,
+        vec![
+            project_with_loaders("u6dRKJwZ", "jei", "Just Enough Items", "mod", &["forge"]),
+            project_with_loaders("RESPACK1", "my_mod", "My Mod", "resourcepack", &["minecraft"]),
+        ],
+        vec![hit("ZZZZZZZ1", "my-mod-fabric-port", "Totally Different"), hit("ABCDEFG1", "my-mod", "My Mod Reborn")],
+    )
+    .await;
+    let c = h.client(true);
+    let p = c.resolve_mod_id("my_mod", &strs(&["fabric"]), &strs(&["1.20.1"])).await.unwrap().unwrap();
+    assert_eq!(p.id, "ABCDEFG1", "only a hit whose slug/title normalises to the id counts");
+    let search = h.requests().await.into_iter().find(|r| r.url.path() == "/v2/search").unwrap();
+    let q = query_map(&search);
+    assert_eq!(q["query"], "my mod");
+    assert_eq!(q["limit"], "10");
+    let facets: Value = serde_json::from_str(&q["facets"]).unwrap();
+    assert_eq!(facets, json!([["project_type:mod"], ["categories:fabric"], ["versions:1.20.1"]]));
+
+    assert_eq!(c.resolve_mod_id("jei", &strs(&["fabric"]), &[]).await.unwrap(), None, "loader mismatch and no search match");
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn resolve_negative_is_cached_and_served_offline() {
+    let h = Harness::new().await;
+    mount_resolve(&h, vec![], vec![hit("ZZZZZZZ1", "unrelated", "Unrelated")]).await;
+    let c = h.client(true);
+    assert_eq!(c.resolve_mod_id("nosuchmod", &strs(&["fabric"]), &[]).await.unwrap(), None);
+    assert_eq!(h.requests().await.len(), 2); // projects + search
+    assert_eq!(c.resolve_mod_id("nosuchmod", &strs(&["fabric"]), &[]).await.unwrap(), None);
+    assert_eq!(h.requests().await.len(), 2, "negative answer cached");
+    // Offline: cached answers (even expired) are served; unknown ids are an error, not "absent".
+    h.advance(10 * DAY_MS);
+    let off = h.client(false);
+    assert_eq!(off.resolve_mod_id("nosuchmod", &strs(&["fabric"]), &[]).await.unwrap(), None);
+    assert!(matches!(off.resolve_mod_id("othermod", &strs(&["fabric"]), &[]).await, Err(Error::Offline)));
+    // Online again after 24 h: the negative entry expired and is looked up again.
+    c.resolve_mod_id("nosuchmod", &strs(&["fabric"]), &[]).await.unwrap();
+    assert_eq!(h.requests().await.len(), 4);
+    // Different filters = different cache entry (the projects guess is cached; search is not).
+    c.resolve_mod_id("nosuchmod", &strs(&["forge"]), &[]).await.unwrap();
+    assert_eq!(count(&h, "/v2/search").await, 3);
+}
+
+#[tokio::test]
+async fn resolve_pseudo_deps_and_invalid_ids_make_no_requests() {
+    let h = Harness::new().await;
+    let c = h.client(true);
+    for id in ["minecraft", "java", "fabricloader", "forge", "neoforge"] {
+        assert_eq!(c.resolve_mod_id(id, &[], &[]).await.unwrap(), None);
+    }
+    for bad in ["..", "a/b", "", "has space"] {
+        assert!(matches!(c.resolve_mod_id(bad, &[], &[]).await, Err(Error::Invalid(_))), "{bad}");
+    }
+    assert!(h.requests().await.is_empty());
+}
+
+#[tokio::test]
+async fn resolve_network_failure_is_an_error_not_absent() {
+    let h = Harness::new().await;
+    Mock::given(wiremock::matchers::any()).respond_with(ResponseTemplate::new(503)).mount(&h.server).await;
+    let e = h.client(true).resolve_mod_id("somemod", &[], &[]).await.unwrap_err();
+    assert!(matches!(e, Error::Network(_)), "{e:?}");
+}
+
+#[tokio::test]
+async fn search_sends_query_facets_limit_and_validates() {
+    let h = Harness::new().await;
+    mount_resolve(&h, vec![], vec![hit("AANobbMI", "sodium", "Sodium"), json!({"broken": true})]).await;
+    let c = h.client(true);
+    let facets = vec![strs(&["project_type:mod"]), vec![], strs(&["categories:fabric", "categories:quilt"])];
+    let hits = c.search("sodium", &facets, 5).await.unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, "AANobbMI");
+    assert_eq!(hits[0].environment, vec!["client_and_server".to_string()]);
+    let q = query_map(&h.requests().await[0]);
+    assert_eq!(q["query"], "sodium");
+    assert_eq!(q["limit"], "5");
+    assert_eq!(serde_json::from_str::<Value>(&q["facets"]).unwrap(), json!([["project_type:mod"], ["categories:fabric", "categories:quilt"]]));
+    // No facets: the parameter is omitted.
+    c.search("sodium", &[], 1).await.unwrap();
+    assert!(!query_map(&h.requests().await[1]).contains_key("facets"));
+    assert!(matches!(c.search("x", &[], 0).await, Err(Error::Invalid(_))));
+    assert!(matches!(c.search("x", &[], 101).await, Err(Error::Invalid(_))));
+    assert!(matches!(c.search("x", &[strs(&["nocolon"])], 5).await, Err(Error::Invalid(_))));
+    assert!(matches!(c.search("a\nb", &[], 5).await, Err(Error::Invalid(_))));
+    assert!(matches!(h.client(false).search("x", &[], 5).await, Err(Error::Offline)));
+    assert_eq!(h.requests().await.len(), 2);
     h.assert_ua().await;
 }

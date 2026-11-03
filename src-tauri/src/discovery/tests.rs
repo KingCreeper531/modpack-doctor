@@ -131,11 +131,22 @@ fn modrinth_gen_a(db: &Path, custom_dir: Option<&str>, rows: &[GenARow<'_>]) {
     }
 }
 
-fn modrinth_gen_b(db: &Path, rows: &[(&str, &str, &str, &str, Option<&str>)]) {
+/// (path, name, game_version, loader, loader_version)
+type GenBRow<'a> = (&'a str, &'a str, &'a str, &'a str, Option<&'a str>);
+
+/// Gen-B database in WAL mode, closed (so it is checkpointed into the main file).
+fn modrinth_gen_b(db: &Path, rows: &[GenBRow<'_>]) {
+    drop(modrinth_gen_b_writer(db, rows));
+}
+
+/// Gen-B database written by a connection that stays open with auto-checkpoint off: schema
+/// and rows exist **only in `app.db-wal`** until the returned writer is closed.
+fn modrinth_gen_b_writer(db: &Path, rows: &[GenBRow<'_>]) -> Connection {
     mkdir(db.parent().expect("parent"));
     let c = Connection::open(db).expect("open");
     c.execute_batch(
         "PRAGMA journal_mode = WAL;
+         PRAGMA wal_autocheckpoint = 0;
          CREATE TABLE settings (id INTEGER PRIMARY KEY, custom_dir TEXT NULL);
          INSERT INTO settings (id, custom_dir) VALUES (0, NULL);
          CREATE TABLE instances (id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -159,6 +170,156 @@ fn modrinth_gen_b(db: &Path, rows: &[(&str, &str, &str, &str, Option<&str>)]) {
             rusqlite::params![cs, id, gv, l, lv],
         )
         .expect("content set");
+    }
+    c
+}
+
+/// SQLite URI for `path` (spaces etc. percent-encoded) — used only to show what
+/// `immutable=1` would see.
+fn sqlite_uri(path: &Path, query: &str) -> String {
+    let mut s = path.to_string_lossy().replace('\\', "/");
+    if !s.starts_with('/') {
+        s.insert(0, '/');
+    }
+    let enc: String = s
+        .chars()
+        .map(|c| match c {
+            ' ' => "%20".to_string(),
+            '?' => "%3f".to_string(),
+            '#' => "%23".to_string(),
+            '%' => "%25".to_string(),
+            c => c.to_string(),
+        })
+        .collect();
+    format!("file://{enc}?{query}")
+}
+
+/// File name → SHA-1 of every file directly in `dir` (existence and bytes).
+fn snapshot(dir: &Path) -> std::collections::BTreeMap<String, String> {
+    fs::read_dir(dir)
+        .expect("read dir")
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .map(|e| {
+            let bytes = fs::read(e.path()).expect("read");
+            (e.file_name().to_string_lossy().into_owned(), hex::encode(<sha1::Sha1 as sha1::Digest>::digest(&bytes)))
+        })
+        .collect()
+}
+
+#[test]
+fn modrinth_reads_uncheckpointed_wal_rows() {
+    let t = tmp();
+    let e = env(Os::Windows, &home(&t));
+    let dir = e.data_dir().join("ModrinthApp");
+    let db = dir.join("app.db");
+    let writer = modrinth_gen_b_writer(&db, &[("live", "Live WAL Pack", "1.21.1", "neoforge", Some("21.1.77"))]);
+    mkdir(&dir.join("profiles").join("live"));
+    // Precondition: the data is only in the WAL. `immutable=1` (which ignores the WAL) sees
+    // no tables at all, so a reader using it would miss the instance.
+    assert!(fs::metadata(dir.join("app.db-wal")).expect("wal exists").len() > 0);
+    let immutable = Connection::open_with_flags(
+        sqlite_uri(&db, "immutable=1"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .expect("open immutable");
+    let tables: i64 = immutable
+        .query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table'", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(tables, 0, "test setup: rows must not be checkpointed yet");
+    drop(immutable);
+
+    let d = run_empty(&e);
+    let i = find(&d, "Live WAL Pack");
+    assert_eq!(i.metadata_source, MetadataSource::Launcher);
+    assert_eq!(i.loader, loader(LoaderKind::Neoforge, "21.1.77"));
+    assert_eq!(i.mc_version.as_deref(), Some("1.21.1"));
+    assert!(probe_at(&d, Launcher::Modrinth, &dir).notes.is_empty());
+
+    // Still uncheckpointed while the writer is open: discovery did not checkpoint it.
+    let in_main: i64 = Connection::open_with_flags(
+        sqlite_uri(&db, "immutable=1"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .expect("open immutable")
+    .query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table'", [], |r| r.get(0))
+    .expect("count");
+    assert_eq!(in_main, 0);
+    drop(writer);
+}
+
+#[test]
+fn modrinth_discovery_never_modifies_the_database() {
+    // Rollback-journal (pre-0.15 schema) and closed WAL (0.15+ schema) databases: every file
+    // in the settings dir is byte-identical and no -wal/-shm/-journal file appears.
+    // WAL with a live writer: app.db and app.db-wal are byte-identical and no file appears or
+    // disappears. The -shm bytes are excluded there: it is SQLite's shared-memory index, in
+    // which every reader (the Modrinth App's own included) records a read mark — that is the
+    // locking protocol, not a change to the data.
+    for case in ["rollback", "wal-closed", "wal-live"] {
+        let t = tmp();
+        let e = env(Os::Linux, &home(&t));
+        let dir = e.data_dir().join("ModrinthApp");
+        let db = dir.join("app.db");
+        let writer = match case {
+            "rollback" => {
+                modrinth_gen_a(&db, None, &[("p", "Pack", Some("1.20.1"), Some("forge"), Some("47.3.0"))]);
+                None
+            }
+            "wal-closed" => {
+                modrinth_gen_b(&db, &[("p", "Pack", "1.20.1", "forge", Some("47.3.0"))]);
+                None
+            }
+            _ => Some(modrinth_gen_b_writer(&db, &[("p", "Pack", "1.20.1", "forge", Some("47.3.0"))])),
+        };
+        mkdir(&dir.join("profiles").join("p"));
+        let mask_shm = |mut s: std::collections::BTreeMap<String, String>| {
+            if case == "wal-live" {
+                if let Some(v) = s.get_mut("app.db-shm") {
+                    *v = "present".into();
+                }
+            }
+            s
+        };
+        let before = mask_shm(snapshot(&dir));
+        let d = run_empty(&e);
+        let after = mask_shm(snapshot(&dir));
+        assert_eq!(before, after, "{case}: discovery changed the Modrinth folder");
+        if case != "wal-live" {
+            assert_eq!(before.keys().collect::<Vec<_>>(), vec!["app.db"], "{case}");
+        }
+        let i = find(&d, "Pack");
+        assert_eq!(i.metadata_source, MetadataSource::Launcher, "{case}");
+        assert_eq!(i.loader, loader(LoaderKind::Forge, "47.3.0"), "{case}");
+        drop(writer);
+    }
+}
+
+#[test]
+fn modrinth_reads_a_read_only_database_file() {
+    for wal in [false, true] {
+        let t = tmp();
+        let e = env(Os::Windows, &home(&t));
+        let dir = e.data_dir().join("ModrinthApp");
+        let db = dir.join("app.db");
+        if wal {
+            modrinth_gen_b(&db, &[("p", "Pack", "1.20.1", "fabric", Some("0.16.5"))]);
+        } else {
+            modrinth_gen_a(&db, None, &[("p", "Pack", Some("1.20.1"), Some("fabric"), Some("0.16.5"))]);
+        }
+        mkdir(&dir.join("profiles").join("p"));
+        let mut perms = fs::metadata(&db).expect("meta").permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&db, perms.clone()).expect("set read-only");
+        let before = snapshot(&dir);
+        let d = run_empty(&e);
+        let after = snapshot(&dir);
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&db, perms).expect("restore");
+        assert_eq!(before, after, "wal={wal}");
+        let i = find(&d, "Pack");
+        assert_eq!(i.loader, loader(LoaderKind::Fabric, "0.16.5"), "wal={wal}: {:?}", d.report.probes);
     }
 }
 
@@ -199,7 +360,7 @@ fn modrinth_old_schema_every_os() {
 }
 
 #[test]
-fn modrinth_new_schema_wal() {
+fn modrinth_new_schema() {
     for os in OSES {
         let t = tmp();
         let e = env(os, &home(&t));
@@ -556,8 +717,21 @@ fn curseforge_both_locations_and_loaders() {
 #[test]
 fn curseforge_loader_name_parsing() {
     use super::curseforge::parse_loader_name;
-    let p = |s: &str| parse_loader_name(s).map(|(l, mc)| (l.kind, l.version, mc));
+    let p = |s: &str| parse_loader_name(s, None).map(|(l, mc)| (l.kind, l.version, mc));
+    let pk = |s: &str, k: &str| parse_loader_name(s, Some(k)).map(|(l, mc)| (l.kind, l.version, mc));
     let s = |x: &str| Some(x.to_string());
+    // Hyphens in the loader version and/or the MC version.
+    assert_eq!(p("fabric-0.16.0-beta.1-1.20.1"), Some((LoaderKind::Fabric, s("0.16.0-beta.1"), s("1.20.1"))));
+    assert_eq!(p("quilt-0.26.4-1.20.5-pre1"), Some((LoaderKind::Quilt, s("0.26.4"), s("1.20.5-pre1"))));
+    assert_eq!(
+        p("quilt-0.26.4-beta.2-1.20.5-pre1"),
+        Some((LoaderKind::Quilt, s("0.26.4-beta.2"), s("1.20.5-pre1")))
+    );
+    // The instance's gameVersion settles splits the heuristic would get wrong.
+    assert_eq!(
+        pk("fabric-0.16.0-1.2-1.20.5-pre1", "1.20.5-pre1"),
+        Some((LoaderKind::Fabric, s("0.16.0-1.2"), s("1.20.5-pre1")))
+    );
     assert_eq!(p("forge-47.3.0"), Some((LoaderKind::Forge, s("47.3.0"), None)));
     assert_eq!(p("neoforge-21.1.256"), Some((LoaderKind::Neoforge, s("21.1.256"), None)));
     assert_eq!(p("fabric-0.15.11-1.20.1"), Some((LoaderKind::Fabric, s("0.15.11"), s("1.20.1"))));
@@ -830,6 +1004,61 @@ fn instance_id_is_stable_and_case_folded() {
     let e = env(Os::Windows, &home(&t));
     let d = run(&e, &DiscoveryInput { manual_folders: vec![game.clone()], launcher_roots: vec![] });
     assert_eq!(d.report.instances[0].id, id);
+}
+
+#[test]
+fn instance_id_survives_first_launch_under_a_linked_parent() {
+    let t = tmp();
+    // e.g. a OneDrive-redirected or junctioned Instances folder.
+    let real = t.path().join("Real Instances");
+    mkdir(&real);
+    let linked = t.path().join("Linked Instances");
+    link_dir(&real, &linked);
+    let game = linked.join("Pack").join("minecraft");
+    for os in OSES {
+        let before = instance_id(&game, os);
+        // Same folder reached through the real path.
+        assert_eq!(before, instance_id(&real.join("Pack").join("minecraft"), os), "{os:?}");
+        mkdir(&game);
+        assert_eq!(before, instance_id(&game, os), "{os:?}: id changed after the game dir was created");
+        fs::remove_dir_all(real.join("Pack")).expect("rm");
+    }
+    // Discovery of a never-launched Prism instance under a linked instance dir keeps its id.
+    let e = env(Os::Windows, &home(&t));
+    let data = e.data_dir().join("PrismLauncher");
+    write(&data.join("prismlauncher.cfg"), format!("InstanceDir={}\n", linked.to_string_lossy().replace('\\', "/")));
+    write(&linked.join("New").join("instance.cfg"), "name=Never Launched\n");
+    let id_before = find(&run_empty(&e), "Never Launched").id.clone();
+    mkdir(&linked.join("New").join("minecraft").join("mods"));
+    assert_eq!(find(&run_empty(&e), "Never Launched").id, id_before);
+}
+
+#[test]
+fn hyphenated_versions_in_launcher_metadata() {
+    let t = tmp();
+    let e = env(Os::Windows, &home(&t));
+    // CurseForge: gameVersion with a hyphen, loader version with a hyphen.
+    let cf = e.home.join("curseforge").join("minecraft").join("Instances").join("Pre");
+    write(
+        &cf.join("minecraftinstance.json"),
+        r#"{"name":"Pre","gameVersion":"1.20.5-pre1","baseModLoader":{"name":"fabric-0.16.0-beta.1-1.20.5-pre1"}}"#,
+    );
+    // Vanilla: lastVersionId with both, confirmed by inheritsFrom.
+    let root = e.data_dir().join(".minecraft");
+    write(
+        &root.join("launcher_profiles.json"),
+        r#"{"profiles":{"x":{"name":"Beta Fabric","type":"custom","lastVersionId":"fabric-loader-0.16.0-beta.1-1.20.5-pre1"}}}"#,
+    );
+    write(
+        &root.join("versions").join("fabric-loader-0.16.0-beta.1-1.20.5-pre1").join("fabric-loader-0.16.0-beta.1-1.20.5-pre1.json"),
+        r#"{"id":"fabric-loader-0.16.0-beta.1-1.20.5-pre1","inheritsFrom":"1.20.5-pre1"}"#,
+    );
+    let d = run_empty(&e);
+    for name in ["Pre", "Beta Fabric"] {
+        let i = find(&d, name);
+        assert_eq!(i.loader, loader(LoaderKind::Fabric, "0.16.0-beta.1"), "{name}");
+        assert_eq!(i.mc_version.as_deref(), Some("1.20.5-pre1"), "{name}");
+    }
 }
 
 #[test]

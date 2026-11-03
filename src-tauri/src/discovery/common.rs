@@ -179,6 +179,36 @@ pub(crate) fn loader_from_name(name: &str, version: Option<String>) -> Option<Lo
     Some(LoaderInfo { kind, version: version.and_then(|v| non_empty(&v)) })
 }
 
+/// Does `s` look like the start of a Minecraft version (`1.20.1`, `1.20.5-pre1`, `26.1`,
+/// `26.4-snapshot-6`, `23w51a`)? Loader pre-release tags (`beta.1`, `rc.2`) do not.
+fn looks_like_mc(s: &str) -> bool {
+    let b = s.as_bytes();
+    if !b.first().is_some_and(u8::is_ascii_digit) {
+        return false;
+    }
+    let head = s.split('-').next().unwrap_or(s);
+    let weekly = b.len() >= 6 && b[..2].iter().all(u8::is_ascii_digit) && b[2] == b'w' && b[3..5].iter().all(u8::is_ascii_digit);
+    head.contains('.') || weekly
+}
+
+/// Split `<loader version>-<mc version>` (Fabric/Quilt ids) where both halves may contain
+/// hyphens (`0.16.0-beta.1-1.20.5-pre1`). A known MC version (from other metadata) is matched
+/// as a suffix first; otherwise the first `-` followed by something MC-shaped splits.
+pub(crate) fn split_loader_mc(rest: &str, known_mc: Option<&str>) -> (String, Option<String>) {
+    if let Some(mc) = known_mc.map(str::trim).filter(|m| !m.is_empty()) {
+        if let Some(lv) = rest.strip_suffix(mc).and_then(|r| r.strip_suffix('-')).filter(|lv| !lv.is_empty()) {
+            return (lv.to_string(), Some(mc.to_string()));
+        }
+    }
+    for (i, _) in rest.match_indices('-') {
+        let (lv, mc) = (&rest[..i], &rest[i + 1..]);
+        if !lv.is_empty() && looks_like_mc(mc) {
+            return (lv.to_string(), Some(mc.to_string()));
+        }
+    }
+    (rest.to_string(), None)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Filesystem
 
@@ -204,10 +234,37 @@ pub(crate) fn absolute(p: &Path) -> PathBuf {
     abs.components().collect()
 }
 
+/// Canonical path even when `p` does not exist yet: the nearest existing ancestor is
+/// canonicalised (resolving junctions/symlinks such as OneDrive folders or macOS
+/// `/var` → `/private/var`) and the missing components are appended. So the result does not
+/// change once the folder is created.
+pub(crate) fn resolve(p: &Path) -> PathBuf {
+    if let Some(c) = canonical(p) {
+        return c;
+    }
+    let abs = absolute(p);
+    let mut missing = Vec::new();
+    let mut cur = abs.as_path();
+    while let Some(parent) = cur.parent() {
+        match cur.file_name() {
+            Some(name) => missing.push(name.to_os_string()),
+            None => return abs, // `..` or a root: give up on resolving.
+        }
+        cur = parent;
+        if let Some(mut out) = canonical(cur) {
+            for name in missing.iter().rev() {
+                out.push(name);
+            }
+            return out;
+        }
+    }
+    abs
+}
+
 /// Key for de-duplicating locations: canonical if it exists, case-folded on
 /// case-insensitive systems.
 pub(crate) fn location_key(p: &Path, os: Os) -> String {
-    let base = canonical(p).unwrap_or_else(|| absolute(p));
+    let base = resolve(p);
     let s = base.to_string_lossy().into_owned();
     if os.case_insensitive() {
         s.to_lowercase()
