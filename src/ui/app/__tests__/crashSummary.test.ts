@@ -78,3 +78,14 @@ describe('summarizeCrash', () => {
     expect(summarizeCrash(analyzeCrash({ digest }))).toBeNull();
   });
 });
+
+describe('logPath', () => {
+  it('shows @cwd ids as the launcher folder and leaves game-dir ids alone', async () => {
+    const { logPath } = await import('../../components/format');
+    const { sourceDir, sourceName } = await import('../crashState');
+    expect(logPath('@cwd/hs_err_pid4242.log')).toBe('launcher folder/hs_err_pid4242.log');
+    expect(logPath('crash-reports/crash-x-client.txt')).toBe('crash-reports/crash-x-client.txt');
+    expect(sourceDir('@cwd/hs_err_pid4242.log')).toBe('launcher folder/');
+    expect(sourceName('@cwd/hs_err_pid4242.log')).toBe('hs_err_pid4242.log');
+  });
+});

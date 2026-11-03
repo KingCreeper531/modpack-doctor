@@ -5,7 +5,7 @@
  * the crash view, scrolled to the culprit line.
  */
 import { Button } from '../../components/Button';
-import { formatBytes, formatInt } from '../../components/format';
+import { formatBytes, formatInt, logPath } from '../../components/format';
 import { firstCulpritLine, LOG_KIND_LABEL } from '../../app/crashState';
 import { useActions, useApp } from '../../app/StoreContext';
 import { FindingBody } from './FindingDetails';
@@ -45,7 +45,7 @@ export function CrashDetails({ instanceId, sourceId, findingId }: { instanceId: 
           </SubLegend>
           <Plate label="Log source">
             <PlateRow label="Kind">{LOG_KIND_LABEL[source.kind]}</PlateRow>
-            <PlateRow label="Path">{source.id}</PlateRow>
+            <PlateRow label="Path">{logPath(source.id)}</PlateRow>
             <PlateRow label="Modified">{new Date(source.modifiedMs).toLocaleString()}</PlateRow>
             <PlateRow label="Size">{formatBytes(source.size)}</PlateRow>
             {analysis?.digest ? (

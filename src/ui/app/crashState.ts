@@ -10,6 +10,7 @@
 import type { AppError, LogDigest, LogKind, LogSource } from '../../bindings';
 import type { CrashSummary } from '../../core/crash/summary';
 import type { Finding, FrameRef, LogLine } from '../../core/model';
+import { logPath } from '../components/format';
 
 export type FindingsTab = 'findings' | 'crashes';
 export type CrashPane = 'diagnosis' | 'log';
@@ -113,8 +114,9 @@ export function sourceName(id: string): string {
 
 /** `crash-reports/crash-…-client.txt` → `crash-reports/` (empty for a top-level file). */
 export function sourceDir(id: string): string {
-  const i = id.lastIndexOf('/');
-  return i < 0 ? '' : id.slice(0, i + 1);
+  const path = logPath(id);
+  const i = path.lastIndexOf('/');
+  return i < 0 ? '' : path.slice(0, i + 1);
 }
 
 /**

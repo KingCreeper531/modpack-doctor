@@ -21,12 +21,15 @@
 //!     has exited, plus `exit_grace_ms` (5 s). If none was running, it lasts `exit_grace_ms`
 //!     after an emission that included the exit, else `quiet_ms` (60 s).
 //!   - Without process tracking it lasts `quiet_ms` from the emission.
-//!   - A new game process (a pid not seen before) lifts it at once.
+//!   - A new game process (a pid not seen before) lifts it at once. So does a new
+//!     `latest.log` (`LogReset`, written at launch) when no reported process is still running,
+//!     which covers relaunches whose process cannot be matched or reuses a pid.
 //!   - A **new crash file** that appears after the emitted episode's coalesce window
 //!     (`max_coalesce_ms` after the episode opened, and at least `settle_ms` after the
 //!     emission) lifts it and opens a new episode: a crash report or hs_err written that much
 //!     later belongs to a later crash (for example an in-game crash after an error screen the
-//!     game survived). Inside that window the file belongs to the emitted crash and is dropped.
+//!     game survived). Inside that window the file belongs to the emitted crash and is dropped,
+//!     even if the suppression itself already ended.
 //! - Within an episode only the first hit per anchor and the first sighting per file count.
 //! - Source: newest crash report > newest hs_err > `logs/latest.log`.
 
@@ -159,8 +162,6 @@ struct Suppression {
     pids: HashSet<u32>,
     /// When the suppression ends; `None` while `pids` is not empty.
     until: Option<u64>,
-    /// A new crash file before this time belongs to the emitted crash.
-    coalesce_until: u64,
 }
 
 #[derive(Debug)]
@@ -173,6 +174,9 @@ pub struct EpisodeMachine {
     contextual: Vec<Contextual>,
     open: Option<Open>,
     suppressed: Option<Suppression>,
+    /// A new crash file before this time belongs to the last emitted crash, even after the
+    /// suppression itself ended (an exit-only emission ends it after `exit_grace_ms`).
+    file_quiet_until: u64,
 }
 
 impl EpisodeMachine {
@@ -186,6 +190,7 @@ impl EpisodeMachine {
             contextual: Vec::new(),
             open: None,
             suppressed: None,
+            file_quiet_until: 0,
         }
     }
 
@@ -213,12 +218,21 @@ impl EpisodeMachine {
         self.expire(now, &mut out);
         match input {
             Input::Tick => {}
-            Input::LogReset => self.contextual.clear(),
+            Input::LogReset => {
+                self.contextual.clear();
+                // `latest.log` is replaced at launch: with no reported process still running,
+                // that is a new run, which the last crash must not keep quiet.
+                if self.suppressed.as_ref().is_some_and(|s| s.pids.is_empty()) {
+                    self.suppressed = None;
+                    self.file_quiet_until = 0;
+                }
+            }
             Input::ProcessStarted(pid) => {
                 self.running.insert(pid);
                 if self.seen.insert(pid) {
                     // A new game process: a new run, so the last crash no longer suppresses.
                     self.suppressed = None;
+                    self.file_quiet_until = 0;
                 }
             }
             Input::ProcessExited(pid) => {
@@ -264,13 +278,11 @@ impl EpisodeMachine {
                 open.add_anchor(anchor, AnchorTier::Fatal, line);
             }
             Input::FatalFile { source_id, kind } => {
-                if let Some(s) = &self.suppressed {
-                    if now < s.coalesce_until {
-                        return out;
-                    }
-                    // Written well after the reported crash: a new one.
-                    self.suppressed = None;
+                if now < self.file_quiet_until {
+                    return out;
                 }
+                // Written well after the reported crash: a new one.
+                self.suppressed = None;
                 let open = self.open_episode(now);
                 open.add_file(source_id, kind);
             }
@@ -325,8 +337,8 @@ impl EpisodeMachine {
         } else {
             Some(now + t.quiet_ms)
         };
-        let coalesce_until = (open.first_at + t.max_coalesce_ms).max(now + t.settle_ms);
-        self.suppressed = Some(Suppression { pids, until, coalesce_until });
+        self.file_quiet_until = (open.first_at + t.max_coalesce_ms).max(now + t.settle_ms);
+        self.suppressed = Some(Suppression { pids, until });
         out.push(open.into_emission());
     }
 }

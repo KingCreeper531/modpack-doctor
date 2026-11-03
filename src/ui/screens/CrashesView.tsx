@@ -15,7 +15,7 @@ import type { Finding, Severity } from '../../core/model';
 import { Button } from '../components/Button';
 import { cx } from '../components/cx';
 import { ErrorRow, isUnavailable } from '../components/ErrorRow';
-import { formatAgo, formatBytes, formatInt, plural } from '../components/format';
+import { formatAgo, formatBytes, formatInt, logPath, plural } from '../components/format';
 import { LogViewer } from '../components/LogViewer';
 import { onRovingKeyDown } from '../components/roving';
 import { Pip, type PipTone } from '../components/Severity';
@@ -41,7 +41,7 @@ function SourceRow({ source, selected, analysis, now, onSelect }: { source: LogS
         type="button"
         aria-current={selected || undefined}
         onClick={onSelect}
-        title={source.id}
+        title={logPath(source.id)}
         className={cx(
           'flex h-8 w-full flex-col justify-center border-b border-l-2 border-b-line pr-2 pl-[14px] text-left',
           selected ? 'border-l-signal bg-raised' : 'border-l-transparent hover:bg-raised',
@@ -190,7 +190,7 @@ function DigestLog({ instanceId, analysis, scrollToLine, scrollRequest }: { inst
         onJarClick={a.revealJar}
         scrollToLine={scrollToLine}
         scrollRequest={scrollRequest}
-        label={`Log ${analysis.digest.source.id}`}
+        label={`Log ${logPath(analysis.digest.source.id)}`}
         className="min-h-0 flex-1 border-0"
       />
     </>

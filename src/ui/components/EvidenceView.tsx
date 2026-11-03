@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 
 import type { Evidence } from '../../core/model';
-import { basename, formatInt } from './format';
+import { basename, formatInt, logPath } from './format';
 import { clipExcerpt, excerptLines } from './logModel';
 import { LogViewer } from './LogViewer';
 
@@ -74,8 +74,8 @@ export function EvidenceView({ evidence, jarLabel, onJarClick, maxHeight = 288, 
     case 'log':
       return (
         <div>
-          <Source kind="log">{evidence.source}</Source>
-          <LogViewer lines={evidence.lines} frames={evidence.frames} maxHeight={maxHeight} label={`Excerpt of ${evidence.source}`} {...opt} />
+          <Source kind="log">{logPath(evidence.source)}</Source>
+          <LogViewer lines={evidence.lines} frames={evidence.frames} maxHeight={maxHeight} label={`Excerpt of ${logPath(evidence.source)}`} {...opt} />
         </div>
       );
     case 'metadata':

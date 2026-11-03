@@ -64,3 +64,11 @@ export function hostOf(url: string): string {
 export function opNumber(index: number): string {
   return String(index + 1).padStart(2, '0');
 }
+
+/**
+ * A log source id as shown to people: `@cwd/…` ids (a JVM crash log in the launcher's working
+ * folder, CONTRACTS invariant 5) read as `launcher folder/…`; game-dir ids are shown as they are.
+ */
+export function logPath(id: string): string {
+  return id.startsWith('@cwd/') ? `launcher folder/${id.slice('@cwd/'.length)}` : id;
+}

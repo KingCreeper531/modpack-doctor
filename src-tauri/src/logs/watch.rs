@@ -556,8 +556,9 @@ impl WatchLoop {
             exited = self.pids.difference(&now).copied().collect::<Vec<_>>();
             started.sort_unstable();
             exited.sort_unstable();
+            // Recorded once known: sysinfo may not report a just-spawned JVM's working dir.
             for m in matches {
-                if !started.contains(&m.pid) {
+                if self.cwd_of.contains_key(&m.pid) {
                     continue;
                 }
                 if let Some(cwd) = m.cwd.filter(|c| !process::same_dir(c, &self.spec.game_dir)) {

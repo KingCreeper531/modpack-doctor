@@ -430,3 +430,46 @@ fn next_deadline_reports_the_settle_time() {
     assert!(m.is_suppressed());
     assert_eq!(m.next_deadline(), None);
 }
+
+#[test]
+fn a_new_latest_log_lifts_a_suppression_without_processes() {
+    // Untracked (or unmatched) game: a fatal emission suppresses for quiet_ms. A relaunch writes a
+    // new latest.log; its own load-time failure must still emit.
+    let t = EpisodeTimings::default();
+    let mut m = EpisodeMachine::new(t, false);
+    let fatal = |n| Input::FatalAnchor { anchor: "Mod loading has failed".into(), line: n };
+    assert!(m.handle(fatal(10), 0).is_empty());
+    assert_eq!(m.handle(Input::Tick, t.settle_ms).len(), 1);
+    assert!(m.is_suppressed());
+    let relaunch = t.settle_ms + 20_000;
+    assert!(m.handle(Input::LogReset, relaunch).is_empty());
+    assert!(!m.is_suppressed());
+    assert!(m.handle(fatal(12), relaunch + 1_000).is_empty());
+    assert_eq!(m.handle(Input::Tick, relaunch + 1_000 + t.settle_ms).len(), 1);
+}
+
+#[test]
+fn a_new_latest_log_keeps_the_suppression_while_the_crashed_process_runs() {
+    let t = EpisodeTimings::default();
+    let mut m = EpisodeMachine::new(t, true);
+    assert!(m.handle(Input::ProcessStarted(7), 0).is_empty());
+    m.handle(Input::FatalAnchor { anchor: "Mod loading has failed".into(), line: 3 }, 1_000);
+    assert_eq!(m.handle(Input::Tick, 1_000 + t.settle_ms).len(), 1);
+    m.handle(Input::LogReset, 5_000);
+    assert!(m.is_suppressed());
+}
+
+#[test]
+fn a_crash_file_after_an_exit_only_grace_but_inside_the_coalesce_window_is_the_same_crash() {
+    let t = EpisodeTimings::default();
+    let mut m = EpisodeMachine::new(t, true);
+    m.handle(Input::ProcessStarted(7), 0);
+    m.handle(Input::ContextualAnchor { anchor: "Caused by:".into(), line: 4 }, 1_000);
+    assert_eq!(m.handle(Input::ProcessExited(7), 2_000).len(), 1);
+    // The 5 s exit grace is over, but the file is still within max_coalesce_ms of the episode.
+    let late = 2_000 + t.exit_grace_ms + 1_000;
+    assert!(late < 2_000 + t.max_coalesce_ms);
+    let file = Input::FatalFile { source_id: "crash-reports/crash-x-client.txt".into(), kind: LogKind::CrashReport };
+    assert!(m.handle(file, late).is_empty());
+    assert!(m.handle(Input::Tick, late + t.max_coalesce_ms).is_empty());
+}
