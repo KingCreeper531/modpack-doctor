@@ -3,7 +3,7 @@
 
 use toml::{Table, Value};
 
-use super::util::{excerpt, maven_range, Parsed};
+use super::util::{excerpt, has_placeholder, maven_range, placeholder_id, Parsed};
 use crate::model::{Dependency, DependencyKind, LoaderKind, ModEnvironment, ModMeta};
 
 /// Main section of `META-INF/MANIFEST.MF` (continuation lines joined).
@@ -79,6 +79,9 @@ pub(crate) fn parse_mods_toml(text: &str, file: &str, neoforge_file: bool, manif
     for m in mods {
         let Some(m) = m.as_table() else { continue };
         let Some(mod_id) = str_of(m, "modId") else { continue };
+        if has_placeholder(mod_id) {
+            return Err(placeholder_id("modId", mod_id));
+        }
         // Forge's own default when `version` is omitted.
         let version = resolve_placeholders(str_of(m, "version").unwrap_or("1"), manifest);
         let name = str_of(m, "displayName").map(str::to_string);

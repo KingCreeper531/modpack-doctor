@@ -50,7 +50,26 @@ pub(crate) fn excerpt(text: &str) -> String {
     text[..end].to_string()
 }
 
+/// True when `s` still contains an unexpanded build-template placeholder (`${mod_id}`).
+pub(crate) fn has_placeholder(s: &str) -> bool {
+    s.contains("${")
+}
+
+/// The MetadataError reason for a mod id that is an unexpanded placeholder.
+pub(crate) fn placeholder_id(field: &str, id: &str) -> String {
+    format!("{field} \"{id}\" is an unexpanded build-template placeholder")
+}
+
+/// A range whose text still holds a `${…}` placeholder: unknown, kept verbatim.
+pub(crate) fn placeholder_range(syntax: RangeSyntax, original: String) -> RawRange {
+    RawRange { syntax, raw: Vec::new(), unrepresentable: Some(original) }
+}
+
+/// Maven range from a spec; a `${…}` placeholder makes it `unrepresentable` (original text).
 pub(crate) fn maven_range(spec: Option<&str>) -> RawRange {
+    if let Some(s) = spec.filter(|s| has_placeholder(s)) {
+        return placeholder_range(RangeSyntax::Maven, s.to_string());
+    }
     let raw = match spec.map(str::trim) {
         Some(s) if !s.is_empty() => vec![s.to_string()],
         _ => Vec::new(),

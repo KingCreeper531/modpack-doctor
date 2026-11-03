@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::util::{excerpt, maven_range, parse_json_lenient, NestedDecl, Parsed};
+use super::util::{excerpt, has_placeholder, maven_range, parse_json_lenient, placeholder_id, NestedDecl, Parsed};
 use crate::model::{Dependency, DependencyKind, JarJarInfo, LoaderKind, ModEnvironment, ModMeta, RawRange};
 
 /// `modid@range` (range optional) → dependency.
@@ -17,10 +17,10 @@ fn legacy_dep(spec: &str, kind: DependencyKind) -> Option<Dependency> {
 /// `mcversion` is a single version (`1.12.2`, often just `1.12`) that legacy Forge never
 /// enforced. It is passed through as a bare Maven version, i.e. a soft requirement that every
 /// version satisfies (CONTRACTS invariant 4: Rust restructures, never evaluates). Explicit
-/// ranges pass through unchanged; unexpanded `${…}` placeholders are dropped.
+/// ranges pass through unchanged; an unexpanded `${…}` placeholder becomes `unrepresentable`.
 fn mc_version_range(v: Option<&str>) -> Option<RawRange> {
     let v = v?.trim();
-    if v.is_empty() || v.contains("${") {
+    if v.is_empty() {
         return None;
     }
     Some(maven_range(Some(v)))
@@ -48,6 +48,9 @@ pub(crate) fn parse_mcmod_info(text: &str, file: &str) -> Result<Parsed, String>
     for entry in list {
         let Some(o) = entry.as_object() else { continue };
         let Some(mod_id) = o.get("modid").or_else(|| o.get("modId")).and_then(Value::as_str) else { continue };
+        if has_placeholder(mod_id) {
+            return Err(placeholder_id("modid", mod_id));
+        }
         let mut deps: Vec<Dependency> = strings(o.get("requiredMods"))
             .into_iter()
             .filter_map(|s| legacy_dep(s, DependencyKind::Required))

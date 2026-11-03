@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::util::{excerpt, parse_json_lenient, string_or_array, NestedDecl, Parsed};
+use super::util::{excerpt, has_placeholder, parse_json_lenient, placeholder_id, placeholder_range, string_or_array, NestedDecl, Parsed};
 use crate::model::{Dependency, DependencyKind, LoaderKind, ModEnvironment, ModMeta, RangeSyntax, RawRange};
 
 const DEP_KEYS: [(&str, DependencyKind); 5] = [
@@ -14,8 +14,13 @@ const DEP_KEYS: [(&str, DependencyKind); 5] = [
 ];
 
 /// Fabric version predicate value: a string, or an array of strings (OR).
+/// A `${…}` placeholder anywhere makes it `unrepresentable` (the string, or the JSON array).
 fn fabric_range(v: &Value) -> RawRange {
     match v {
+        Value::String(s) if has_placeholder(s) => placeholder_range(RangeSyntax::Fabric, s.clone()),
+        Value::Array(xs) if xs.iter().any(|x| x.as_str().is_some_and(has_placeholder)) => {
+            placeholder_range(RangeSyntax::Fabric, v.to_string())
+        }
         Value::String(s) => RawRange { syntax: RangeSyntax::Fabric, raw: vec![s.clone()], unrepresentable: None },
         Value::Array(xs) if xs.iter().all(Value::is_string) => RawRange {
             syntax: RangeSyntax::Fabric,
@@ -40,6 +45,9 @@ pub(crate) fn parse_fabric(text: &str, file: &str) -> Result<Parsed, String> {
     let v = parse_json_lenient(text)?;
     let obj = v.as_object().ok_or("not a JSON object")?;
     let mod_id = obj.get("id").and_then(Value::as_str).ok_or("missing \"id\"")?.to_string();
+    if has_placeholder(&mod_id) {
+        return Err(placeholder_id("id", &mod_id));
+    }
     let version = obj.get("version").and_then(Value::as_str).unwrap_or_default().to_string();
 
     let mut deps = Vec::new();

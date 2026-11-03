@@ -4,7 +4,9 @@
 use serde_json::Value;
 
 use super::fabric::environment;
-use super::util::{excerpt, fabric_any, parse_json_lenient, strip_maven_group, NestedDecl, Parsed};
+use super::util::{
+    excerpt, fabric_any, has_placeholder, parse_json_lenient, placeholder_id, placeholder_range, strip_maven_group, NestedDecl, Parsed,
+};
 use crate::model::{Dependency, DependencyKind, LoaderKind, ModMeta, RangeSyntax, RawRange};
 
 /// Maximum number of DNF entries before a range is reported as `unrepresentable`.
@@ -13,6 +15,10 @@ pub(crate) const DNF_CAP: usize = 64;
 /// Normalise a Quilt `versions` value. Absent → any version.
 pub(crate) fn quilt_versions(v: Option<&Value>) -> RawRange {
     let Some(v) = v else { return fabric_any() };
+    if has_placeholder(&v.to_string()) {
+        let original = v.as_str().map_or_else(|| v.to_string(), str::to_string);
+        return placeholder_range(RangeSyntax::Fabric, original);
+    }
     match dnf(v) {
         Some(entries) => RawRange {
             syntax: RangeSyntax::Fabric,
@@ -95,6 +101,9 @@ pub(crate) fn parse_quilt(text: &str, file: &str) -> Result<Parsed, String> {
     let obj = v.as_object().ok_or("not a JSON object")?;
     let ql = obj.get("quilt_loader").and_then(Value::as_object).ok_or("missing \"quilt_loader\"")?;
     let mod_id = ql.get("id").and_then(Value::as_str).ok_or("missing \"quilt_loader.id\"")?.to_string();
+    if has_placeholder(&mod_id) {
+        return Err(placeholder_id("quilt_loader.id", &mod_id));
+    }
     let version = ql.get("version").and_then(Value::as_str).unwrap_or_default().to_string();
 
     let mut deps = Vec::new();

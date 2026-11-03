@@ -12,7 +12,7 @@ use super::forge::{parse_mods_toml, Manifest};
 use super::util::{decode_text, NestedDecl, Parsed};
 use super::{fabric, legacy, module_info, quilt, MAX_NESTED_DEPTH};
 use crate::jar_id;
-use crate::model::{JarRecord, JarStatus, LoaderKind, ScanIssue};
+use crate::model::{JarRecord, JarStatus, LoaderKind, MetadataError, ScanIssue};
 
 /// Classes whose header is read for `max_class_major` (evenly spread over the jar).
 pub(crate) const CLASS_SAMPLE: usize = 64;
@@ -181,16 +181,24 @@ fn class_major<R: Read + std::io::Seek>(zip: &mut ZipArchive<R>, idx: usize) -> 
 }
 
 /// Read a metadata entry as text. None when absent; read failures are recorded in `errors`.
-fn read_text(zip: &mut ZipArchive<Cursor<&[u8]>>, name: &str, budget: &mut Budget, errors: &mut Vec<String>) -> Option<String> {
+fn read_text(zip: &mut ZipArchive<Cursor<&[u8]>>, name: &str, budget: &mut Budget, errors: &mut Vec<MetadataError>) -> Option<String> {
     let idx = zip.index_for_name(name)?;
     let cap = budget.limits.metadata_cap;
     match read_entry(zip, idx, cap, budget) {
         Ok(b) => Some(decode_text(&b)),
         Err(e) => {
-            errors.push(format!("{name}: {}", e.describe()));
+            errors.push(MetadataError { file: name.to_string(), reason: e.describe() });
             None
         }
     }
+}
+
+/// Parse one mod-metadata file, turning an empty file into a readable error.
+fn parse_file(text: &str, parse: impl FnOnce(&str) -> Result<Parsed, String>) -> Result<Parsed, String> {
+    if text.trim().is_empty() {
+        return Err("the file is empty".into());
+    }
+    parse(text)
 }
 
 /// Scan `bytes` as the jar described by `ctx`, appending its record and those of all nested
@@ -249,8 +257,9 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
     };
     rec.max_class_major = sample.into_iter().filter_map(|i| class_major(&mut zip, i)).max();
 
-    // Metadata.
-    let mut errors: Vec<String> = Vec::new();
+    // Metadata. Each file is parsed on its own: a broken file is listed in `metadata_errors`
+    // and only makes the jar Corrupt when no mod-metadata file produced a ModMeta.
+    let mut errors: Vec<MetadataError> = Vec::new();
     let manifest = read_text(&mut zip, MANIFEST, budget, &mut errors).map(|t| Manifest::parse(&t)).unwrap_or_default();
 
     let mi_name = module_info_idx.or(versioned_mi.map(|(_, i)| i)).and_then(|i| {
@@ -261,31 +270,40 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
         manifest.get("Automatic-Module-Name").map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
     });
 
+    type ParseFn = fn(&str, &Manifest) -> Result<Parsed, String>;
+    let formats: [(&str, ParseFn); 5] = [
+        (NEOFORGE_TOML, |t, m| parse_mods_toml(t, NEOFORGE_TOML, true, m)),
+        (FORGE_TOML, |t, m| parse_mods_toml(t, FORGE_TOML, false, m)),
+        (FABRIC_JSON, |t, _| fabric::parse_fabric(t, FABRIC_JSON)),
+        (QUILT_JSON, |t, _| quilt::parse_quilt(t, QUILT_JSON)),
+        (MCMOD_INFO, |t, _| legacy::parse_mcmod_info(t, MCMOD_INFO)),
+    ];
     let mut parsed: Vec<Parsed> = Vec::new();
-    let mut add = |file: &str, r: Result<Parsed, String>, errors: &mut Vec<String>| match r {
-        Ok(p) => parsed.push(p),
-        Err(e) => errors.push(format!("{file}: {e}")),
-    };
-    if let Some(t) = read_text(&mut zip, NEOFORGE_TOML, budget, &mut errors) {
-        add(NEOFORGE_TOML, parse_mods_toml(&t, NEOFORGE_TOML, true, &manifest), &mut errors);
-    }
-    if let Some(t) = read_text(&mut zip, FORGE_TOML, budget, &mut errors) {
-        add(FORGE_TOML, parse_mods_toml(&t, FORGE_TOML, false, &manifest), &mut errors);
-    }
-    if let Some(t) = read_text(&mut zip, FABRIC_JSON, budget, &mut errors) {
-        add(FABRIC_JSON, fabric::parse_fabric(&t, FABRIC_JSON), &mut errors);
-    }
-    if let Some(t) = read_text(&mut zip, QUILT_JSON, budget, &mut errors) {
-        add(QUILT_JSON, quilt::parse_quilt(&t, QUILT_JSON), &mut errors);
-    }
-    if let Some(t) = read_text(&mut zip, MCMOD_INFO, budget, &mut errors) {
-        add(MCMOD_INFO, legacy::parse_mcmod_info(&t, MCMOD_INFO), &mut errors);
+    let mut mod_files_present = false;
+    let mut mod_file_errors: Vec<String> = Vec::new();
+    for (file, parse) in formats {
+        if zip.index_for_name(file).is_none() {
+            continue;
+        }
+        mod_files_present = true;
+        let before = errors.len();
+        let Some(text) = read_text(&mut zip, file, budget, &mut errors) else {
+            mod_file_errors.extend(errors[before..].iter().map(|e| format!("{}: {}", e.file, e.reason)));
+            continue;
+        };
+        match parse_file(&text, |t| parse(t, &manifest)) {
+            Ok(p) => parsed.push(p),
+            Err(reason) => {
+                mod_file_errors.push(format!("{file}: {reason}"));
+                errors.push(MetadataError { file: file.to_string(), reason });
+            }
+        }
     }
     let mut decls: Vec<NestedDecl> = Vec::new();
     if let Some(t) = read_text(&mut zip, JARJAR, budget, &mut errors) {
         match legacy::parse_jarjar(&t) {
             Ok(d) => decls.extend(d),
-            Err(e) => errors.push(format!("{JARJAR}: {e}")),
+            Err(reason) => errors.push(MetadataError { file: JARJAR.to_string(), reason }),
         }
     }
 
@@ -308,14 +326,15 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
     }
     rec.loaders = loaders;
 
-    if !errors.is_empty() {
-        let reason = errors.join("; ");
+    if mod_files_present && rec.mods.is_empty() {
+        let reason = mod_file_errors.join("; ");
         issues.push(ScanIssue {
             subject: ctx.id.clone(),
-            message: format!("{} has invalid metadata ({reason}).", ctx.file_name),
+            message: format!("{} has no readable mod metadata ({reason}).", ctx.file_name),
         });
         rec.status = JarStatus::Corrupt { reason };
     }
+    rec.metadata_errors = errors;
 
     // Nested jars.
     let mut children: Vec<JarRecord> = Vec::new();
