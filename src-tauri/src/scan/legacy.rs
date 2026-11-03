@@ -1,9 +1,14 @@
 //! Legacy Forge `mcmod.info` and Forge/NeoForge `META-INF/jarjar/metadata.json`.
+//!
+//! Legacy FML (1.12.2 / 1.7.10) enforces `requiredMods` / `dependencies` / `dependants` only for
+//! entries with `"useDependencyInformation": true`, and never enforces `mcversion`
+//! (docs/research/loader-enforcement.md, "Legacy FML"). So deps — and a `loader_range` from the
+//! `forge` entry — are emitted only under that flag, and `mc_range` is always None.
 
 use serde_json::Value;
 
 use super::util::{excerpt, has_placeholder, maven_range, parse_json_lenient, placeholder_id, NestedDecl, Parsed};
-use crate::model::{Dependency, DependencyKind, JarJarInfo, LoaderKind, ModEnvironment, ModMeta, RawRange};
+use crate::model::{Dependency, DependencyKind, JarJarInfo, LoaderKind, ModEnvironment, ModMeta};
 
 /// `modid@range` (range optional) → dependency.
 fn legacy_dep(spec: &str, kind: DependencyKind) -> Option<Dependency> {
@@ -12,18 +17,6 @@ fn legacy_dep(spec: &str, kind: DependencyKind) -> Option<Dependency> {
         None => (spec.trim(), None),
     };
     (!id.is_empty()).then(|| Dependency { mod_id: id.to_string(), kind, range: maven_range(range), side: None })
-}
-
-/// `mcversion` is a single version (`1.12.2`, often just `1.12`) that legacy Forge never
-/// enforced. It is passed through as a bare Maven version, i.e. a soft requirement that every
-/// version satisfies (CONTRACTS invariant 4: Rust restructures, never evaluates). Explicit
-/// ranges pass through unchanged; an unexpanded `${…}` placeholder becomes `unrepresentable`.
-fn mc_version_range(v: Option<&str>) -> Option<RawRange> {
-    let v = v?.trim();
-    if v.is_empty() {
-        return None;
-    }
-    Some(maven_range(Some(v)))
 }
 
 fn strings(v: Option<&Value>) -> Vec<&str> {
@@ -51,14 +44,22 @@ pub(crate) fn parse_mcmod_info(text: &str, file: &str) -> Result<Parsed, String>
         if has_placeholder(mod_id) {
             return Err(placeholder_id("modid", mod_id));
         }
-        let mut deps: Vec<Dependency> = strings(o.get("requiredMods"))
-            .into_iter()
-            .filter_map(|s| legacy_dep(s, DependencyKind::Required))
-            .collect();
-        for s in strings(o.get("dependencies")) {
-            if let Some(d) = legacy_dep(s, DependencyKind::Optional) {
-                if !deps.iter().any(|x| x.mod_id == d.mod_id) {
-                    deps.push(d);
+        // Legacy FML reads these lists only when the entry opts in; otherwise the real
+        // dependencies live in the `@Mod` annotation (not parsed yet), so none are emitted.
+        let use_dep_info = o.get("useDependencyInformation").and_then(Value::as_bool) == Some(true);
+        let mut deps: Vec<Dependency> = Vec::new();
+        if use_dep_info {
+            for (key, kind) in [
+                ("requiredMods", DependencyKind::Required),
+                ("dependencies", DependencyKind::Optional),
+                ("dependants", DependencyKind::Optional),
+            ] {
+                for s in strings(o.get(key)) {
+                    if let Some(d) = legacy_dep(s, kind) {
+                        if !deps.iter().any(|x| x.mod_id == d.mod_id) {
+                            deps.push(d);
+                        }
+                    }
                 }
             }
         }
@@ -73,7 +74,8 @@ pub(crate) fn parse_mcmod_info(text: &str, file: &str) -> Result<Parsed, String>
             loader: LoaderKind::Legacyforge,
             provides: Vec::new(),
             environment: ModEnvironment::Unknown,
-            mc_range: mc_version_range(o.get("mcversion").and_then(Value::as_str)),
+            // `mcversion` is display-only; FML never enforces it.
+            mc_range: None,
             loader_range,
             language_loader: None,
             language_range: None,

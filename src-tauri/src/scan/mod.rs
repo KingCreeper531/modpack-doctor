@@ -37,8 +37,9 @@
 //!   duplicates within one jar.
 //! - Known gap: a Quilt "any of" dependency array (`depends: [[a, b]]`) cannot be expressed as
 //!   one `Dependency`, so each alternative becomes an individually Optional dependency.
-//! - Legacy `mcmod.info` `mcversion` is emitted as a bare Maven version (a soft requirement
-//!   every version satisfies), because legacy Forge never enforced it.
+//! - Legacy `mcmod.info`: `mc_range` is always None (FML never enforces `mcversion`), and
+//!   `deps` / `loader_range` are emitted only for entries with `"useDependencyInformation": true`
+//!   (FML's own gate). The enforced `@Mod` annotation data is not parsed yet.
 //!
 //! Jar ids come only from `crate::jar_id` (`top_level_ids`, `nested_id`).
 

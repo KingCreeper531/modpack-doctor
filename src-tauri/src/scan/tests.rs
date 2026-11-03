@@ -294,24 +294,46 @@ fn quilt_mod_json() {
 #[test]
 fn mcmod_info_both_forms() {
     let arr = r#"[{"modid":"oldmod","name":"Old Mod","version":"1.0","mcversion":"1.12.2",
-        "requiredMods":["Forge@[14.23.5,)","baubles"],"dependencies":["jei"],}]"#;
+        "useDependencyInformation": true,
+        "requiredMods":["Forge@[14.23.5,)","baubles"],"dependencies":["jei@[4.15,)"],"dependants":["addon"],}]"#;
     let r = top(JarBuilder::new().mcmod_info(arr));
     assert_eq!(r.status, JarStatus::Ok, "{:?}", r.status);
     assert_eq!(r.loaders, vec![LoaderKind::Legacyforge]);
     let m = &r.mods[0];
     assert_eq!(m.mod_id, "oldmod");
-    assert_eq!(m.mc_range, Some(maven("1.12.2")), "bare soft version, never an exact range");
+    assert_eq!(m.mc_range, None, "mcversion is never enforced");
     assert_eq!(m.loader_range, Some(maven("[14.23.5,)")));
     assert_eq!(dep(m, "baubles").kind, DependencyKind::Required);
     assert_eq!(dep(m, "jei").kind, DependencyKind::Optional);
+    assert_eq!(dep(m, "jei").range, maven("[4.15,)"));
+    assert_eq!(dep(m, "addon").kind, DependencyKind::Optional);
 
     let list = r#"{"modListVersion":2,"modList":[{"modid":"a","version":"1"},{"modid":"b","version":"2","mcversion":"${mcversion}"}]}"#;
     let r = top(JarBuilder::new().mcmod_info(list));
     assert_eq!(r.mods.iter().map(|m| m.mod_id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
-    assert_eq!(
-        r.mods[1].mc_range,
-        Some(RawRange { syntax: RangeSyntax::Maven, raw: vec![], unrepresentable: Some("${mcversion}".into()) })
-    );
+    assert!(r.mods.iter().all(|m| m.mc_range.is_none()));
+}
+
+#[test]
+fn mcmod_info_deps_need_use_dependency_information() {
+    // Absent (default false) and explicit false: lists are ignored, as legacy FML does.
+    for flag in ["", r#""useDependencyInformation": false,"#, r#""useDependencyInformation": "true","#] {
+        let json = format!(
+            r#"[{{"modid":"rl","version":"1","mcversion":"1.12",{flag}
+                "requiredMods":["forge@[14.23.5.2847,)","llibrary@[1.7.19]"],"dependencies":["baubles"],"dependants":["x"]}}]"#
+        );
+        let r = top(JarBuilder::new().mcmod_info(&json));
+        assert_eq!(r.status, JarStatus::Ok, "{:?}", r.status);
+        let m = &r.mods[0];
+        assert!(m.deps.is_empty(), "flag {flag:?}: {:?}", m.deps);
+        assert_eq!(m.loader_range, None);
+        assert_eq!(m.mc_range, None);
+    }
+    // Per entry: only the opted-in entry gets deps.
+    let json = r#"[{"modid":"a","useDependencyInformation":true,"requiredMods":["b"]},{"modid":"b","requiredMods":["c"]}]"#;
+    let r = top(JarBuilder::new().mcmod_info(json));
+    assert_eq!(r.mods[0].deps.len(), 1);
+    assert!(r.mods[1].deps.is_empty());
 }
 
 #[test]
