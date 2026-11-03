@@ -32,8 +32,13 @@ export interface LogViewerProps {
   onJarClick?: (jarId: string) => void;
   /** Cap the viewer height; it scrolls inside. */
   maxHeight?: number;
-  /** Bring this line number into view (centred) when it changes. */
+  /**
+   * Bring this line number into view (centred) when the request changes: a new line, or a new
+   * `scrollRequest` for the same line. New `lines` alone (a re-analysis) never scroll.
+   */
   scrollToLine?: number | null;
+  /** Bump to ask for `scrollToLine` again (e.g. every "Show in log" click). */
+  scrollRequest?: number;
   label?: string;
   className?: string;
 }
@@ -79,7 +84,22 @@ function Row({ row: r, gutter, jarLabel, onJarClick, fixed }: RowProps) {
   );
 }
 
-function VirtualRows({ rows, gutter, gutterWidth, jarLabel, onJarClick, maxHeight, scrollToLine, label, className }: {
+/**
+ * Runs `scroll` once per scroll request (`line` + `request`), not when the rows change. A
+ * request whose line is not among the rows yet stays pending until it is (`scroll` → false).
+ */
+function useScrollRequest(line: number | null | undefined, request: number | undefined, scroll: (line: number) => boolean) {
+  const handled = useRef<string | null>(null);
+  const key = line === null || line === undefined ? null : `${request ?? 0}:${line}`;
+  // No dependency list on purpose: a cheap key comparison after each render, so the request is
+  // honoured as soon as its line is rendered, and only once.
+  useEffect(() => {
+    if (key === null || line === null || line === undefined || handled.current === key) return;
+    if (scroll(line)) handled.current = key;
+  });
+}
+
+function VirtualRows({ rows, gutter, gutterWidth, jarLabel, onJarClick, maxHeight, scrollToLine, scrollRequest, label, className }: {
   rows: LogRow[];
   gutter: { width: string };
   gutterWidth: number;
@@ -87,6 +107,7 @@ function VirtualRows({ rows, gutter, gutterWidth, jarLabel, onJarClick, maxHeigh
   onJarClick?: ((jarId: string) => void) | undefined;
   maxHeight?: number | undefined;
   scrollToLine?: number | null | undefined;
+  scrollRequest?: number | undefined;
   label: string;
   className?: string | undefined;
 }) {
@@ -108,11 +129,12 @@ function VirtualRows({ rows, gutter, gutterWidth, jarLabel, onJarClick, maxHeigh
     for (const r of rows) if (r.kind === 'line') max = Math.max(max, r.text.length + r.jarIds.reduce((n, id) => n + (jarLabel ? jarLabel(id) : id).length + 3, 0));
     return max + gutterWidth + 6;
   }, [rows, gutterWidth, jarLabel]);
-  useEffect(() => {
-    if (scrollToLine === null || scrollToLine === undefined) return;
-    const i = rows.findIndex((r) => r.kind === 'line' && r.n >= scrollToLine);
-    if (i >= 0) virtual.scrollToIndex(i, { align: 'center' });
-  }, [scrollToLine, rows, virtual]);
+  useScrollRequest(scrollToLine, scrollRequest, (line) => {
+    const i = rows.findIndex((r) => r.kind === 'line' && r.n >= line);
+    if (i < 0) return false;
+    virtual.scrollToIndex(i, { align: 'center' });
+    return true;
+  });
   const items = virtual.getVirtualItems();
   return (
     <div
@@ -134,17 +156,19 @@ function VirtualRows({ rows, gutter, gutterWidth, jarLabel, onJarClick, maxHeigh
   );
 }
 
-export function LogViewer({ lines, frames = [], totalLines, jarLabel, onJarClick, maxHeight, scrollToLine, label, className }: LogViewerProps) {
+export function LogViewer({ lines, frames = [], totalLines, jarLabel, onJarClick, maxHeight, scrollToLine, scrollRequest, label, className }: LogViewerProps) {
   const rows = useMemo(() => buildLogRows(lines, frames, totalLines), [lines, frames, totalLines]);
   const chars = gutterChars(rows) + 2;
   const gutter = { width: `${chars}ch` };
   const name = label ?? 'Log excerpt';
   const ref = useRef<HTMLDivElement>(null);
   const virtual = rows.length > VIRTUAL_ROWS;
-  useEffect(() => {
-    if (virtual || scrollToLine === null || scrollToLine === undefined) return;
-    ref.current?.querySelector<HTMLElement>(`[data-line="${scrollToLine}"]`)?.scrollIntoView?.({ block: 'center' });
-  }, [virtual, scrollToLine]);
+  useScrollRequest(virtual ? null : scrollToLine, scrollRequest, (line) => {
+    const el = ref.current?.querySelector<HTMLElement>(`[data-line="${line}"]`);
+    if (!el) return false;
+    el.scrollIntoView?.({ block: 'center' });
+    return true;
+  });
   if (virtual) {
     return (
       <VirtualRows
@@ -155,6 +179,7 @@ export function LogViewer({ lines, frames = [], totalLines, jarLabel, onJarClick
         onJarClick={onJarClick}
         maxHeight={maxHeight}
         scrollToLine={scrollToLine}
+        scrollRequest={scrollRequest}
         label={name}
         className={className}
       />

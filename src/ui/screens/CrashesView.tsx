@@ -17,6 +17,7 @@ import { cx } from '../components/cx';
 import { ErrorRow, isUnavailable } from '../components/ErrorRow';
 import { formatAgo, formatBytes, formatInt, plural } from '../components/format';
 import { LogViewer } from '../components/LogViewer';
+import { onRovingKeyDown } from '../components/roving';
 import { Pip, type PipTone } from '../components/Severity';
 import { TriageRow } from '../components/TriageRow';
 import { digestView, LOG_KIND_LABEL, sourceDir, sourceName, type CrashAnalysis, type CrashPane } from '../app/crashState';
@@ -64,19 +65,24 @@ function SourceRow({ source, selected, analysis, now, onSelect }: { source: LogS
   );
 }
 
+const PANES: ReadonlyArray<[CrashPane, string]> = [
+  ['diagnosis', 'Diagnosis'],
+  ['log', 'Log'],
+];
+const PANE_IDS = PANES.map(([id]) => id);
+
+/** Diagnosis / Log: a radio group (one tab stop; arrows, Home and End move and select). */
 function PaneSwitch({ pane, onPane }: { pane: CrashPane; onPane: (p: CrashPane) => void }) {
-  const opts: Array<[CrashPane, string]> = [
-    ['diagnosis', 'Diagnosis'],
-    ['log', 'Log'],
-  ];
   return (
-    <div role="radiogroup" aria-label="Show" className="flex h-6 items-stretch gap-4">
-      {opts.map(([id, label]) => (
+    <div role="radiogroup" aria-label="Show" className="flex h-6 items-stretch gap-4" onKeyDown={(e) => onRovingKeyDown(e, PANE_IDS, pane, onPane)}>
+      {PANES.map(([id, label]) => (
         <button
           key={id}
           type="button"
           role="radio"
           aria-checked={pane === id}
+          tabIndex={pane === id ? 0 : -1}
+          data-roving={id}
           onClick={() => onPane(id)}
           className={cx(
             'relative flex items-center t-small focus-visible:outline-1 focus-visible:-outline-offset-1',
@@ -159,7 +165,7 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
   );
 }
 
-function DigestLog({ instanceId, analysis, scrollToLine }: { instanceId: string; analysis: CrashAnalysis; scrollToLine: number | null }) {
+function DigestLog({ instanceId, analysis, scrollToLine, scrollRequest }: { instanceId: string; analysis: CrashAnalysis; scrollToLine: number | null; scrollRequest: number }) {
   const result = useApp((s) => s.scans[instanceId]?.result ?? null);
   const a = useActions();
   const view = useMemo(() => (analysis.digest ? digestView(analysis.digest, analysis.findings) : null), [analysis]);
@@ -183,6 +189,7 @@ function DigestLog({ instanceId, analysis, scrollToLine }: { instanceId: string;
         jarLabel={label}
         onJarClick={a.revealJar}
         scrollToLine={scrollToLine}
+        scrollRequest={scrollRequest}
         label={`Log ${analysis.digest.source.id}`}
         className="min-h-0 flex-1 border-0"
       />
@@ -194,6 +201,7 @@ function SourcePane({ instanceId, source }: { instanceId: string; source: LogSou
   const analysis = useApp((s) => s.crashes[instanceId]?.analyses[source.id]);
   const pane = useApp((s) => s.crashes[instanceId]?.pane ?? 'diagnosis');
   const logLine = useApp((s) => s.crashes[instanceId]?.logLine ?? null);
+  const logRequest = useApp((s) => s.crashes[instanceId]?.logRequest ?? 0);
   const a = useActions();
   const lines = analysis?.digest?.totalLines;
   return (
@@ -221,7 +229,7 @@ function SourcePane({ instanceId, source }: { instanceId: string; source: LogSou
           }
         />
       ) : pane === 'log' ? (
-        <DigestLog instanceId={instanceId} analysis={analysis} scrollToLine={logLine} />
+        <DigestLog instanceId={instanceId} analysis={analysis} scrollToLine={logLine} scrollRequest={logRequest} />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <CrashFindings key={source.id} instanceId={instanceId} source={source} analysis={analysis} />
@@ -242,6 +250,7 @@ export function CrashesView({ instanceId }: { instanceId: string }) {
       analyses: cr?.analyses,
     };
   });
+  const mrpack = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
   const a = useActions();
   const now = useNow(30_000);
   const sources = c.sources ?? [];
@@ -264,7 +273,9 @@ export function CrashesView({ instanceId }: { instanceId: string }) {
   if (!sources.length) {
     return (
       <p className="flex min-h-8 items-center px-4 py-1 t-small text-fg-faint" role="status">
-        {c.status === 'done'
+        {mrpack
+          ? 'A .mrpack file is a pack to install, not a game folder, so it has no crash reports or logs. Open the instance a launcher installed from it to read its crashes.'
+          : c.status === 'done'
           ? 'No crash reports or logs yet. Modpack Doctor looks in crash-reports/, logs/latest.log, logs/debug.log and hs_err_pid*.log in the game folder.'
           : 'Looking for crash reports and logs…'}
       </p>

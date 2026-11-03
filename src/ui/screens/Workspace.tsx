@@ -66,7 +66,8 @@ function Header({ instance }: { instance: Instance }) {
         <span className="min-w-0 flex-1 truncate t-mono text-fg-faint" title={instance.root}>
           {instance.root}
         </span>
-        <WatchToggle instanceId={instance.id} />
+        {/* A .mrpack file has no game folder: nothing runs, so there is nothing to watch. */}
+        {instance.launcher === 'mrpack' ? null : <WatchToggle instanceId={instance.id} />}
         {/* While a scan runs, a click queues exactly one more (it would otherwise be dropped). */}
         <Button size={24} icon={<ArrowClockwise size={16} />} disabled={queued} onClick={() => void a.scan(instance.id)}>
           {queued ? 'Rescan queued' : scanning ? 'Rescan after this' : 'Rescan'}
@@ -89,7 +90,7 @@ function Header({ instance }: { instance: Instance }) {
 
 /**
  * Live watch mode (M4): `set_watch` with the tiered crash anchors; Rust persists it in
- * `Settings.watched`. Small and labelled, in the instance header.
+ * `Settings.watched`. Small and labelled, in the instance header. Not shown for a .mrpack.
  */
 function WatchToggle({ instanceId }: { instanceId: string }) {
   const on = useApp((s) => s.settings.watched.includes(instanceId));

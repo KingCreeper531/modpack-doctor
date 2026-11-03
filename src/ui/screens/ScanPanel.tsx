@@ -9,6 +9,7 @@ import type { GridSort } from '../../bindings';
 import { cx } from '../components/cx';
 import { formatDuration, formatInt } from '../components/format';
 import { Panel } from '../components/Panel';
+import { onRovingKeyDown } from '../components/roving';
 import { TileGrid } from '../components/TileGrid';
 import { deriveTiles, topLevelId } from '../app/derive';
 import { useActions, useApp } from '../app/StoreContext';
@@ -17,11 +18,13 @@ const SORTS: ReadonlyArray<[GridSort, string]> = [
   ['name', 'Name'],
   ['severity', 'Severity'],
 ];
+const SORT_IDS = SORTS.map(([v]) => v);
 
+/** Name / Severity: a radio group (one tab stop; arrows, Home and End move and select). */
 function SortSwitch({ value, disabled }: { value: GridSort; disabled: boolean }) {
   const a = useActions();
   return (
-    <div role="radiogroup" aria-label="Tile order" className="flex items-center gap-2">
+    <div role="radiogroup" aria-label="Tile order" className="flex items-center gap-2" onKeyDown={(e) => onRovingKeyDown(e, SORT_IDS, value, a.setGridSort)}>
       <span className="t-small text-fg-faint">order</span>
       <div className="flex overflow-hidden rounded-2 border border-line-strong">
         {SORTS.map(([v, label], i) => (
@@ -30,6 +33,8 @@ function SortSwitch({ value, disabled }: { value: GridSort; disabled: boolean })
             type="button"
             role="radio"
             aria-checked={value === v}
+            tabIndex={value === v ? 0 : -1}
+            data-roving={v}
             disabled={disabled}
             onClick={() => a.setGridSort(v)}
             className={cx(

@@ -36,6 +36,11 @@ export interface InstanceCrashes {
   pane: CrashPane;
   /** A line the log pane should scroll to (inspector "Show in log"). */
   logLine: number | null;
+  /**
+   * Bumped on every explicit "Show in log" request, so the log pane scrolls only when asked
+   * (again, even to the same line) and never because the digest was re-analysed.
+   */
+  logRequest: number;
 }
 
 /** An announced crash the user has not looked at yet (rail pip, banner). */
@@ -47,7 +52,30 @@ export interface CrashAlert {
 }
 
 export function emptyCrashes(): InstanceCrashes {
-  return { sourcesStatus: 'idle', sources: [], sourcesError: null, selectedSourceId: null, analyses: {}, pane: 'diagnosis', logLine: null };
+  return { sourcesStatus: 'idle', sources: [], sourcesError: null, selectedSourceId: null, analyses: {}, pane: 'diagnosis', logLine: null, logRequest: 0 };
+}
+
+/** Title of a crash notification when the instance's name is not known. */
+export const CRASH_NOTIFICATION_FALLBACK_TITLE = 'Modpack crashed';
+
+/**
+ * The native notification for an announced crash. Title: `<instance name> crashed`. Body: the
+ * likely cause; when the cause is not known, the top error crash finding's own title; never a
+ * repeat of the title or of the summary headline.
+ */
+export function crashNotification(
+  instanceName: string | null | undefined,
+  summary: CrashSummary,
+  findings: readonly Finding[],
+  sourceId: string,
+): { title: string; body: string } {
+  const name = instanceName?.replace(/\s+/g, ' ').trim();
+  const title = name ? `${name} crashed` : CRASH_NOTIFICATION_FALLBACK_TITLE;
+  if (summary.likelyCause) return { title, body: `Likely cause: ${summary.likelyCause}` };
+  const top = findings.find((f) => f.severity === 'error' && f.code.startsWith('C-'));
+  const findingTitle = top?.title.replace(/\s+/g, ' ').trim() ?? '';
+  const body = findingTitle && findingTitle !== title && findingTitle !== summary.headline ? findingTitle : `See ${sourceName(sourceId)} in Modpack Doctor.`;
+  return { title, body };
 }
 
 export const LOG_KIND_LABEL: Record<LogKind, string> = {
