@@ -48,6 +48,17 @@ fn matches_game_dir_argument_in_both_spellings() {
     let m = match_processes(&game, &procs, false);
     assert_eq!(pids(m.clone()), vec![1, 2]);
     assert!(m[0].reason.contains("--gameDir"), "{}", m[0].reason);
+    // The working dir (where hs_err files go) is kept, also when it is not the game dir.
+    assert_eq!(m[0].cwd.as_deref(), Some(other.as_path()));
+    assert_eq!(m[1].cwd, None);
+}
+
+#[test]
+fn same_dir_compares_like_process_paths() {
+    let (_t, game, other) = setup();
+    assert!(same_dir(&game, &game.join(".")));
+    assert!(same_dir(&game, &other.join("..").join("Pack ü").join(".minecraft")));
+    assert!(!same_dir(&game, &other));
 }
 
 #[test]

@@ -58,7 +58,13 @@ fn fixture() -> Fx {
         poll_interval: Duration::from_millis(50),
         debounce: Duration::from_millis(20),
         rescan_interval: Duration::from_millis(300),
-        timings: EpisodeTimings { settle_ms: 200, max_coalesce_ms: 1_000, context_window_ms: 2_000, quiet_ms: 5_000 },
+        timings: EpisodeTimings {
+            settle_ms: 200,
+            max_coalesce_ms: 1_000,
+            context_window_ms: 2_000,
+            quiet_ms: 5_000,
+            exit_grace_ms: 1_000,
+        },
         track_processes: true,
     };
     let st = AppState {
@@ -195,4 +201,118 @@ fn game_running_uses_the_shared_process_source() {
     assert_eq!(busy.pids, vec![1234]);
     assert!(busy.reason.expect("reason").contains("--gameDir"));
     assert!(!game_status_blocking(&fx.st, &fx.manual.id).expect("other").running);
+}
+
+// ── hs_err in the JVM working dir (vanilla launcher) ─────────────────────────
+
+struct VanillaFx {
+    _t: tempfile::TempDir,
+    st: AppState,
+    fake: Arc<FakeProcesses>,
+    mc_dir: PathBuf,
+    mc: Instance,
+    profile: Instance,
+}
+
+/// `.minecraft` (the launcher's working dir, also the instance of profiles without a gameDir)
+/// and a profile with its own game dir, both discovered as vanilla instances.
+fn vanilla_fixture() -> VanillaFx {
+    let t = tempfile::tempdir().expect("tempdir");
+    let base = dunce::canonicalize(t.path()).expect("canon");
+    let mc_dir = base.join(".minecraft");
+    let profile_dir = base.join("Profiles").join("Modded 1.20.1");
+    for d in [&mc_dir, &profile_dir] {
+        fs::create_dir_all(d.join("logs")).expect("mkdir");
+        fs::write(d.join("logs/latest.log"), "[main/INFO]: hello\n").expect("log");
+    }
+    fs::write(mc_dir.join("launcher_profiles.json"), "{\"profiles\":{}}").expect("profiles");
+    let fake = Arc::new(FakeProcesses::default());
+    let config = WatchConfig {
+        poll_interval: Duration::from_millis(50),
+        debounce: Duration::from_millis(20),
+        rescan_interval: Duration::from_millis(300),
+        timings: EpisodeTimings {
+            settle_ms: 200,
+            max_coalesce_ms: 1_000,
+            context_window_ms: 2_000,
+            quiet_ms: 5_000,
+            exit_grace_ms: 1_000,
+        },
+        track_processes: true,
+    };
+    let st = AppState {
+        processes: Processes(fake.clone()),
+        watchers: Arc::new(Watchers::with_config(config)),
+        ..AppState::default()
+    };
+    let mc = instance(Launcher::Vanilla, &mc_dir);
+    let profile = instance(Launcher::Vanilla, &profile_dir);
+    let instances = vec![mc.clone(), profile.clone()];
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for i in &instances {
+        roots.extend(discovery::guard_roots(Path::new(&i.root), Path::new(&i.game_dir)));
+    }
+    st.apply_discovery(Discovered { report: DiscoveryReport { instances, probes: Vec::new() }, roots }).expect("apply");
+    VanillaFx { _t: t, st, fake, mc_dir, mc, profile }
+}
+
+fn hs_err_naming(game_dir: &str) -> String {
+    format!(
+        "#\n# A fatal error has been detected by the Java Runtime Environment:\n#\n\
+         ---------------  S U M M A R Y ------------\n\n\
+         Command Line: -Xmx6G net.minecraft.client.main.Main --username Steve --gameDir {game_dir} --assetsDir a\n"
+    )
+}
+
+#[test]
+fn hs_err_in_the_launcher_dir_is_listed_for_the_profile_it_names() {
+    let fx = vanilla_fixture();
+    fs::write(fx.mc_dir.join("hs_err_pid77.log"), hs_err_naming(&fx.profile.game_dir)).expect("hs_err");
+    let ids = |id: &str| -> Vec<String> {
+        list_sources_blocking(&fx.st, id).expect("list").into_iter().map(|s| s.id).collect()
+    };
+    assert!(ids(&fx.profile.id).contains(&"@cwd/hs_err_pid77.log".to_string()), "{:?}", ids(&fx.profile.id));
+    let d = read_digest_blocking(&fx.st, &fx.profile.id, "@cwd/hs_err_pid77.log", &[], None).expect("digest");
+    assert_eq!(d.source.id, "@cwd/hs_err_pid77.log");
+    // In `.minecraft` itself it is an ordinary game-dir file.
+    let mc_ids = ids(&fx.mc.id);
+    assert!(mc_ids.contains(&"hs_err_pid77.log".to_string()) && mc_ids.iter().all(|i| !i.starts_with('@')), "{mc_ids:?}");
+    // Forged and traversal ids are refused.
+    for bad in ["@cwd/../.minecraft/hs_err_pid77.log", "@cwd/launcher_profiles.json", "@cwd/hs_err_pid077.log"] {
+        let err = read_digest_blocking(&fx.st, &fx.profile.id, bad, &[], None).expect_err(bad);
+        assert!(matches!(err, Error::OutsideScope { .. }), "{bad}: {err}");
+    }
+    let err = read_digest_blocking(&fx.st, &fx.profile.id, "@cwd/hs_err_pid78.log", &[], None).expect_err("unlisted");
+    assert!(matches!(err, Error::NotFound { .. }), "{err}");
+}
+
+#[test]
+fn watch_picks_up_hs_err_in_the_working_dir_on_exit_and_it_is_readable() {
+    let fx = vanilla_fixture();
+    let (s, rx) = sink();
+    enable_watch(&fx.st, &fx.profile.id, anchors(), s).expect("enable");
+    // The vanilla launcher runs the profile in .minecraft with --gameDir pointing at it.
+    fx.fake.set(vec![ProcInfo {
+        pid: 4321,
+        name: "javaw.exe".into(),
+        cmd: vec!["javaw.exe".into(), "--gameDir".into(), fx.profile.game_dir.clone()],
+        cwd: Some(fx.mc_dir.clone()),
+    }]);
+    std::thread::sleep(Duration::from_millis(300));
+    // A native crash without a usable command line in the file: the recorded pid is enough.
+    fs::write(fx.mc_dir.join("hs_err_pid4321.log"), "#\n# A fatal error has been detected\n").expect("hs_err");
+    fx.fake.set(Vec::new());
+    let e = rx.recv_timeout(Duration::from_secs(15)).expect("event");
+    assert_eq!(e.instance_id, fx.profile.id);
+    assert_eq!(e.source.id, "@cwd/hs_err_pid4321.log");
+    assert_eq!(e.source.kind, crate::model::LogKind::HsErr);
+    let list = list_sources_blocking(&fx.st, &fx.profile.id).expect("list");
+    assert!(list.iter().any(|s| s.id == "@cwd/hs_err_pid4321.log"), "{list:?}");
+    let d = read_digest_blocking(&fx.st, &fx.profile.id, "@cwd/hs_err_pid4321.log", &[], None).expect("digest");
+    assert_eq!(d.total_lines, 2);
+    // Listing works after the watcher is gone too.
+    disable_watch(&fx.st, &fx.profile.id).expect("disable");
+    assert!(list_sources_blocking(&fx.st, &fx.profile.id).expect("list").iter().any(|s| s.id == "@cwd/hs_err_pid4321.log"));
+    // Another instance never sees it.
+    assert!(list_sources_blocking(&fx.st, &fx.mc.id).expect("list").iter().all(|s| !s.id.starts_with('@')));
 }

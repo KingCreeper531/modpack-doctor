@@ -8,25 +8,39 @@
 //!   than `max_coalesce_ms` (10 s) after the first. It emits at once if the game process exits.
 //! - A **contextual** hit is recorded silently (first hit per anchor; its time is refreshed by
 //!   later hits of the same anchor). Hits older than `context_window_ms` (CONTEXT_WINDOW_MS,
-//!   30 s) are discarded. A process exit within the window of the latest contextual hit emits an
-//!   episode; a process exit without a fatal event and without a hit in the window is a normal
-//!   quit and emits nothing (and clears the hits).
+//!   30 s) are discarded, and all hits are forgotten when `latest.log` is replaced
+//!   ([`Input::LogReset`]: a new run, or log rotation). A process *start* does not clear them,
+//!   because the first lines of a run are often read before its process is first seen. A
+//!   process exit within the window of the latest contextual hit emits an episode; a process
+//!   exit without a fatal event and without a hit in the window is a normal quit and emits
+//!   nothing (and clears the hits).
 //! - Without process tracking there are no exits, so contextual hits never emit.
-//! - After an emission every trigger (fatal, contextual, process exit) is dropped until a new
-//!   game process is seen, or `quiet_ms` (60 s) pass without a trigger (each dropped trigger
-//!   restarts that quiet period).
+//! - After an emission the crash is *suppressed*: fatal anchors, contextual hits (not even
+//!   recorded) and process exits are dropped, and none of them extends the suppression.
+//!   - With process tracking it lasts until every game process that was running at emission
+//!     has exited, plus `exit_grace_ms` (5 s). If none was running, it lasts `exit_grace_ms`
+//!     after an emission that included the exit, else `quiet_ms` (60 s).
+//!   - Without process tracking it lasts `quiet_ms` from the emission.
+//!   - A new game process (a pid not seen before) lifts it at once.
+//!   - A **new crash file** that appears after the emitted episode's coalesce window
+//!     (`max_coalesce_ms` after the episode opened, and at least `settle_ms` after the
+//!     emission) lifts it and opens a new episode: a crash report or hs_err written that much
+//!     later belongs to a later crash (for example an in-game crash after an error screen the
+//!     game survived). Inside that window the file belongs to the emitted crash and is dropped.
 //! - Within an episode only the first hit per anchor and the first sighting per file count.
 //! - Source: newest crash report > newest hs_err > `logs/latest.log`.
 
 use std::collections::HashSet;
 
-use crate::model::{AnchorTier, CrashTrigger, LogKind, CONTEXT_WINDOW_MS, FATAL_SETTLE_MS};
 use crate::logs::sources::LATEST_LOG;
+use crate::model::{AnchorTier, CrashTrigger, LogKind, CONTEXT_WINDOW_MS, FATAL_SETTLE_MS};
 
 /// Upper bound on how long fatal inputs keep extending the settle delay.
 pub const MAX_COALESCE_MS: u64 = 10_000;
-/// Quiet period that lifts post-emission suppression.
+/// Post-emission suppression when no game process is tracked (see the module docs).
 pub const QUIET_MS: u64 = 60_000;
+/// Post-emission suppression left after the last tracked game process exited.
+pub const EXIT_GRACE_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EpisodeTimings {
@@ -34,6 +48,7 @@ pub struct EpisodeTimings {
     pub max_coalesce_ms: u64,
     pub context_window_ms: u64,
     pub quiet_ms: u64,
+    pub exit_grace_ms: u64,
 }
 
 impl Default for EpisodeTimings {
@@ -43,6 +58,7 @@ impl Default for EpisodeTimings {
             max_coalesce_ms: MAX_COALESCE_MS,
             context_window_ms: CONTEXT_WINDOW_MS,
             quiet_ms: QUIET_MS,
+            exit_grace_ms: EXIT_GRACE_MS,
         }
     }
 }
@@ -55,7 +71,10 @@ pub enum Input {
     ContextualAnchor { anchor: String, line: u32 },
     ProcessStarted(u32),
     ProcessExited(u32),
-    /// Time passes (lets settle deadlines and the quiet period expire).
+    /// `latest.log` was replaced or truncated (a new run, or log rotation): forget the
+    /// contextual hits recorded so far.
+    LogReset,
+    /// Time passes (lets settle deadlines and the suppression expire).
     Tick,
 }
 
@@ -115,6 +134,10 @@ impl Open {
         });
     }
 
+    fn has_exit(&self) -> bool {
+        self.triggers.iter().any(|t| matches!(t, CrashTrigger::ProcessExit { .. }))
+    }
+
     fn into_emission(self) -> Emission {
         let source = self.best.map(|(_, s)| s).unwrap_or(SourceRef { id: LATEST_LOG.to_string(), kind: LogKind::LatestLog });
         Emission { source, triggers: self.triggers }
@@ -129,6 +152,17 @@ struct Contextual {
     last_at: u64,
 }
 
+/// Post-emission state (see the module docs).
+#[derive(Debug)]
+struct Suppression {
+    /// Tracked game processes that were running at emission and have not exited yet.
+    pids: HashSet<u32>,
+    /// When the suppression ends; `None` while `pids` is not empty.
+    until: Option<u64>,
+    /// A new crash file before this time belongs to the emitted crash.
+    coalesce_until: u64,
+}
+
 #[derive(Debug)]
 pub struct EpisodeMachine {
     timings: EpisodeTimings,
@@ -138,8 +172,7 @@ pub struct EpisodeMachine {
     seen: HashSet<u32>,
     contextual: Vec<Contextual>,
     open: Option<Open>,
-    /// Some(time of the latest trigger) while suppressed after an emission.
-    suppressed: Option<u64>,
+    suppressed: Option<Suppression>,
 }
 
 impl EpisodeMachine {
@@ -180,17 +213,23 @@ impl EpisodeMachine {
         self.expire(now, &mut out);
         match input {
             Input::Tick => {}
+            Input::LogReset => self.contextual.clear(),
             Input::ProcessStarted(pid) => {
                 self.running.insert(pid);
                 if self.seen.insert(pid) {
-                    // A new game process: a new run starts with a clean slate.
+                    // A new game process: a new run, so the last crash no longer suppresses.
                     self.suppressed = None;
-                    self.contextual.clear();
                 }
             }
             Input::ProcessExited(pid) => {
                 self.running.remove(&pid);
-                if self.swallowed(now) {
+                if let Some(s) = self.suppressed.as_mut() {
+                    // The exit of the crash that was already reported.
+                    s.pids.remove(&pid);
+                    if s.pids.is_empty() && s.until.is_none() {
+                        s.until = Some(now + self.timings.exit_grace_ms);
+                    }
+                    self.contextual.clear();
                     return out;
                 }
                 if let Some(mut open) = self.open.take() {
@@ -206,7 +245,7 @@ impl EpisodeMachine {
                 self.contextual.clear();
             }
             Input::ContextualAnchor { anchor, line } => {
-                if self.swallowed(now) {
+                if self.suppressed.is_some() {
                     return out;
                 }
                 if let Some(open) = self.open.as_mut() {
@@ -218,15 +257,19 @@ impl EpisodeMachine {
                 }
             }
             Input::FatalAnchor { anchor, line } => {
-                if self.swallowed(now) {
+                if self.suppressed.is_some() {
                     return out;
                 }
                 let open = self.open_episode(now);
                 open.add_anchor(anchor, AnchorTier::Fatal, line);
             }
             Input::FatalFile { source_id, kind } => {
-                if self.swallowed(now) {
-                    return out;
+                if let Some(s) = &self.suppressed {
+                    if now < s.coalesce_until {
+                        return out;
+                    }
+                    // Written well after the reported crash: a new one.
+                    self.suppressed = None;
                 }
                 let open = self.open_episode(now);
                 open.add_file(source_id, kind);
@@ -235,15 +278,13 @@ impl EpisodeMachine {
         out
     }
 
-    /// Drop expired contextual hits, lift suppression after the quiet period, and emit an
-    /// episode whose settle deadline passed.
+    /// Drop expired contextual hits, end a suppression whose time is up, and emit an episode
+    /// whose settle deadline passed.
     fn expire(&mut self, now: u64, out: &mut Vec<Emission>) {
         let window = self.timings.context_window_ms;
         self.contextual.retain(|c| now.saturating_sub(c.last_at) <= window);
-        if let Some(last) = self.suppressed {
-            if now.saturating_sub(last) >= self.timings.quiet_ms {
-                self.suppressed = None;
-            }
+        if self.suppressed.as_ref().and_then(|s| s.until).is_some_and(|until| now >= until) {
+            self.suppressed = None;
         }
         if let Some(open) = &self.open {
             if now >= self.deadline(open) {
@@ -251,17 +292,6 @@ impl EpisodeMachine {
                     self.emit(open, now, out);
                 }
             }
-        }
-    }
-
-    /// While suppressed, drop a trigger and restart the quiet period. True if dropped.
-    fn swallowed(&mut self, now: u64) -> bool {
-        match self.suppressed.as_mut() {
-            Some(last) => {
-                *last = now;
-                true
-            }
-            None => false,
         }
     }
 
@@ -286,7 +316,17 @@ impl EpisodeMachine {
 
     fn emit(&mut self, open: Open, now: u64, out: &mut Vec<Emission>) {
         self.contextual.clear();
-        self.suppressed = Some(now);
+        let t = &self.timings;
+        let pids = if self.tracking { self.running.clone() } else { HashSet::new() };
+        let until = if !pids.is_empty() {
+            None
+        } else if self.tracking && open.has_exit() {
+            Some(now + t.exit_grace_ms)
+        } else {
+            Some(now + t.quiet_ms)
+        };
+        let coalesce_until = (open.first_at + t.max_coalesce_ms).max(now + t.settle_ms);
+        self.suppressed = Some(Suppression { pids, until, coalesce_until });
         out.push(open.into_emission());
     }
 }
