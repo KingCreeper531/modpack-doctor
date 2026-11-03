@@ -48,6 +48,8 @@ export const CRASH_SIGNALS: readonly CrashAnchor[] = [
   ...fatal('A fatal error has been detected by the Java Runtime Environment', 'There is insufficient memory for the Java Runtime Environment'),
   // Owner's list: ResolutionException means the module layer could not be built.
   ...fatal('java.lang.module.ResolutionException'),
+  // The Java launcher could not load the main class; the old Fabric resolver gave up.
+  ...fatal('Error: LinkageError occurred while loading main class', 'Could not find required mod'),
   // Mentions of these are common in healthy logs (heap-dump flags, optional class probes).
   ...contextual('java.lang.OutOfMemoryError', 'UnsupportedClassVersionError'),
 ];
@@ -60,8 +62,11 @@ const TEXT_SIGNALS = CRASH_SIGNALS.map((s) => s.text).filter((s) => !THROWN_SIGN
 /** A normal shutdown: a crash marker on the far side of it belongs to another part of the session. */
 const CLEAN_SHUTDOWN = /\bStopping!|\bStopping server\b/;
 
+/**
+ * Structural crash markers only. A FATAL log *level* is not one: mods log ordinary events at
+ * FATAL (e.g. "config just got changed on the file system!").
+ */
 function isSignal(text: string): boolean {
-  if (logLevel(text) === 'FATAL') return true;
   if (TEXT_SIGNALS.some((s) => text.includes(s))) return true;
   return THROWN_SIGNAL.test(text.replace(THROWN_PREFIX, ''));
 }
@@ -108,8 +113,10 @@ export interface Ctx {
   traces: Trace[];
   /** The source is a crash report or hs_err file: crashed by definition. */
   crashFile: boolean;
-  /** Indices of lines carrying a crash signal (or FATAL level). */
+  /** Indices of lines carrying a structural crash signal. */
   signalIdx: number[];
+  /** Index of the last "the game is running" marker (title screen / world / server ready), or -1. */
+  reachedIdx: number;
   /** Indices of normal-shutdown lines (`Stopping!`). */
   shutdownIdx: number[];
   /** Crash-report details values (see `detailLines`); never read as occurrences. */
@@ -126,10 +133,12 @@ export function ctxOf(input: CrashInput): Ctx {
   const details = detailLines(lines);
   const signalIdx: number[] = [];
   const shutdownIdx: number[] = [];
+  let reachedIdx = -1;
   lines.forEach((l, i) => {
     if (details.has(i)) return;
     if (isSignal(l.text)) signalIdx.push(i);
     else if (CLEAN_SHUTDOWN.test(l.text)) shutdownIdx.push(i);
+    if (GAME_REACHED.test(l.text)) reachedIdx = i;
   });
   const kind = input.digest.source.kind;
   const ctx: Ctx = {
@@ -139,6 +148,7 @@ export function ctxOf(input: CrashInput): Ctx {
     traces: findTraces(lines),
     crashFile: kind === 'crashReport' || kind === 'hsErr',
     signalIdx,
+    reachedIdx,
     shutdownIdx,
     details,
     mcVersion: input.pack?.mcVersion ?? mcVersionFromLines(lines),
@@ -167,6 +177,28 @@ function mcVersionFromLines(lines: readonly Line[]): string | null {
 export function crashed(ctx: Ctx): boolean {
   return ctx.crashFile || ctx.signalIdx.length > 0;
 }
+
+/**
+ * The game got running (sound engine, texture atlases, advancements, dedicated server ready). Any
+ * of these after loading means mod loading finished.
+ */
+const GAME_REACHED =
+  /Sound engine started|Created: \d+x\d+x\d+ minecraft:textures\/atlas|Loaded \d+ advancements|Done \([\d.,]+s\)! For help, type/;
+
+/**
+ * A log (not a crash file) of a session that reached the game and shows no structural crash
+ * marker after the last such point: whatever it logged, the game kept running.
+ */
+export function sessionKeptRunning(ctx: Ctx): boolean {
+  if (ctx.crashFile || ctx.reachedIdx < 0) return false;
+  // FML's loading-error screen still starts the sound engine and builds atlases, so a mod-loading
+  // failure anywhere means the game was never really reached.
+  const loadingFailed = ctx.signalIdx.some((s) => LOADING_FAILURE.test(ctx.lines[s]?.text ?? ''));
+  return !loadingFailed && !ctx.signalIdx.some((s) => s > ctx.reachedIdx);
+}
+
+const LOADING_FAILURE =
+  /Missing or unsupported mandatory dependencies|Mod [Ll]oading has failed|Mod loading (?:error has|failures have) occurred|Loading errors encountered|Incompatible mods? (?:found|set)|Some of your mods are incompatible|incompatible mod set/;
 
 /** Log level of the record line `i` belongs to (walks back over stack-trace lines); null if none. */
 export function levelAt(ctx: Ctx, i: number): Level | null {

@@ -5,7 +5,7 @@
  */
 import type { JarRecord } from '../../bindings';
 import type { JarIndex } from '../model';
-import { jarByFileName, jarsForModId, jarsForPackage } from './jars';
+import { jarByFileName, jarsForModId, jarsForModLoose, jarsForPackage } from './jars';
 import { packageOf } from './text';
 
 export interface Frame {
@@ -168,7 +168,7 @@ export function blameFrame(frame: Frame, index?: JarIndex): FrameHit | null {
   if (frame.loader === 'MC-BOOTSTRAP') return null;
   if (frame.module && INTERNAL_MODULE.test(frame.module)) return null;
   if (frame.module && frame.moduleVersion !== undefined) {
-    const jar = index ? jarsForModId(frame.module, index)[0] : undefined;
+    const jar = index ? jarsForModLoose(frame.module, undefined, index)[0] : undefined;
     if (jar || !index) return { ...(jar ? { jar } : {}), modId: frame.module, label: frame.module, via: 'module' };
   }
   if (frame.jar) {
@@ -177,7 +177,7 @@ export function blameFrame(frame: Frame, index?: JarIndex): FrameHit | null {
     if (!index && !INTERNAL_JAR.test(frame.jar)) return { label: frame.jar, via: 'jar' };
   }
   if (frame.bracketModId && !INTERNAL_BRACKET_ID.test(frame.bracketModId)) {
-    const jar = index ? jarsForModId(frame.bracketModId, index)[0] : undefined;
+    const jar = index ? jarsForModLoose(frame.bracketModId, undefined, index)[0] : undefined;
     if (jar || !index) {
       return { ...(jar ? { jar } : {}), modId: frame.bracketModId, label: frame.bracketModId, via: 'bracket' };
     }

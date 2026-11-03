@@ -99,6 +99,38 @@ export function jarsForModule(name: string, index: JarIndex): JarRecord[] {
   return out.sort((a, b) => a.depth - b.depth);
 }
 
+/** Lower-case letters and digits only: "YUNG's Cave Biomes" → "yungscavebiomes". */
+export function looseName(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** The jar file name plausibly belongs to the mod (`YungsCaveBiomes-1.20.1-Forge-2.1.jar`). */
+export function fileMatchesMod(fileName: string, modIdOrName: string): boolean {
+  const key = looseName(modIdOrName);
+  return key.length >= 4 && looseName(fileName.replace(/\.jar$/i, '')).startsWith(key);
+}
+
+/**
+ * Jars for a mod named by a log: declared mod id first, then display name, then a top-level jar
+ * whose file name starts with the id or name (loose comparison). Empty when it is not installed.
+ */
+export function jarsForModLoose(modId: string | undefined, name: string | undefined, index: JarIndex): JarRecord[] {
+  if (modId) {
+    const byId = jarsForModId(modId, index);
+    if (byId.length > 0) return byId;
+  }
+  for (const n of [name, modId]) {
+    if (!n) continue;
+    const byName = jarsForModName(n, index);
+    if (byName.length > 0) return byName;
+  }
+  const byFile: JarRecord[] = [];
+  for (const jar of index.byFileName.values()) {
+    if ((modId && fileMatchesMod(jar.fileName, modId)) || (name && fileMatchesMod(jar.fileName, name))) byFile.push(jar);
+  }
+  return byFile;
+}
+
 /** Jars whose mod display name or id equals `name` (Quilt messages use display names). */
 export function jarsForModName(name: string, index: JarIndex): JarRecord[] {
   // Loose comparison: "Lumen Lanterns" matches the id `lumenlanterns` and the name "Lumen lanterns".
