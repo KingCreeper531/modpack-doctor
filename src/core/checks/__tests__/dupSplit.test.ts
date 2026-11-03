@@ -8,8 +8,8 @@ describe('E-DUP-ID', () => {
     const newer = fabric({ file: 'sodium-0.5.11.jar', mods: [{ id: 'sodium', name: 'Sodium', version: '0.5.11' }], mtimeMs: 1 });
     const [f] = only(run([older, newer], pack('fabric', '1.20.1')), 'E-DUP-ID');
     expect(f).toMatchObject({
-      severity: 'error',
-      title: 'Sodium is installed 2 times (sodium-0.5.11.jar, sodium-0.5.3.jar)',
+      severity: 'warning', // Fabric: best effort, newest preferred (see fmlEnforcement.test.ts)
+      title: 'Two copies of Sodium — Fabric keeps one (best effort, newest preferred: 0.5.11)',
       fixes: [{ kind: 'removeDuplicate', keep: 'mods/sodium-0.5.11.jar', remove: 'mods/sodium-0.5.3.jar' }],
     });
     expect(f?.explanation).toContain('Keep sodium-0.5.11.jar (0.5.11, the newest copy)');

@@ -1,6 +1,12 @@
 /**
- * E-DUP-ID (error): two or more active top-level jars declare the same mod id (among the entries
- * the pack loader reads).
+ * E-DUP-ID: two or more active top-level jars declare the same mod id (among the entries the
+ * pack loader reads). Severity follows what each loader does (docs/research/loader-enforcement.md):
+ * - Forge/NeoForge (FML `UniqueModListBuilder` groups files by their FIRST mod id and keeps the
+ *   newest file of each group): when every jar's first relevant mod entry is the same id →
+ *   **warning** ("keeps the newest, ignores the older"); otherwise (the id is a secondary mod in
+ *   at least one file, so two kept files declare it) → **error**.
+ * - Fabric: **warning** — the resolver keeps one per id, newest preferred (best effort).
+ * - Quilt, Legacy Forge, unknown loader: **error**.
  * - Duplicates inside one jar (Forge + NeoForge metadata, or mods.toml + mcmod.info) are ignored.
  * - Nested jars are never compared: the loaders de-duplicate JarJar libraries by
  *   `group:artifact` and Fabric/Quilt JiJ by mod id, and a top-level copy overrides a nested one.
@@ -15,6 +21,8 @@ import { versionSyntaxFor } from '../pack';
 import { versionApi } from '../version';
 import { contextFor } from './context';
 import { jarRef, listText, makeFinding, metadataEvidence, modIdLines, modName } from './evidence';
+
+const COUNT_WORDS: Readonly<Record<number, string>> = { 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five' };
 
 export const dupIdCheck: Check = {
   id: 'duplicate-mod-id',
@@ -39,9 +47,15 @@ export const dupIdCheck: Check = {
     }
 
     const out: Finding[] = [];
+    const kind = ctx.pack.loader?.kind;
+    const fml = kind === 'forge' || kind === 'neoforge';
     for (const { jars, ids } of sets.values()) {
       ids.sort();
-      const firstId = ids[0] ?? '';
+      const firstIds = jars.map((j) => ctx.relevant(j)[0]?.modId);
+      const groupId = firstIds[0];
+      const grouped = fml && groupId !== undefined && ids.includes(groupId) && firstIds.every((f) => f === groupId);
+      const mode: 'fml-grouped' | 'fabric' | 'error' = grouped ? 'fml-grouped' : kind === 'fabric' ? 'fabric' : 'error';
+      const firstId = grouped && groupId !== undefined ? groupId : (ids[0] ?? '');
       const metaOf = (j: JarRecord): ModMeta | undefined => ctx.relevant(j).find((m) => m.modId === firstId);
       const ranked = [...jars].sort((a, b) => {
         const ma = metaOf(a);
@@ -64,16 +78,39 @@ export const dupIdCheck: Check = {
       evidence.push({ kind: 'note', text: `Mod id${ids.length > 1 ? 's' : ''} ${listText(ids.map((i) => `"${i}"`))} declared by: ${versions.join(', ')}.` });
       evidence.push(ctx.packNote);
       const fixes: FixAction[] = remove.map((j) => ({ kind: 'removeDuplicate', keep: keep.id, remove: j.id }));
+      const keepVersion = keepMeta?.version ?? 'unknown version';
+      const declared = `${versions.join(' and ')} all declare the mod id${ids.length > 1 ? 's' : ''} ${listText(ids.map((i) => `"${i}"`))}. `;
+      const advice =
+        `Keep ${keep.fileName} (${keepVersion}, the newest copy) and remove ${listText(remove.map((j) => j.fileName))}; ` +
+        `removed files go into the backup, not the bin.`;
+      const copies = `${COUNT_WORDS[jars.length] ?? String(jars.length)} copies of ${name}`;
+      const others = remove.length === 1 ? 'the older' : 'the others';
+      const { title, why } =
+        mode === 'fml-grouped'
+          ? {
+              title: `${copies} — the loader keeps the newest (${keepVersion}) and ignores ${others}`,
+              why: `FML groups jars by their first mod id, loads only the newest file of the group and silently skips the rest, so the game starts — but the extra file is dead weight and confusing. `,
+            }
+          : mode === 'fabric'
+            ? {
+                title: `${copies} — Fabric keeps one (best effort, newest preferred: ${keepVersion})`,
+                why: `Fabric's resolver keeps exactly one mod per id, preferring the newest, as a best effort; which copy wins is not guaranteed. `,
+              }
+            : {
+                title: `${name} is installed ${jars.length} times (${listText(ranked.map((j) => j.fileName), 3)})`,
+                why:
+                  kind === 'quilt'
+                    ? `Quilt refuses duplicate mod ids and stops with "Duplicate mod". `
+                    : fml
+                      ? `The id is not the first mod of every file, so FML keeps more than one file declaring it and stops with a duplicate-mod error. `
+                      : `A loader can only load one mod per id, so it stops with a duplicate-mod error. `,
+              };
       out.push(
         makeFinding({
           code: 'E-DUP-ID',
-          severity: 'error',
-          title: `${name} is installed ${jars.length} times (${listText(ranked.map((j) => j.fileName), 3)})`,
-          explanation:
-            `${versions.join(' and ')} all declare the mod id${ids.length > 1 ? 's' : ''} ${listText(ids.map((i) => `"${i}"`))}. ` +
-            `A loader can only load one mod per id, so it stops with a duplicate-mod error. ` +
-            `Keep ${keep.fileName} (${keepMeta?.version ?? 'unknown version'}, the newest copy) and remove ${listText(remove.map((j) => j.fileName))}; ` +
-            `removed files go into the backup, not the bin.`,
+          severity: mode === 'error' ? 'error' : 'warning',
+          title,
+          explanation: declared + why + advice,
           culprits: ranked.map((j) => jarRef(j, firstId)),
           evidence,
           fixes,

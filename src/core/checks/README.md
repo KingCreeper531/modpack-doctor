@@ -18,7 +18,34 @@ The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously afte
 | `builtins.ts` | Dependency ids the game/loader provide (never "missing"). |
 | `<name>.ts` | One file per check. Its header comment is the rule's specification. |
 | `__tests__/fixtures.ts` | Realistic `JarRecord` builders (Forge, NeoForge, Fabric, Quilt, multi-loader, nested JarJar/JiJ, disabled, corrupt) with metadata excerpts in the real file formats. |
-| `../pack/` | `resolvePack`, `buildJarIndex`, loader compatibility (`loaderAccepts`), pack description. |
+| `../pack/` | `resolvePack`, `buildJarIndex`, loader compatibility (`loaderAccepts`), FML compatibility table (`fmlCompat.ts`), pack description. |
+
+## Report what the loader actually does
+
+Severity mirrors real loader behaviour, read from loader source
+(`docs/research/loader-enforcement.md` is the spec). A finding the game would shrug off must not be
+an error.
+
+- **FML compatibility table** (`../pack/fmlCompat.ts`, `VersionSupportMatrix`): on NeoForge 1.21.1
+  a `minecraft` range also passes if it contains `1.21` (and `neoforge` if it contains
+  `21.0.166`); on NeoForge 1.21.8 `1.21.7` / `21.7.26-beta`; on Forge 1.20.1 `forge` also
+  `47.1.79`. Range checks call `evaluateRange`: `fail` → error, `fallback` → the same code at
+  **info** naming the override, `pass`/`unknown` → nothing. Fabric/Quilt ranges are strict.
+- **FML side filter**: dependencies with `side = "CLIENT"` are skipped on a server pack and
+  `SERVER` on a client pack — including the `minecraft` and loader dependencies behind
+  `mcRange` / `loaderRange`.
+- **FML optional dependencies** are enforced when the mod is present (E-DEP-RANGE error);
+  `discouraged` is a warning.
+- **Duplicate ids**: FML keeps the newest file per *first* mod id (warning); a duplicate that is a
+  secondary mod in some file is an error; Fabric keeps one (warning); Quilt refuses (error).
+
+### Known gaps
+
+- `config/fml.toml` `dependencyOverrides` are not read: a dependency the user removed there is
+  still reported.
+- The Forge 1.20.1 `forge 47.1.79` fallback is applied to every Forge 1.20.1 pack, although only
+  later 47.x builds carry it.
+- Quilt "any of" dependency arrays are not reported when none is present (CONTRACTS invariant 13).
 
 ## Steps
 
@@ -47,8 +74,10 @@ The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously afte
    handled the same way everywhere. Use `ctx.providers(id)` for presence and
    `ctx.versionProviders(id)` for "which version would the loader use".
 4. **Never evaluate version ranges yourself.** Call `versionApi.satisfies/compare/parseRange`
-   from `src/core/version` (subject `'minecraft'` for MC versions). Treat `null` as unknown and
-   report nothing. Never compare `languageRange` (`loaderVersion`) with the loader version.
+   from `src/core/version` (subject `'minecraft'` for MC versions), or `evaluateRange` from
+   `src/core/pack` for anything checked against the game or loader version (it adds the FML
+   fallbacks). Treat `null` / `unknown` as unknown and report nothing. Never compare
+   `languageRange` (`loaderVersion`) with the loader version.
 5. **Build findings with `makeFinding`.** It derives the stable id from
    `findingId(code, sorted culprit jar ids, discriminator)` (`src/core/crash/id.ts`). Rules:
    - The discriminator distinguishes findings with the same culprits (mod id, `a->b` for a
