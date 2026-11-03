@@ -4,8 +4,10 @@
  *
  * Vocabulary used by the checks:
  * - *active* jar: `isActive` (not disabled, readable, ancestors active).
- * - *relevant* entry: a `ModMeta` the pack's loader reads (`loaderAccepts`); all entries when the
- *   pack loader is unknown.
+ * - *relevant* entry: a `ModMeta` from a metadata file the pack's loader reads, targeting a loader
+ *   it runs (`entryRelevant` = `metadataFilesRead` + `loaderAccepts`, pack/loaders.ts); all
+ *   entries when the pack loader is unknown. E.g. NeoForge ≥ 1.20.5 ignores a leftover
+ *   `META-INF/mods.toml`, so its entries never reach any check.
  * - *loaded* entry: relevant and not excluded by its environment for the pack side (Fabric/Quilt
  *   `environment: client` and Forge `clientSideOnly` mods are skipped on a dedicated server;
  *   Fabric `environment: server` mods are skipped on a client).
@@ -19,7 +21,7 @@
  */
 import type { JarRecord, ModEnvironment, ModMeta, Side } from '../../bindings';
 import type { CheckInput, Evidence, JarIndex, PackContext } from '../model';
-import { buildJarIndex, describePack, loaderAccepts, topLevelOf, versionSyntaxFor } from '../pack';
+import { buildJarIndex, describePack, entryRelevant, topLevelOf, versionSyntaxFor } from '../pack';
 import { versionApi } from '../version';
 
 export interface ModEntry {
@@ -116,7 +118,7 @@ function build(input: CheckInput): CheckContext {
   const relevant = (jar: JarRecord): ModMeta[] => {
     let r = relevantMemo.get(jar.id);
     if (!r) {
-      r = jar.mods.filter((m) => loaderAccepts(packKind, pack.mcVersion, m));
+      r = jar.mods.filter((m) => entryRelevant(packKind, pack.mcVersion, jar, m));
       relevantMemo.set(jar.id, r);
     }
     return r;

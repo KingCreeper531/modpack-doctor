@@ -11,7 +11,7 @@
  */
 import type { Dependency, FixAction, JarRecord } from '../../bindings';
 import type { Check, Finding } from '../model';
-import { loaderAccepts } from '../pack';
+import { entryRelevant } from '../pack';
 import { isBuiltinDependency } from './builtins';
 import { contextFor, type CheckContext } from './context';
 import { dependencyLines, describeRange, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rawRange } from './evidence';
@@ -28,7 +28,7 @@ function disabledProviders(ctx: CheckContext, modId: string): JarRecord[] {
   const kind = ctx.pack.loader?.kind ?? 'unknown';
   return ctx.input.scan.jars
     .filter((j) => j.depth === 0 && j.disabled)
-    .filter((j) => j.mods.some((m) => loaderAccepts(kind, ctx.pack.mcVersion, m) && (m.modId === modId || m.provides.includes(modId))))
+    .filter((j) => j.mods.some((m) => entryRelevant(kind, ctx.pack.mcVersion, j, m) && (m.modId === modId || m.provides.includes(modId))))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

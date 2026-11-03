@@ -41,7 +41,9 @@ describe('E-WRONG-LOADER', () => {
   });
 
   it('with an unknown MC version, MC-dependent cases are not reported', () => {
-    expect(only(run([neoNew], pack('forge', null)), 'E-WRONG-LOADER')).toEqual([]);
+    expect(only(run([neoMods], pack('forge', null)), 'E-WRONG-LOADER')).toEqual([]);
+    // …but Forge never reads neoforge.mods.toml, whatever the MC version.
+    expect(only(run([neoNew], pack('forge', null)), 'E-WRONG-LOADER')).toHaveLength(1);
     expect(only(run([jei], pack('neoforge', null)), 'E-WRONG-LOADER')).toEqual([]);
     expect(only(run([sodium], pack('forge', null)), 'E-WRONG-LOADER')).toHaveLength(1);
   });

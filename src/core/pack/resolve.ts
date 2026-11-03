@@ -23,7 +23,7 @@
  *   normalises as a Minecraft version scores the number of jars with at least one `mcRange` it
  *   satisfies (`subject: 'minecraft'`). Highest score wins; ties → the newest (Fabric MC order).
  * - Loader: each loader kind scores the number of jars with at least one entry it would load
- *   (`loaderAccepts`, so Fabric jars also count for Quilt, and Forge/NeoForge count for each other
+ *   (`entryRelevant`: a file it reads + `loaderAccepts`, so Fabric jars also count for Quilt, and Forge/NeoForge count for each other
  *   on 1.20.1). Ties → more jars that target that loader natively; then the fixed order Forge,
  *   NeoForge, Fabric, Quilt, Legacy Forge. The inferred loader's version is always null.
  */
@@ -31,7 +31,7 @@ import type { Instance, JarRecord, LoaderInfo, LoaderKind, PackOverride, ScanRes
 import type { PackContext } from '../model';
 import { versionApi } from '../version';
 import { isActive } from './active';
-import { loaderAccepts } from './loaders';
+import { entryRelevant } from './loaders';
 
 const LOADER_ORDER: readonly LoaderKind[] = ['forge', 'neoforge', 'fabric', 'quilt', 'legacyforge'];
 
@@ -81,7 +81,7 @@ export function inferLoaderKind(jars: readonly JarRecord[], mc: string | null): 
     for (const j of jars) {
       const mods = j.mods.filter((m) => m.loader !== 'unknown');
       if (mods.length === 0) continue;
-      if (mods.some((m) => loaderAccepts(kind, mc, m))) score++;
+      if (mods.some((m) => entryRelevant(kind, mc, j, m))) score++;
       if (mods.some((m) => m.loader === kind)) native++;
     }
     if (score === 0) continue;

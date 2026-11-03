@@ -26,6 +26,13 @@ Severity mirrors real loader behaviour, read from loader source
 (`docs/research/loader-enforcement.md` is the spec). A finding the game would shrug off must not be
 an error.
 
+- **Which metadata file counts** (`metadataFilesRead` / `entryRelevant` in `../pack/loaders.ts`,
+  the single relevance rule): NeoForge ≥ 1.20.5 (and 26.x) reads only
+  `META-INF/neoforge.mods.toml`; NeoForge 1.20.1–1.20.4 and Forge read `META-INF/mods.toml`
+  (+ `mcmod.info` for legacy); Fabric `fabric.mod.json`; Quilt `quilt.mod.json`, else
+  `fabric.mod.json`; unknown MC on NeoForge → both FML files. Entries from files the loader
+  ignores never reach any check (`ctx.relevant`), and `metadataErrors` in ignored files are not
+  W-CORRUPT-JAR. Many real jars ship a stale `mods.toml` next to `neoforge.mods.toml`.
 - **FML compatibility table** (`../pack/fmlCompat.ts`, `VersionSupportMatrix`): on NeoForge 1.21.1
   a `minecraft` range also passes if it contains `1.21` (and `neoforge` if it contains
   `21.0.166`); on NeoForge 1.21.8 `1.21.7` / `21.7.26-beta`; on Forge 1.20.1 `forge` also

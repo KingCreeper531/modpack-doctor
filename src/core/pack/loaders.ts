@@ -15,7 +15,7 @@
  * - When the pack's MC version is unknown, the MC-dependent cases above are accepted: a check
  *   reports only what it can be sure of.
  */
-import type { LoaderKind, ModMeta } from '../../bindings';
+import type { JarRecord, LoaderKind, ModMeta } from '../../bindings';
 import { versionApi } from '../version';
 
 export const LOADER_NAMES: Readonly<Record<LoaderKind, string>> = {
@@ -89,6 +89,64 @@ export function loaderAccepts(
     default:
       return false;
   }
+}
+
+export const NEOFORGE_TOML = 'META-INF/neoforge.mods.toml';
+export const MODS_TOML = 'META-INF/mods.toml';
+export const FABRIC_JSON = 'fabric.mod.json';
+export const QUILT_JSON = 'quilt.mod.json';
+export const MCMOD_INFO = 'mcmod.info';
+
+/**
+ * Metadata files the pack's loader actually reads from a jar that contains `present` files
+ * (parsed or failed). null = every file (unknown loader).
+ *
+ * - NeoForge on MC ≥ 1.20.5 (incl. year-based 26.x): only `META-INF/neoforge.mods.toml` — a
+ *   leftover `META-INF/mods.toml` (stale, empty, unexpanded template) is ignored by the loader.
+ * - NeoForge 1.20.1–1.20.4: `META-INF/mods.toml` (`neoforge.mods.toml` did not exist yet).
+ * - NeoForge with an unknown MC version: both FML files (we cannot tell).
+ * - Forge: `META-INF/mods.toml` (+ `mcmod.info`, whose entries `loaderAccepts` limits to < 1.13).
+ *   Forge never reads `neoforge.mods.toml`.
+ * - Legacy Forge: `mcmod.info` and `META-INF/mods.toml` (the MC version decides via `loaderAccepts`).
+ * - Fabric: `fabric.mod.json`. Quilt: `quilt.mod.json` when the jar has one, else `fabric.mod.json`.
+ */
+export function metadataFilesRead(packLoader: LoaderKind, mc: string | null, present: readonly string[]): ReadonlySet<string> | null {
+  switch (packLoader) {
+    case 'neoforge': {
+      const c = mcCompare(mc, '1.20.5');
+      if (c === null) return new Set([NEOFORGE_TOML, MODS_TOML]);
+      return new Set([c >= 0 ? NEOFORGE_TOML : MODS_TOML]);
+    }
+    case 'forge':
+      return new Set([MODS_TOML, MCMOD_INFO]);
+    case 'legacyforge':
+      return new Set([MCMOD_INFO, MODS_TOML]);
+    case 'fabric':
+      return new Set([FABRIC_JSON]);
+    case 'quilt':
+      return new Set([present.includes(QUILT_JSON) ? QUILT_JSON : FABRIC_JSON]);
+    default:
+      return null;
+  }
+}
+
+/** Metadata files present in a jar: parsed entries plus files that failed to parse. */
+export function presentMetadataFiles(jar: Pick<JarRecord, 'mods' | 'metadataErrors'>): string[] {
+  return [...new Set([...jar.mods.map((m) => m.metadataFile), ...(jar.metadataErrors ?? []).map((e) => e.file)])];
+}
+
+/** Whether the pack's loader reads `file` from `jar`. */
+export function loaderReadsFile(packLoader: LoaderKind, mc: string | null, jar: Pick<JarRecord, 'mods' | 'metadataErrors'>, file: string): boolean {
+  const read = metadataFilesRead(packLoader, mc, presentMetadataFiles(jar));
+  return read === null || read.has(file);
+}
+
+/**
+ * The single relevance rule every check uses: the entry comes from a file the pack's loader
+ * reads (`metadataFilesRead`) and targets a loader it runs (`loaderAccepts`).
+ */
+export function entryRelevant(packLoader: LoaderKind, mc: string | null, jar: Pick<JarRecord, 'mods' | 'metadataErrors'>, mod: ModMeta): boolean {
+  return loaderReadsFile(packLoader, mc, jar, mod.metadataFile) && loaderAccepts(packLoader, mc, mod);
 }
 
 /** Range syntax a loader's mod versions are ordered with. */

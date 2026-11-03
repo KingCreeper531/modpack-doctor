@@ -54,6 +54,8 @@ export interface JarSpec {
   packages?: string[];
   disabled?: boolean;
   status?: JarStatus;
+  /** Metadata files that failed to parse (the jar stays `ok` when another file parsed). */
+  metadataErrors?: { file: string; reason: string }[];
   jarjar?: { group: string; artifact: string; range?: string; version?: string };
   sha1?: string;
   maxClassMajor?: number | null;
@@ -212,7 +214,7 @@ function record(spec: JarSpec, loader: LoaderKind, id: string, path: string, dep
     depth,
     parentId,
     status: spec.status ?? { state: 'ok' },
-    metadataErrors: [],
+    metadataErrors: spec.metadataErrors ?? [],
     loaders,
     mods,
     packages: [...(spec.packages ?? [])].sort(),

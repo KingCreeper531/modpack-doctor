@@ -65,7 +65,9 @@ describe('E-MC-RANGE with FML fallbacks', () => {
     ['Forge 1.20.1 minecraft [1.20] → error', 'forge', '1.20.1', '[1.20]', undefined, 'client', 'error'],
     ['Forge 1.20.1 minecraft [1.20,1.21) is fine', 'forge', '1.20.1', '[1.20,1.21)', undefined, 'client', null],
   ])('%s', (_name, loader, mc, mcRange, mcSide, side, expected) => {
-    const j = jar({ file: 'mod.jar', mods: [{ id: 'mod', loader, mc: mcRange, ...(mcSide ? { mcSide } : {}) }] });
+    // NeoForge before 1.20.5 reads META-INF/mods.toml, not neoforge.mods.toml.
+    const modsToml = mc === '1.20.4';
+    const j = jar({ file: 'mod.jar', mods: [{ id: 'mod', loader, mc: mcRange, modsToml, ...(mcSide ? { mcSide } : {}) }] });
     const found = only(run([j], pack(loader, mc, null, side)), 'E-MC-RANGE');
     expect(found.map((f) => f.severity)).toEqual(expected ? [expected] : []);
   });
@@ -185,7 +187,7 @@ describe('E-DUP-ID per loader', () => {
   ])('%s → %s', (_name, loader, severity) => {
     const a = jar({ file: 'x-1.0.jar', mods: [{ id: 'x', loader, version: '1.0' }] });
     const b = jar({ file: 'x-2.0.jar', mods: [{ id: 'x', loader, version: '2.0' }] });
-    const mc = loader === 'legacyforge' ? '1.12.2' : '1.20.1';
+    const mc = loader === 'legacyforge' ? '1.12.2' : loader === 'neoforge' ? '1.21.1' : '1.20.1';
     expect(only(run([a, b], pack(loader, mc)), 'E-DUP-ID').map((f) => f.severity)).toEqual([severity]);
   });
 
