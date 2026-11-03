@@ -291,7 +291,8 @@ describe('fixes', () => {
     const spy = vi.spyOn(backend.commands, 'planWorkOrder');
     await store.getState().fix('dup', { kind: 'disable', jarId: JEI_A });
     expect(spy).toHaveBeenCalledWith(ATM.id, { mcVersion: '1.20.1', loader: { kind: 'forge', version: '47.3.0' } }, [{ kind: 'disable', jarId: JEI_A }]);
-    expect(store.getState().fixErrors.dup?.message).toBe('plan_work_order is not implemented yet (M6)');
+    expect(store.getState().fixErrors.dup).toEqual({ kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null });
+    expect(store.getState().fixErrorFrom.dup).toBe('triage');
     expect(store.getState().fixPending.dup).toBeUndefined();
     store.getState().dismissFixError('dup');
     expect(store.getState().fixErrors.dup).toBeUndefined();
@@ -304,7 +305,8 @@ describe('fixes', () => {
     const spy = vi.spyOn(backend.commands, 'planWorkOrder');
     await store.getState().setJarEnabled(CREATE, false);
     expect(spy.mock.calls[0]![2]).toEqual([{ kind: 'disable', jarId: CREATE }]);
-    expect(store.getState().fixErrors[`jar:${CREATE}`]?.kind).toBe('internal');
+    expect(store.getState().fixErrors[`jar:${CREATE}`]?.kind).toBe('unavailable');
+    expect(store.getState().fixErrorFrom[`jar:${CREATE}`]).toBe('mods');
   });
 
   it('refuses locally when the pack identity is unknown, and skips manual advice', async () => {
@@ -368,5 +370,85 @@ describe('rail actions', () => {
     expect(store.getState().selectedInstanceId).toBe(inst.id);
     (backend.events.dropRejected as unknown as { emit(p: unknown): void }).emit({ name: 'x.zip', reason: 'not a folder or .mrpack' });
     expect(store.getState().railError?.message).toBe('x.zip was not added: not a folder or .mrpack');
+  });
+});
+
+describe('review fixes', () => {
+  it('ignores a late ScanStarted once the scan is no longer running', async () => {
+    const { backend, subs, resolve } = drivenBackend();
+    const store = createAppStore({ backend, core: fakeCore().core, frame: manualFrames().frame });
+    await store.getState().init();
+    await until(() => store.getState().scans[ATM.id]?.status === 'scanning');
+    const stub = (id: string) => ({ id, path: id, fileName: id.slice(5), disabled: false });
+    subs.started!({ instanceId: ATM.id, jars: [stub('mods/a.jar')] });
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    await until(() => store.getState().scans[ATM.id]?.status === 'done');
+    const before = store.getState().scans[ATM.id]!;
+    subs.started!({ instanceId: ATM.id, jars: [stub('mods/late.jar')] });
+    expect(store.getState().scans[ATM.id]).toBe(before);
+    subs.started!({ instanceId: 'never-scanned', jars: [stub('mods/x.jar')] });
+    expect(store.getState().scans['never-scanned']).toBeUndefined();
+  });
+
+  it('queues exactly one rescan requested while scanning', async () => {
+    const { backend, resolve } = drivenBackend();
+    const spy = vi.spyOn(backend.commands, 'scanInstance');
+    const store = createAppStore({ backend, core: fakeCore().core, frame: manualFrames().frame });
+    await store.getState().init();
+    await until(() => store.getState().scans[ATM.id]?.status === 'scanning');
+    void store.getState().scan(ATM.id);
+    void store.getState().scan(ATM.id);
+    expect(store.getState().rescanQueued[ATM.id]).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    await until(() => spy.mock.calls.length === 2);
+    expect(store.getState().scans[ATM.id]!.status).toBe('scanning');
+    expect(store.getState().rescanQueued[ATM.id]).toBeUndefined();
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    await until(() => store.getState().scans[ATM.id]?.status === 'done');
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the detected pack identity (no override) next to the effective one', async () => {
+    const { store } = mockStore();
+    await store.getState().init();
+    await until(() => store.getState().scans[ATM.id]?.status === 'done');
+    expect(store.getState().scans[ATM.id]!.detected).toMatchObject({ mcVersion: '1.20.1', source: 'launcher' });
+    await store.getState().setOverride(ATM.id, { mcVersion: '1.21.1', loader: null, side: null });
+    const sc = store.getState().scans[ATM.id]!;
+    expect(sc.pack).toMatchObject({ mcVersion: '1.21.1', source: 'override' });
+    expect(sc.detected).toMatchObject({ mcVersion: '1.20.1', source: 'launcher' });
+  });
+
+  it('treats an unavailable scan (.mrpack in this build) as not scanned, not failed', async () => {
+    const { store } = mockStore();
+    await store.getState().init();
+    const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
+    store.getState().selectInstance(pack.id);
+    await until(() => store.getState().scans[pack.id]?.status === 'error');
+    const sc = store.getState().scans[pack.id]!;
+    expect(sc.error).toEqual({ kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet.", path: null });
+    expect(instanceStatus(sc)).toBe('unscanned');
+  });
+
+  it('opens the inspector drawer on selection and closes it on request', async () => {
+    const { store } = mockStore();
+    await store.getState().init();
+    expect(store.getState().inspectorOpen).toBe(false);
+    store.getState().revealJar(CREATE);
+    expect(store.getState().inspectorOpen).toBe(true);
+    store.getState().setInspectorOpen(false);
+    store.getState().select(null);
+    expect(store.getState().inspectorOpen).toBe(false);
+    store.getState().select({ kind: 'finding', id: 'x' });
+    expect(store.getState().inspectorOpen).toBe(true);
+  });
+
+  it('records the backend kind (a production build without the bridge is `none`)', async () => {
+    const { missingBackend, NO_BACKEND } = await import('../ipc');
+    const store = createAppStore({ backend: missingBackend(), core: fakeCore().core });
+    expect(store.getState().backendKind).toBe('none');
+    await store.getState().init();
+    expect(store.getState().discoveryError).toEqual(NO_BACKEND);
   });
 });

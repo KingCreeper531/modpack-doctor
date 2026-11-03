@@ -59,7 +59,7 @@ export function ScanPanel({ instanceId, className }: { instanceId: string; class
   let meta: string;
   if (status === 'scanning') meta = `${formatInt(scan?.done ?? 0)}/${formatInt(scan?.total ?? 0)}`;
   else if (status === 'done' && scan?.result) meta = `${formatInt(tiles.length)}/${formatInt(tiles.length)}  ${formatDuration(scan.result.durationMs)}`;
-  else meta = status === 'error' ? 'failed' : '—';
+  else meta = status === 'error' ? (scan?.error?.kind === 'unavailable' ? 'not available' : 'failed') : '—';
 
   return (
     <Panel
@@ -83,7 +83,7 @@ export function ScanPanel({ instanceId, className }: { instanceId: string; class
         <TileGrid tiles={tiles} selectedId={selectedJar} onSelect={a.revealJar} label={`Scan grid, ${tiles.length} jars`} />
       ) : (
         <p className="flex h-6 items-center t-small text-fg-faint">
-          {status === 'scanning' ? 'Listing jars…' : status === 'done' ? 'No jars in the mods folder.' : status === 'error' ? 'The scan did not finish.' : 'Not scanned yet.'}
+          {status === 'scanning' ? 'Listing jars…' : status === 'done' ? 'No jars in the mods folder.' : status === 'error' ? (scan?.error?.kind === 'unavailable' ? 'This instance cannot be scanned in this version yet.' : 'The scan did not finish.') : 'Not scanned yet.'}
         </p>
       )}
     </Panel>

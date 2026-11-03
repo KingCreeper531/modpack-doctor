@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ScanProgress, ScanStarted } from '../../../bindings';
-import { call, createBackend, isTauri, tauriBackend } from '../ipc';
+import { call, createBackend, isTauri, NO_BACKEND, tauriBackend } from '../ipc';
 import { MOCK_INSTANCES, mockJars } from '../mockData';
 import { createMockBackend, mockOptionsFromSearch } from '../mockIpc';
 
@@ -19,6 +19,16 @@ describe('real / mock switch', () => {
     expect(mock.kind).toBe('mock');
     expect(Object.keys(mock.commands).sort()).toEqual(Object.keys(tauriBackend().commands).sort());
     expect(Object.keys(mock.events).sort()).toEqual(Object.keys(tauriBackend().events).sort());
+  });
+
+  it('never falls back to the mock when mocks are not allowed (production): every command fails inline', async () => {
+    const b = createBackend({ location: { search: '?scenario=default' } }, false);
+    expect(b.kind).toBe('none');
+    expect(await b.commands.discoverInstances()).toEqual({ status: 'error', error: NO_BACKEND });
+    expect(await b.commands.getSettings()).toEqual({ status: 'error', error: NO_BACKEND });
+    const off = await b.events.scanProgress.listen(() => undefined);
+    expect(typeof off).toBe('function');
+    expect(NO_BACKEND.message).toMatch(/not running/);
   });
 
   it('parses ?scenario= and ?theme=, defaulting unknown values', () => {
@@ -98,9 +108,14 @@ describe('mock backend', () => {
     expect(b.settings().theme).toBe('light');
   });
 
-  it('answers fix planning honestly: not implemented yet', async () => {
-    const r = await createMockBackend({ latencyMs: 0 }).commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
-    expect(r).toEqual({ status: 'error', error: { kind: 'internal', message: 'plan_work_order is not implemented yet (M6)', path: null } });
+  it('answers later-milestone commands exactly like Rust: a neutral unavailable error', async () => {
+    const b = createMockBackend({ latencyMs: 0 });
+    const r = await b.commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
+    expect(r).toEqual({ status: 'error', error: { kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null } });
+    expect(await b.commands.gameRunning('x')).toMatchObject({ error: { kind: 'unavailable', message: "Detecting a running game isn't available in this version of Modpack Doctor yet." } });
+    expect(await b.commands.modrinthIdentify([], false)).toMatchObject({ error: { kind: 'unavailable', message: "Modrinth lookups isn't available in this version of Modpack Doctor yet." } });
+    const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
+    expect(await b.commands.scanInstance(pack.id)).toMatchObject({ error: { kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet." } });
   });
 });
 
