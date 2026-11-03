@@ -4,6 +4,7 @@
  * unknown, not missing) are listed in ONE finding; every such jar is a culprit. All other checks
  * still run for them. No fix.
  */
+import { findingId } from '../crash/id';
 import type { Check, Finding } from '../model';
 import { contextFor } from './context';
 import { jarRef, listText, makeFinding, plural } from './evidence';
@@ -40,6 +41,8 @@ export const notOnModrinthCheck: Check = {
       fixes: [],
       discriminator: '',
     });
-    return [finding];
+    // One aggregate finding per instance: its id must not change when the set of unidentified
+    // jars does, or the UI loses the selection on every rescan after adding/removing a mod.
+    return [{ ...finding, id: findingId('I-NOT-ON-MODRINTH', [], 'aggregate') }];
   },
 };

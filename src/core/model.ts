@@ -143,8 +143,10 @@ export interface Check {
 }
 
 /**
- * Lookup tables built once per scan (src/core/pack/index.ts). Active (non-disabled) jars only;
- * a nested jar is active when its top-level ancestor is.
+ * Lookup tables built once per scan (src/core/pack/index.ts). Active (non-disabled) jars only,
+ * except `byFileName`, which also lists disabled top-level jars under their `.disabled` name
+ * (the UI and crash frames look jars up by file name regardless of state). A nested jar is
+ * active when its top-level ancestor is.
  *
  * Nested-jar de-duplication: the loader keeps one copy per JarJar `group:artifact`
  * (Forge/NeoForge) or per mod id (Fabric/Quilt JiJ). Checks must not report two parents that
@@ -160,7 +162,7 @@ export interface JarIndex {
   byPackageAnyDepth: ReadonlyMap<string, readonly JarRecord[]>;
   /** mixin config file name → jars (several when a config is duplicated). */
   byMixinConfig: ReadonlyMap<string, readonly JarRecord[]>;
-  /** top-level file name (incl. `.disabled`) → jar. */
+  /** top-level file name → jar, active AND disabled (keyed by the real name incl. `.disabled`). */
   byFileName: ReadonlyMap<string, JarRecord>;
 }
 

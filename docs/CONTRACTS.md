@@ -191,11 +191,11 @@ Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `
 | `E-MC-RANGE` | error | declared Minecraft range excludes the pack's MC version |
 | `E-LOADER-RANGE` | error | declared loader-dependency range excludes the pack's loader version |
 | `E-DEP-RANGE` | error | dependency present, but its version is outside the declared range |
-| `E-MISSING-DEP` | error | required dependency absent. Built-ins (`minecraft`, `forge`, `neoforge`, `java`, `fabricloader`, `fabric`, `quilt_loader`, `javafml`, `lowcodefml`, …), `provides` and nested jars count as present |
+| `E-MISSING-DEP` | error | required dependency absent. Built-ins count as present: `minecraft`, `java`, `forge`, `neoforge`, `fml`, `mcp`, `javafml`, `lowcodefml`, `fabricloader`, `fabric-loader`, `quilt_loader`, `quilt-loader`, plus `mixinextras` only where the loader bundles it (`src/core/checks/builtins.ts`). `fabric` is **not** built in, because that id is Fabric API. `provides` and nested jars also count as present |
 | `E-DUP-ID` | error | two active top-level jars declare the same mod id (identical nested libraries are de-duplicated) |
 | `E-SPLIT-PKG` | error | same Java package in the own classes of ≥ 2 top-level jars, on Forge/NeoForge (JPMS `ResolutionException`) |
 | `I-SPLIT-PKG` | info | same, on Fabric/Quilt (no module layer) |
-| `E-INCOMPAT` | error | a declared `incompatible`/`breaks` entry is present and in range |
+| `E-INCOMPAT` | error (warning for Fabric `conflicts` / NeoForge `discouraged`) | a declared incompatibility entry is present and in range |
 | `W-CLIENT-ON-SERVER` | warning | client-only mod in a server instance |
 | `W-CORRUPT-JAR` | warning | jar unreadable or its metadata is invalid |
 | `I-NOT-ON-MODRINTH` | info | hash not found on Modrinth (possibly CurseForge or manual); never raised for `failed` lookups |
