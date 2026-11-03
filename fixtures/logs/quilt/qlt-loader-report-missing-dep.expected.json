@@ -1,0 +1,66 @@
+{
+  "kind": "crashReport",
+  "loader": "quilt",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "glintful-1.20.1-quilt-3.2.0.jar",
+      "modIds": [
+        "glintful"
+      ],
+      "packages": [
+        "me.prism.glintful",
+        "me.prism.glintful.mixin"
+      ],
+      "mixinConfigs": [
+        "glintful.mixins.json"
+      ]
+    },
+    {
+      "fileName": "owo-lib-0.11.2+1.20.jar",
+      "modIds": [
+        "owo"
+      ],
+      "packages": [
+        "io.wispforest.owo"
+      ],
+      "mixinConfigs": [
+        "owo.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-FABRIC-INCOMPAT",
+      "culpritFileNames": [
+        "glintful-1.20.1-quilt-3.2.0.jar",
+        "owo-lib-0.11.2+1.20.jar"
+      ],
+      "culpritModIds": [
+        "glintful",
+        "owo"
+      ],
+      "lineContains": "Glintful requires any version of Quilted Fabric API, which is missing!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-MISSING-MANDATORY"
+  ],
+  "notes": "Quilt loader-phase report (crash-...-quilt_loader.txt). The Mod Table maps IDs to files directly (<mods>/...). Quilted Fabric API is not installed; a Fabric mod (owo) also needs fabric-api. Non-ASCII mod name \"oωo\"."
+}

@@ -1,0 +1,75 @@
+{
+  "kind": "crashReport",
+  "loader": "fabric",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.92.2+1.20.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "shoalbound-1.20.1-2.0.1.jar",
+      "modIds": [
+        "shoalbound"
+      ],
+      "packages": [
+        "dev.shoal.bound",
+        "dev.shoal.bound.client",
+        "dev.shoal.bound.config"
+      ],
+      "mixinConfigs": [
+        "shoalbound.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    },
+    {
+      "fileName": "lithium-fabric-mc1.20.1-0.11.2.jar",
+      "modIds": [
+        "lithium"
+      ],
+      "packages": [
+        "me.jellysquid.mods.lithium"
+      ],
+      "mixinConfigs": [
+        "lithium.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-NOCLASSDEF",
+      "culpritModIds": [
+        "shoalbound"
+      ],
+      "lineContains": "Caused by: java.lang.NoClassDefFoundError: dev/lumen/configkit/api/ConfigScreenFactory"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-FABRIC-INCOMPAT",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Shoalbound uses ConfigKit but does not declare it; no installed jar contains dev.lumen.configkit, so this is a missing dependency. The entrypoint message names Shoalbound directly."
+}

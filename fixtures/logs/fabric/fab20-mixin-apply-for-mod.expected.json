@@ -1,0 +1,89 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.92.2+1.20.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "brightbark-1.20.1-1.3.0.jar",
+      "modIds": [
+        "brightbark"
+      ],
+      "packages": [
+        "org.timberline.brightbark",
+        "org.timberline.brightbark.mixin"
+      ],
+      "mixinConfigs": [
+        "brightbark.mixins.json"
+      ]
+    },
+    {
+      "fileName": "lithium-fabric-mc1.20.1-0.11.2.jar",
+      "modIds": [
+        "lithium"
+      ],
+      "packages": [
+        "me.jellysquid.mods.lithium"
+      ],
+      "mixinConfigs": [
+        "lithium.mixins.json"
+      ]
+    },
+    {
+      "fileName": "stackcount-1.20.1-0.9.0.jar",
+      "modIds": [
+        "stackcount"
+      ],
+      "packages": [
+        "io.github.tallyho.stackcount"
+      ],
+      "mixinConfigs": [
+        "stackcount.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-MIXIN",
+      "culpritFileNames": [
+        "brightbark-1.20.1-1.3.0.jar"
+      ],
+      "culpritModIds": [
+        "brightbark"
+      ],
+      "lineContains": "Mixin apply for mod brightbark failed brightbark.mixins.json:LeavesBlockMixin from mod brightbark -> net.minecraft.class_2397"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-FABRIC-INCOMPAT",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Fabric-fork wording names the mod twice. A harmless \"does not specify minVersion\" WARN for stackcount.mixins.json appears earlier and must not be blamed."
+}

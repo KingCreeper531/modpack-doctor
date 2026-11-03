@@ -1,0 +1,19 @@
+{
+  "kind": "hsErr",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [],
+  "expect": [
+    {
+      "code": "C-OOM",
+      "lineContains": "# There is insufficient memory for the Java Runtime Environment to continue."
+    }
+  ],
+  "forbid": [
+    "C-NATIVE",
+    "C-MIXIN",
+    "C-ROOT-CAUSE",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "JVM could not reserve a 16 GB heap (-Xms16G -Xmx16G) on a machine with 16 GB RAM and 7 GB free; dies 0.02 s after start. No Problematic frame, only V frames in jvm.dll, so this is not a native driver crash."
+}

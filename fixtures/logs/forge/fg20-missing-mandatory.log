@@ -1,0 +1,30 @@
+[04Jun2026 09:58:40.106] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.20.1-forge-47.2.0, --gameDir, C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley, --assetsDir, C:\Users\Dev\curseforge\minecraft\Install\assets, --assetIndex, 5, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --width, 1600, --height, 900, --launchTarget, forgeclient, --fml.forgeVersion, 47.2.0, --fml.mcVersion, 1.20.1, --fml.forgeGroup, net.minecraftforge, --fml.mcpVersion, 20230612.114412]
+[04Jun2026 09:58:40.505] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 10.0.9+10.0.9+main.dcd20f30 starting: java version 17.0.8 by Microsoft; OS Windows 10 arch amd64 version 10.0
+[04Jun2026 09:58:40.863] [main/INFO] [net.minecraftforge.fml.loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[04Jun2026 09:58:40.938] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[04Jun2026 09:58:41.222] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[04Jun2026 09:58:41.334] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.5 Source=union:/C:/Users/Dev/curseforge/minecraft/Install/libraries/org/spongepowered/mixin/0.8.5/mixin-0.8.5.jar%23100!/ Service=ModLauncher Env=CLIENT
+[04Jun2026 09:58:41.341] [pool-2-thread-1/INFO] [EARLYDISPLAY/]: GL info: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 4.6.0 NVIDIA 546.33, NVIDIA Corporation
+[04Jun2026 09:58:41.422] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\fmlcore\1.20.1-47.2.0\fmlcore-1.20.1-47.2.0.jar is missing mods.toml file
+[04Jun2026 09:58:41.569] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\javafmllanguage\1.20.1-47.2.0\javafmllanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[04Jun2026 09:58:41.944] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\lowcodelanguage\1.20.1-47.2.0\lowcodelanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[04Jun2026 09:58:42.104] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\mclanguage\1.20.1-47.2.0\mclanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[04Jun2026 09:58:42.430] [main/INFO] [net.minecraftforge.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 9 dependencies adding them to mods collection
+[04Jun2026 09:58:42.697] [main/ERROR] [net.minecraftforge.fml.loading.ModSorter/LOADING]: Missing or unsupported mandatory dependencies:
+	Mod ID: 'cloth_config', Requested by: 'emberforge', Expected range: '[11.0,)', Actual version: '[MISSING]'
+	Mod ID: 'minecraft', Requested by: 'saplingsplus', Expected range: '[1.20.2,1.21)', Actual version: '1.20.1'
+[04Jun2026 09:58:43.061] [main/INFO] [mixin/]: Compatibility level set to JAVA_17
+[04Jun2026 09:58:43.209] [main/INFO] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forgeclient' with arguments [--version, 1.20.1-forge-47.2.0, --gameDir, C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley, --assetsDir, C:\Users\Dev\curseforge\minecraft\Install\assets, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --username, Dev, --assetIndex, 5, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --width, 1600, --height, 900]
+[04Jun2026 09:58:43.459] [main/INFO] [MixinExtras|Service/]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.3.5).
+[04Jun2026 09:58:43.854] [Datafixer Bootstrap/INFO] [com.mojang.datafixers.DataFixerBuilder/]: 188 Datafixer optimizations took 204 milliseconds
+[04Jun2026 09:58:44.228] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Setting user: Dev
+[04Jun2026 09:58:44.479] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Backend library: LWJGL version 3.3.1 build 7
+[04Jun2026 09:58:44.481] [Render thread/FATAL] [net.minecraftforge.fml.ModLoader/CORE]: Error during pre-loading phase: ERROR: emberforge, fml.modloading.missingdependency
+[04Jun2026 09:58:44.825] [Render thread/FATAL] [net.minecraftforge.fml.ModLoader/CORE]: Error during pre-loading phase: ERROR: saplingsplus, fml.modloading.missingdependency
+[04Jun2026 09:58:45.073] [Render thread/FATAL] [net.minecraftforge.fml.ModLoader/LOADING]: Skipping lifecycle event CONSTRUCT, 2 errors found.
+[04Jun2026 09:58:45.425] [Render thread/FATAL] [net.minecraftforge.fml.ModLoader/LOADING]: Skipping lifecycle event COMMON_SETUP, 2 errors found.
+[04Jun2026 09:58:45.500] [Render thread/FATAL] [net.minecraftforge.fml.ModLoader/LOADING]: Skipping lifecycle event SIDED_SETUP, 2 errors found.
+[04Jun2026 09:58:45.831] [Render thread/INFO] [net.minecraft.server.packs.resources.ReloadableResourceManager/]: Reloading ResourceManager: vanilla
+[04Jun2026 09:58:45.983] [Render thread/INFO] [net.minecraft.client.sounds.SoundEngine/SOUNDS]: Sound engine started
+[04Jun2026 09:58:46.206] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 1024x512x4 minecraft:textures/atlas/blocks.png-atlas
+[04Jun2026 09:58:46.231] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!

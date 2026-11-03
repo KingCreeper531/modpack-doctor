@@ -1,0 +1,61 @@
+{
+  "kind": "latestLog",
+  "loader": "quilt",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "lumenlanterns-quilt-1.20.1-0.9.0.jar",
+      "modIds": [
+        "lumenlanterns"
+      ],
+      "packages": [
+        "io.lumen.lanterns"
+      ],
+      "mixinConfigs": [
+        "lumenlanterns.mixins.json"
+      ]
+    },
+    {
+      "fileName": "sodium-fabric-mc1.20.1-0.5.8.jar",
+      "modIds": [
+        "sodium"
+      ],
+      "packages": [
+        "me.jellysquid.mods.sodium.client"
+      ],
+      "mixinConfigs": [
+        "sodium.mixins.json"
+      ]
+    },
+    {
+      "fileName": "qfapi-7.5.0_qsl-6.1.2_fapi-0.92.0_mc-1.20.1.jar",
+      "modIds": [
+        "quilted_fabric_api"
+      ],
+      "packages": [
+        "org.quiltmc.qsl",
+        "net.fabricmc.fabric.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-FABRIC-INCOMPAT",
+      "culpritModIds": [
+        "lumenlanterns"
+      ],
+      "culpritFileNames": [
+        "lumenlanterns-quilt-1.20.1-0.9.0.jar"
+      ],
+      "lineContains": "Lumen Lanterns breaks with all versions of Sodium, but an incompatible version is present: 0.5.8+mc1.20.1!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Quilt resolution failure written to latest.log: Lumen Lanterns declares breaks on every Sodium version. The detailed lines map both mods to files via <mods>/."
+}

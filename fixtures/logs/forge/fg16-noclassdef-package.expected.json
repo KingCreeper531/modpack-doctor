@@ -1,0 +1,73 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.16.5",
+  "jars": [
+    {
+      "fileName": "mossycritters-1.16.5-1.4.2.jar",
+      "modIds": [
+        "mossycritters"
+      ],
+      "packages": [
+        "com.mossy.critters",
+        "com.mossy.critters.client.render",
+        "com.mossy.critters.client.model",
+        "com.mossy.critters.entity"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "animcore-1.16.5-2.0.1.jar",
+      "modIds": [
+        "animcore"
+      ],
+      "packages": [
+        "dev.quillwork.animcore",
+        "dev.quillwork.animcore.api",
+        "dev.quillwork.animcore.core",
+        "dev.quillwork.animcore.renderer"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "jei-1.16.5-7.7.1.152.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "Wayfarers-Path-1.16.5-0.12.0.jar",
+      "modIds": [
+        "wayfarerspath"
+      ],
+      "packages": [
+        "org.trailhead.wayfarer"
+      ],
+      "mixinConfigs": [
+        "wayfarerspath.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-NOCLASSDEF",
+      "culpritFileNames": [
+        "animcore-1.16.5-2.0.1.jar"
+      ],
+      "lineContains": "java.lang.NoClassDefFoundError: dev/quillwork/animcore/api/IAnimatableModel"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-RESOLUTION",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Mossy Critters was built against an older AnimCore API; the missing class lives in package dev.quillwork.animcore.api, which belongs to the installed animcore jar (version mismatch)."
+}

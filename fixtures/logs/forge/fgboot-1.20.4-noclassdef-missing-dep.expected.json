@@ -1,0 +1,71 @@
+{
+  "kind": "crashReport",
+  "loader": "forge",
+  "mcVersion": "1.20.4",
+  "jars": [
+    {
+      "fileName": "stormvane-1.20.4-1.1.0.jar",
+      "modIds": [
+        "stormvane"
+      ],
+      "packages": [
+        "dev.stormvane",
+        "dev.stormvane.client",
+        "dev.stormvane.registry"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "jei-1.20.4-forge-17.3.0.49.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.library",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "gustlib-forge-1.20.4-2.0.2.jar",
+      "modIds": [
+        "gustlib"
+      ],
+      "packages": [
+        "net.gustworks.lib",
+        "net.gustworks.lib.config"
+      ],
+      "mixinConfigs": [
+        "gustlib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kitebridges-1.20.4-0.3.1.jar",
+      "modIds": [
+        "kitebridges"
+      ],
+      "packages": [
+        "io.kite.bridges"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-NOCLASSDEF",
+      "culpritModIds": [
+        "stormvane"
+      ],
+      "lineContains": "java.lang.NoClassDefFoundError: dev/windlib/config/ConfigHolder"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-RESOLUTION",
+    "C-JAVA-VERSION"
+  ],
+  "notes": "Stormvane references dev.windlib.*, a package no installed jar provides: a missing dependency, not a broken jar. The finding should name Stormvane as the mod that needs it."
+}

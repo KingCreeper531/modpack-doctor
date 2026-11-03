@@ -1,0 +1,89 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.92.2+1.20.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "trinketry-1.20.1-1.3.0.jar",
+      "modIds": [
+        "trinketry"
+      ],
+      "packages": [
+        "com.pebble.trinketry",
+        "com.pebble.trinketry.api",
+        "com.pebble.trinketry.slot"
+      ],
+      "mixinConfigs": [
+        "trinketry.mixins.json"
+      ]
+    },
+    {
+      "fileName": "curiobag-2.2.0+1.20.1.jar",
+      "modIds": [
+        "curiobag"
+      ],
+      "packages": [
+        "net.ravenwork.curiobag",
+        "net.ravenwork.curiobag.client"
+      ],
+      "mixinConfigs": [
+        "curiobag.mixins.json"
+      ]
+    },
+    {
+      "fileName": "shoalbound-1.20.1-2.0.1.jar",
+      "modIds": [
+        "shoalbound"
+      ],
+      "packages": [
+        "dev.shoal.bound",
+        "dev.shoal.bound.config"
+      ],
+      "mixinConfigs": [
+        "shoalbound.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-NOCLASSDEF",
+      "culpritFileNames": [
+        "trinketry-1.20.1-1.3.0.jar"
+      ],
+      "lineContains": "java.lang.NoClassDefFoundError: com/pebble/trinketry/api/SlotType"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-FABRIC-INCOMPAT",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Robustness: two single lines of ~20 KB (a mod dumping its JSON table, a tag-loading error listing hundreds of references) precede the real failure. Curio Bag needs com.pebble.trinketry.api.SlotType; that package belongs to the installed, older Trinketry jar."
+}

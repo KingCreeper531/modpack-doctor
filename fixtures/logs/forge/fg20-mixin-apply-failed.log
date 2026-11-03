@@ -1,0 +1,100 @@
+[16May2026 21:41:52.215] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.20.1-forge-47.2.0, --gameDir, C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley, --assetsDir, C:\Users\Dev\curseforge\minecraft\Install\assets, --assetIndex, 5, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --width, 1600, --height, 900, --launchTarget, forgeclient, --fml.forgeVersion, 47.2.0, --fml.mcVersion, 1.20.1, --fml.forgeGroup, net.minecraftforge, --fml.mcpVersion, 20230612.114412]
+[16May2026 21:41:52.326] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 10.0.9+10.0.9+main.dcd20f30 starting: java version 17.0.8 by Microsoft; OS Windows 10 arch amd64 version 10.0
+[16May2026 21:41:52.467] [main/INFO] [net.minecraftforge.fml.loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[16May2026 21:41:52.498] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[16May2026 21:41:52.785] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[16May2026 21:41:53.124] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.5 Source=union:/C:/Users/Dev/curseforge/minecraft/Install/libraries/org/spongepowered/mixin/0.8.5/mixin-0.8.5.jar%23100!/ Service=ModLauncher Env=CLIENT
+[16May2026 21:41:53.159] [pool-2-thread-1/INFO] [EARLYDISPLAY/]: GL info: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 4.6.0 NVIDIA 546.33, NVIDIA Corporation
+[16May2026 21:41:53.447] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\fmlcore\1.20.1-47.2.0\fmlcore-1.20.1-47.2.0.jar is missing mods.toml file
+[16May2026 21:41:53.489] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\javafmllanguage\1.20.1-47.2.0\javafmllanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[16May2026 21:41:53.575] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\lowcodelanguage\1.20.1-47.2.0\lowcodelanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[16May2026 21:41:53.891] [main/WARN] [net.minecraftforge.fml.loading.moddiscovery.ModFileParser/LOADING]: Mod file C:\Users\Dev\curseforge\minecraft\Install\libraries\net\minecraftforge\mclanguage\1.20.1-47.2.0\mclanguage-1.20.1-47.2.0.jar is missing mods.toml file
+[16May2026 21:41:54.000] [main/INFO] [net.minecraftforge.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 9 dependencies adding them to mods collection
+[16May2026 21:41:54.144] [main/INFO] [mixin/]: Compatibility level set to JAVA_17
+[16May2026 21:41:54.287] [main/INFO] [cpw.mods.modlauncher.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forgeclient' with arguments [--version, 1.20.1-forge-47.2.0, --gameDir, C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley, --assetsDir, C:\Users\Dev\curseforge\minecraft\Install\assets, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --username, Dev, --assetIndex, 5, --accessToken, ????????, --clientId, c4b0f1e2-1a2b-4c3d-9e8f-001122334455, --xuid, 2535412345678901, --userType, msa, --versionType, release, --width, 1600, --height, 900]
+[16May2026 21:41:54.495] [main/WARN] [mixin/]: Reference map 'hearthhud.refmap.json' for hearthhud.mixins.json could not be read. If this is a development environment you can ignore this message
+[16May2026 21:41:54.752] [main/INFO] [MixinExtras|Service/]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.3.5).
+[16May2026 21:41:54.909] [Datafixer Bootstrap/INFO] [com.mojang.datafixers.DataFixerBuilder/]: 188 Datafixer optimizations took 231 milliseconds
+[16May2026 21:41:55.101] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Setting user: Dev
+[16May2026 21:41:55.369] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Backend library: LWJGL version 3.3.1 build 7
+[16May2026 21:41:55.529] [modloading-worker-0/INFO] [net.minecraftforge.common.ForgeMod/FORGEMOD]: Forge mod loading, version 47.2.0, for MC 1.20.1 with MCP 20230612.114412
+[16May2026 21:41:55.580] [modloading-worker-0/INFO] [net.minecraftforge.common.MinecraftForge/FORGE]: MinecraftForge v47.2.0 Initialized
+[16May2026 21:41:55.874] [modloading-worker-0/INFO] [com.cinderwick.emberforge.Emberforge/]: Emberforge 2.4.0 initialising
+[16May2026 21:41:56.184] [modloading-worker-1/INFO] [dev.tidy.terrain.TidyTerrain/]: Tidy Terrain 1.8.2 initialising
+[16May2026 21:41:56.199] [modloading-worker-2/INFO] [net.brassgear.pipeworks.Pipeworks/]: Pipeworks 2.3.1 initialising
+[16May2026 21:41:56.321] [modloading-worker-3/INFO] [mezz.jei.forge.JustEnoughItems/]: Just Enough Items 15.2.0.27 initialising
+[16May2026 21:41:56.372] [modloading-worker-0/INFO] [me.shedaniel.clothconfig2.ClothConfigvAPI/]: Cloth Config v10 API 11.1.106 initialising
+[16May2026 21:41:56.603] [modloading-worker-1/INFO] [io.github.lumenworks.lanternlight.LanternLight/]: Lantern Light 1.0.3 initialising
+[16May2026 21:41:56.624] [modloading-worker-2/INFO] [net.kilnworks.hearthhud.HearthstoneHUD/]: Hearthstone HUD 0.6.1 initialising
+[16May2026 21:41:56.769] [Render thread/INFO] [net.minecraft.server.packs.resources.ReloadableResourceManager/]: Reloading ResourceManager: vanilla, mod_resources
+[16May2026 21:41:57.139] [Render thread/INFO] [com.mojang.blaze3d.audio.Library/]: OpenAL initialized on device OpenAL Soft on Speakers (Realtek(R) Audio)
+[16May2026 21:41:57.462] [Render thread/INFO] [net.minecraft.client.sounds.SoundEngine/SOUNDS]: Sound engine started
+[16May2026 21:41:57.754] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 2048x1024x4 minecraft:textures/atlas/blocks.png-atlas
+[16May2026 21:41:58.141] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 256x256x4 minecraft:textures/atlas/signs.png-atlas
+[16May2026 21:41:58.160] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 1024x1024x4 minecraft:textures/atlas/armor_trims.png-atlas
+[16May2026 21:41:58.305] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 512x512x4 minecraft:textures/atlas/shield_patterns.png-atlas
+[16May2026 21:41:58.616] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 1024x512x4 minecraft:textures/atlas/particles.png-atlas
+[16May2026 21:41:58.629] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 512x256x0 minecraft:textures/atlas/paintings.png-atlas
+[16May2026 21:41:58.715] [Render thread/INFO] [net.minecraft.client.renderer.texture.TextureAtlas/]: Created: 256x128x0 minecraft:textures/atlas/mob_effects.png-atlas
+[16May2026 21:41:59.059] [Render thread/INFO] [net.minecraft.client.Minecraft/]: [CHAT] Loaded 1,204 advancements
+[16May2026 21:41:59.130] [Server thread/INFO] [net.minecraft.client.server.IntegratedServer/]: Starting integrated minecraft server version 1.20.1
+[16May2026 21:41:59.244] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Generating keypair
+[16May2026 21:41:59.593] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Preparing start region for dimension minecraft:overworld
+[16May2026 21:41:59.894] [Worker-Main-4/ERROR] [mixin/]: Mixin apply failed tidyterrain.mixins.json:NoiseChunkMixin -> net.minecraft.world.level.levelgen.NoiseChunk: org.spongepowered.asm.mixin.injection.throwables.InvalidInjectionException Critical injection failure: @Redirect annotation on tidyterrain$wrapDensity could not find any targets matching 'Lnet/minecraft/world/level/levelgen/DensityFunction;m_207386_(Lnet/minecraft/world/level/levelgen/DensityFunction$FunctionContext;)D' in net.minecraft.world.level.levelgen.NoiseChunk. Using refmap tidyterrain.refmap.json [PREINJECT Applicator Phase -> tidyterrain.mixins.json:NoiseChunkMixin -> Prepare Injections ->  -> redirect$bpd000$wrapDensity(Lnet/minecraft/world/level/levelgen/DensityFunction;Lnet/minecraft/world/level/levelgen/DensityFunction$FunctionContext;)D -> Parse]
+org.spongepowered.asm.mixin.injection.throwables.InvalidInjectionException: Critical injection failure: @Redirect annotation on tidyterrain$wrapDensity could not find any targets matching 'Lnet/minecraft/world/level/levelgen/DensityFunction;m_207386_(Lnet/minecraft/world/level/levelgen/DensityFunction$FunctionContext;)D' in net.minecraft.world.level.levelgen.NoiseChunk. Using refmap tidyterrain.refmap.json [PREINJECT Applicator Phase -> tidyterrain.mixins.json:NoiseChunkMixin -> Prepare Injections ->  -> redirect$bpd000$wrapDensity(Lnet/minecraft/world/level/levelgen/DensityFunction;Lnet/minecraft/world/level/levelgen/DensityFunction$FunctionContext;)D -> Parse]
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.validateTargets(InjectionInfo.java:656) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.findTargets(InjectionInfo.java:587) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.readAnnotation(InjectionInfo.java:330) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.<init>(InjectionInfo.java:316) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.injection.struct.RedirectInjectionInfo.<init>(RedirectInjectionInfo.java:44) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinTargetContext.prepareInjections(MixinTargetContext.java:1329) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.prepareInjections(MixinApplicatorStandard.java:1053) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyMixin(MixinApplicatorStandard.java:395) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.apply(MixinApplicatorStandard.java:327) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.TargetClassContext.apply(TargetClassContext.java:422) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.TargetClassContext.applyMixins(TargetClassContext.java:403) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:250) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.service.modlauncher.MixinTransformationHandler.processClass(MixinTransformationHandler.java:131) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.launch.MixinLaunchPluginLegacy.processClass(MixinLaunchPluginLegacy.java:131) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at cpw.mods.modlauncher.serviceapi.ILaunchPluginService.processClassWithFlags(ILaunchPluginService.java:156) ~[modlauncher-10.0.9.jar:10.0.9+10.0.9+main.dcd20f30] {}
+	at cpw.mods.modlauncher.LaunchPluginHandler.offerClassNodeToPlugins(LaunchPluginHandler.java:88) ~[modlauncher-10.0.9.jar:?] {}
+	at cpw.mods.modlauncher.ClassTransformer.transform(ClassTransformer.java:120) ~[modlauncher-10.0.9.jar:?] {}
+	at cpw.mods.modlauncher.TransformingClassLoader.maybeTransformClassBytes(TransformingClassLoader.java:50) ~[modlauncher-10.0.9.jar:?] {}
+	at cpw.mods.cl.ModuleClassLoader.readerToClass(ModuleClassLoader.java:113) ~[securejarhandler-2.1.10.jar:?] {}
+	at cpw.mods.cl.ModuleClassLoader.lambda$findClass$15(ModuleClassLoader.java:219) ~[securejarhandler-2.1.10.jar:?] {}
+	at cpw.mods.cl.ModuleClassLoader.loadFromModule(ModuleClassLoader.java:229) ~[securejarhandler-2.1.10.jar:?] {}
+	at cpw.mods.cl.ModuleClassLoader.findClass(ModuleClassLoader.java:219) ~[securejarhandler-2.1.10.jar:?] {}
+	at cpw.mods.cl.ModuleClassLoader.loadClass(ModuleClassLoader.java:135) ~[securejarhandler-2.1.10.jar:?] {}
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:525) ~[?:?] {}
+	at net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator.m_224284_(NoiseBasedChunkGenerator.java:98) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading}
+	at net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator.m_223209_(NoiseBasedChunkGenerator.java:178) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading}
+	at java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1768) ~[?:?] {}
+	at java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) ~[?:?] {}
+	at java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) ~[?:?] {}
+	at java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) ~[?:?] {}
+	at java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) ~[?:?] {}
+	at java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) ~[?:?] {}
+[16May2026 21:42:00.270] [Server thread/ERROR] [net.minecraft.server.MinecraftServer/]: Encountered an unexpected exception
+net.minecraft.ReportedException: Exception generating new chunk
+	at net.minecraft.server.level.ChunkMap.lambda$scheduleChunkGeneration$27(ChunkMap.java:652) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at com.mojang.datafixers.util.Either$Left.map(Either.java:38) ~[datafixerupper-6.0.8.jar%23129!/:?] {}
+	at net.minecraft.server.level.ChunkMap.m_280208_(ChunkMap.java:640) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.util.thread.BlockableEventLoop.m_6367_(BlockableEventLoop.java:156) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading}
+	at net.minecraft.server.MinecraftServer.m_130011_(MinecraftServer.java:661) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at net.minecraft.server.MinecraftServer.m_206580_(MinecraftServer.java:251) ~[client-1.20.1-20230612.114412-srg.jar%23302!/:?] {re:classloading,pl:accesstransformer:B}
+	at java.lang.Thread.run(Thread.java:833) ~[?:?] {}
+Caused by: org.spongepowered.asm.mixin.transformer.throwables.MixinTransformerError: An unexpected critical error was encountered
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	... 24 more
+Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [tidyterrain.mixins.json:NoiseChunkMixin] from phase [DEFAULT] in config [tidyterrain.mixins.json] FAILED during APPLY
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinError(MixinProcessor.java:636) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinApplyError(MixinProcessor.java:588) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:379) ~[mixin-0.8.5.jar:0.8.5+Jenkins-b310.git-155314e6e91465dad727e621a569906a410cd6f4] {}
+	... 24 more
+[16May2026 21:42:00.561] [Server thread/ERROR] [net.minecraft.server.MinecraftServer/]: This crash report has been saved to: C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley\crash-reports\crash-2026-05-16_21.44.03-server.txt
+[16May2026 21:42:00.623] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Stopping server
+[16May2026 21:42:00.808] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving players
+[16May2026 21:42:01.046] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Saving worlds
+[16May2026 21:42:01.275] [Render thread/FATAL] [net.minecraftforge.common.ForgeMod/]: Preparing crash report with UUID 4d3c2b1a-0f9e-4d8c-b7a6-958473625140
+[16May2026 21:42:01.441] [Render thread/INFO] [STDOUT/]: [net.minecraft.client.Minecraft:m_91332_:2412]: #@!@# Game crashed! Crash report saved to: #@!@# C:\Users\Dev\curseforge\minecraft\Instances\Ember Valley\crash-reports\crash-2026-05-16_21.44.04-client.txt

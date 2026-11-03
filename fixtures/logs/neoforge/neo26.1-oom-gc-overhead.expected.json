@@ -1,0 +1,65 @@
+{
+  "kind": "latestLog",
+  "loader": "neoforge",
+  "mcVersion": "26.1.2",
+  "jars": [
+    {
+      "fileName": "rainshadow-26.1.2-1.0.1.jar",
+      "modIds": [
+        "rainshadow"
+      ],
+      "packages": [
+        "org.cloudline.rainshadow"
+      ],
+      "mixinConfigs": [
+        "rainshadow.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferrolib-neoforge-26.1-4.0.0.jar",
+      "modIds": [
+        "ferrolib"
+      ],
+      "packages": [
+        "dev.ferro.lib"
+      ],
+      "mixinConfigs": [
+        "ferrolib.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-26.1.2-neoforge-28.0.0.12.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "bigbiomes-26.1.2-3.0.0.jar",
+      "modIds": [
+        "bigbiomes"
+      ],
+      "packages": [
+        "com.vastland.bigbiomes"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-OOM",
+      "lineContains": "java.lang.OutOfMemoryError: GC overhead limit exceeded"
+    }
+  ],
+  "forbid": [
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Client hit the vanilla OutOfMemoryScreen path (\"Out of memory\" logged, no crash report) with -Xmx3G and ParallelGC. FML 11 startup anchor and no ModLauncher lines."
+}

@@ -1,0 +1,71 @@
+{
+  "kind": "crashReport",
+  "loader": "fabric",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "fabric-api-0.92.2+1.20.1.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api",
+        "net.fabricmc.fabric.impl"
+      ],
+      "mixinConfigs": [
+        "fabric-api-base.mixins.json"
+      ]
+    },
+    {
+      "fileName": "terralith-fabric-1.20.1-2.5.4.jar",
+      "modIds": [
+        "terralith"
+      ],
+      "packages": [
+        "net.stardust.terralith"
+      ],
+      "mixinConfigs": [
+        "terralith.mixins.json"
+      ]
+    },
+    {
+      "fileName": "lithium-fabric-mc1.20.1-0.11.2.jar",
+      "modIds": [
+        "lithium"
+      ],
+      "packages": [
+        "me.jellysquid.mods.lithium"
+      ],
+      "mixinConfigs": [
+        "lithium.mixins.json"
+      ]
+    },
+    {
+      "fileName": "shoalbound-1.20.1-2.0.1.jar",
+      "modIds": [
+        "shoalbound"
+      ],
+      "packages": [
+        "dev.shoal.bound",
+        "dev.shoal.bound.client"
+      ],
+      "mixinConfigs": [
+        "shoalbound.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-OOM",
+      "lineContains": "java.lang.OutOfMemoryError: Metaspace"
+    }
+  ],
+  "forbid": [
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-FABRIC-INCOMPAT"
+  ],
+  "notes": "Metaspace exhausted while defining a class on the integrated server; JVM Flags cap it with -XX:MaxMetaspaceSize=256M while the heap itself is healthy (2960 MiB free)."
+}

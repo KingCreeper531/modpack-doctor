@@ -1,0 +1,18 @@
+[11Feb2022 19:30:11.502] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running: args [--username, Dev, --version, 1.17.1-forge-37.1.1, --gameDir, C:\Users\Dev\AppData\Roaming\.minecraft, --assetsDir, C:\Users\Dev\AppData\Roaming\.minecraft\assets, --assetIndex, 1.17, --uuid, 8d1f0c5e2b7a4d6c9e3f1a0b2c4d6e8f, --accessToken, ????????, --userType, msa, --versionType, release, --launchTarget, forgeclient, --fml.forgeVersion, 37.1.1, --fml.mcVersion, 1.17.1, --fml.forgeGroup, net.minecraftforge, --fml.mcpVersion, 20210706.113038]
+[11Feb2022 19:30:11.539] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher 9.0.7+91+master.8569cdf starting: java version 16.0.1 by Microsoft; OS Windows 10 arch amd64 version 10.0
+[11Feb2022 19:30:11.558] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.4 Source=union:/C:/Users/Dev/AppData/Roaming/.minecraft/libraries/org/spongepowered/mixin/0.8.4/mixin-0.8.4.jar%2317!/ Service=ModLauncher Env=CLIENT
+[11Feb2022 19:30:11.885] [main/INFO] [net.minecraftforge.fml.loading.moddiscovery.JarInJarDependencyLocator/]: Found 0 dependencies adding them to mods collection
+[11Feb2022 19:30:11.903] [main/INFO] [mixin/]: Compatibility level set to JAVA_16
+Exception in thread "main" java.lang.module.ResolutionException: Module tidyterrain reads package org.joml from both jomlkit and lumenrender
+	at java.base/java.lang.module.Resolver.resolveFail(Resolver.java:893)
+	at java.base/java.lang.module.Resolver.checkExportSuppliers(Resolver.java:740)
+	at java.base/java.lang.module.Resolver.finish(Resolver.java:376)
+	at java.base/java.lang.module.Configuration.<init>(Configuration.java:140)
+	at java.base/java.lang.module.Configuration.resolveAndBind(Configuration.java:494)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.ModuleLayerHandler.buildLayer(ModuleLayerHandler.java:70)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.TransformationServicesHandler.buildTransformingClassLoader(TransformationServicesHandler.java:60)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.Launcher.run(Launcher.java:104)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.Launcher.main(Launcher.java:77)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:26)
+	at MC-BOOTSTRAP/cpw.mods.modlauncher@9.0.7/cpw.mods.modlauncher.BootstrapLaunchConsumer.accept(BootstrapLaunchConsumer.java:23)
+	at cpw.mods.bootstraplauncher@0.1.17/cpw.mods.bootstraplauncher.BootstrapLauncher.main(BootstrapLauncher.java:90)

@@ -1,0 +1,119 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007ff9e2c1a0f3, pid=9932, tid=10448
+#
+# JRE version: OpenJDK Runtime Environment Microsoft-9889606 (21.0.5+11) (build 21.0.5+11-LTS)
+# Java VM: OpenJDK 64-Bit Server VM Microsoft-9889606 (21.0.5+11-LTS, mixed mode, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# Problematic frame:
+# C  [ig9icd64.dll+0x4a0f3]
+#
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+# If you would like to submit a bug report, please visit:
+#   https://github.com/microsoft/openjdk/issues
+# The crash happened outside the Java Virtual Machine in native code.
+# See problematic frame for where to report the bug.
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Xss1M -Djava.library.path=C:\Users\Dev\AppData\Roaming\PrismLauncher\instances\Ashen 1.21.1\natives -Xms512m -Xmx6144m -Duser.language=en -DlibraryDirectory=C:\Users\Dev\AppData\Roaming\PrismLauncher\libraries -DignoreList=client-extra,neoforge-21.1.77.jar -p C:\Users\Dev\AppData\Roaming\PrismLauncher\libraries/cpw/mods/bootstraplauncher/2.0.2/bootstraplauncher-2.0.2.jar --add-modules ALL-MODULE-PATH cpw.mods.bootstraplauncher.BootstrapLauncher --launchTarget forgeclient --fml.fmlVersion 4.0.31 --fml.mcVersion 1.21.1 --fml.neoForgeVersion 21.1.77 --fml.neoFormVersion 20240808.144430
+
+Host: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 8 cores, 15G,  Windows 10 , 64 bit Build 19041 (10.0.19041.4597)
+Time: Sat Feb  1 13:02:56 2025 Central European Standard Time elapsed time: 96.551203 seconds (0d 0h 1m 36s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x0000024a8c2f6a30):  JavaThread "Render thread" [_thread_in_native, id=10448, stack(0x000000b3bfd00000,0x000000b3bfe00000) (1024K)]
+
+Stack: [0x000000b3bfd00000,0x000000b3bfe00000],  sp=0x000000b3bfdfc1d0,  free space=1008k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+C  [ig9icd64.dll+0x4a0f3]
+C  [ig9icd64.dll+0x8b7c1]
+C  [ig9icd64.dll+0x1f02a2]
+C  [lwjgl_opengl.dll+0xdc2f]
+C  0x0000024a9a3e7d1e
+
+Java frames: (J=compiled Java code, j=interpreted, Vv=VM code)
+j  org.lwjgl.opengl.GL20C.nglLinkProgram(I)V+0
+j  com.mojang.blaze3d.shaders.ProgramManager.linkShader(Lcom/mojang/blaze3d/shaders/Shader;)V+62
+j  net.minecraft.client.renderer.ShaderInstance.<init>(Lnet/minecraft/server/packs/resources/ResourceProvider;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/VertexFormat;)V+1002
+j  net.minecraft.client.renderer.GameRenderer.reloadShaders(Lnet/minecraft/server/packs/resources/ResourceProvider;)V+3121
+j  net.minecraft.client.Minecraft.<init>(Lnet/minecraft/client/main/GameConfig;)V+2501
+j  net.minecraft.client.main.Main.main([Ljava/lang/String;)V+1401
+v  ~StubRoutines::call_stub
+
+siginfo: EXCEPTION_ACCESS_VIOLATION (0xc0000005), reading address 0xffffffffffffffff
+
+
+Registers:
+RAX=0x0000000000000000, RBX=0x0000024ab0c11e00, RCX=0x0000024ab0c11e00, RDX=0x0000000000000000
+RIP=0x00007ff9e2c1a0f3, EFLAGS=0x0000000000010246
+
+---------------  P R O C E S S  ---------------
+
+Threads class SMR info:
+_java_thread_list=0x000001f2e1d0a3c0, length=58, elements={
+0x000001f2b4a3e120, 0x000001f2d1f10a80, 0x000001f2d1f12f60, 0x000001f2d1f2e7c0
+}
+
+VM state: not at safepoint (normal execution)
+
+VM Mutex/Monitor currently owned by a thread: None
+
+Heap address: 0x0000000600000000, size: 6144MB, Compressed Oops mode: Zero based, Oop shift amount: 3
+
+CDS archive(s) mapped at: [0x0000000800000000-0x0000000800bd0000-0x0000000800bd0000), size 12386304, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+Narrow klass base: 0x0000000800000000, Narrow klass shift: 0, Narrow klass range: 0x100000000
+
+GC Precious Log:
+ CPUs: 8 total, 8 available
+ Memory: 16234M
+ Large Page Support: Disabled
+ NUMA Support: Disabled
+ Compressed Oops: Enabled (Zero based)
+ Heap Region Size: 4M
+ Heap Min Capacity: 8M
+ Heap Initial Capacity: 256M
+ Heap Max Capacity: 6144M
+ Pre-touch: Disabled
+ Parallel Workers: 10
+ Concurrent Workers: 3
+ Concurrent Refinement Workers: 10
+ Periodic GC: Disabled
+
+Heap:
+ garbage-first heap   total 4194304K, used 2312145K [0x0000000600000000, 0x0000000800000000)
+  region size 4096K, 312 young (1277952K), 21 survivors (86016K)
+ Metaspace       used 212345K, committed 214016K, reserved 1245184K
+  class space    used 30122K, committed 31232K, reserved 1048576K
+
+Dynamic libraries:
+0x00007ff6a1b20000 - 0x00007ff6a1b2e000 	C:\Program Files\Microsoft\jdk-21.0.5.11-hotspot\bin\javaw.exe
+0x00007ffb4f8f0000 - 0x00007ffb4fb07000 	C:\WINDOWS\SYSTEM32\ntdll.dll
+0x00007ffb4e6b0000 - 0x00007ffb4e774000 	C:\WINDOWS\System32\KERNEL32.DLL
+0x00007ffb0b9e0000 - 0x00007ffb0c5c4000 	C:\Program Files\Microsoft\jdk-21.0.5.11-hotspot\bin\server\jvm.dll
+0x00007ff9e2bd0000 - 0x00007ff9e3f62000 	C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_8d0bc3a2c3f1e2b9\ig9icd64.dll
+0x00007ffb40aa0000 - 0x00007ffb40b07000 	C:\Users\Dev\AppData\Local\Temp\lwjglDev\3.3.1-build-7\lwjgl.dll
+0x00007ffb3fd60000 - 0x00007ffb3fdc4000 	C:\Users\Dev\AppData\Local\Temp\lwjglDev\3.3.1-build-7\lwjgl_opengl.dll
+
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 11 , 64 bit Build 22621 (10.0.22621.3958)
+OS uptime: 2 days 4:11 hours
+Hyper-V role detected
+
+CPU: total 8 (initial active 8) (4 cores per cpu, 2 threads per core) family 25 model 33 stepping 0 microcode 0x0, cx8, cmov, fxsr, ht, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4a, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, sha, fma, vzeroupper, clflush, clflushopt, hv
+Processor Information for all 8 processors :
+  Max Mhz: 3701, Current Mhz: 3701, Mhz Limit: 3701
+
+Memory: 4k page, system-wide physical 16234M (3120M free)
+TotalPageFile size 21098M (AvailPageFile size 5168M)
+current process WorkingSet (physical memory assigned to process): 5231M, peak: 5302M
+current process commit charge ("private bytes"): 5480M, peak: 5512M
+
+vm_info: OpenJDK 64-Bit Server VM (21.0.5+11-LTS) for windows-amd64 JRE (21.0.5+11-LTS), built on 2024-10-15T17:11:43Z by "MicrosoftCorporation" with MS VC++ 17.6 (VS2022)
+
+END.

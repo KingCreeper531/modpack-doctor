@@ -1,0 +1,106 @@
+---- Minecraft Crash Report ----
+// Glass half full of water.
+
+Time: 2024-04-02 20:11:45
+Description: Initializing game
+
+java.lang.RuntimeException: Mixin transformation of net.minecraft.class_1937 failed
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.getPostMixinClassByteArray(KnotClassDelegate.java:442)
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.tryLoadClass(KnotClassDelegate.java:340)
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.loadClass(KnotClassDelegate.java:228)
+	at org.quiltmc.loader.impl.launch.knot.KnotClassLoader.loadClass(KnotClassLoader.java:122)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	at knot//net.minecraft.class_310.<init>(class_310.java:542)
+	at knot//net.minecraft.client.main.Main.main(Main.java:211)
+	at org.quiltmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:528)
+	at org.quiltmc.loader.impl.launch.knot.Knot.launch(Knot.java:84)
+	at org.quiltmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:29)
+Caused by: org.spongepowered.asm.mixin.transformer.throwables.MixinTransformerError: An unexpected critical error was encountered
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392)
+	at org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234)
+	at org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClassBytes(MixinTransformer.java:202)
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.getPostMixinClassByteArray(KnotClassDelegate.java:437)
+	... 9 more
+Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [tideglass.mixins.json:WorldMixin from mod tideglass] from phase [DEFAULT] in config [tideglass.mixins.json] FAILED during APPLY
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinError(MixinProcessor.java:638)
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinApplyError(MixinProcessor.java:589)
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:379)
+	... 12 more
+Caused by: org.spongepowered.asm.mixin.transformer.throwables.InvalidMixinException: @Shadow method method_8546 in tideglass.mixins.json:WorldMixin from mod tideglass was not located in the target class net.minecraft.class_1937. Using refmap tideglass-refmap.json
+	at org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attachSpecialMethod(MixinPreProcessorStandard.java:437)
+	at org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attachShadowMethod(MixinPreProcessorStandard.java:413)
+	at org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attachMethods(MixinPreProcessorStandard.java:345)
+	at org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attach(MixinPreProcessorStandard.java:315)
+	at org.spongepowered.asm.mixin.transformer.MixinTargetContext.preApply(MixinTargetContext.java:1360)
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyMixin(MixinApplicatorStandard.java:385)
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.apply(MixinApplicatorStandard.java:327)
+	at org.spongepowered.asm.mixin.transformer.TargetClassContext.apply(TargetClassContext.java:422)
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363)
+	... 12 more
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Render thread
+Stacktrace:
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.getPostMixinClassByteArray(KnotClassDelegate.java:442)
+	at org.quiltmc.loader.impl.launch.knot.KnotClassDelegate.tryLoadClass(KnotClassDelegate.java:340)
+	at knot//net.minecraft.class_310.<init>(class_310.java:542)
+
+-- System Details --
+Details:
+	Minecraft Version: 1.20.1
+	Minecraft Version ID: 1.20.1
+	Operating System: Windows 11 (amd64) version 10.0
+	Java Version: 17.0.10, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: 305187344 bytes (291 MiB) / 671088640 bytes (640 MiB) up to 4294967296 bytes (4096 MiB)
+	CPUs: 12
+	Processor Vendor: GenuineIntel
+	Processor Name: 12th Gen Intel(R) Core(TM) i5-12400F
+	Identifier: Intel64 Family 6 Model 151 Stepping 5
+	Microarchitecture: Alder Lake
+	Frequency (GHz): 2.50
+	Number of physical packages: 1
+	Number of physical CPUs: 6
+	Number of logical CPUs: 12
+	Graphics card #0 name: NVIDIA GeForce RTX 4060
+	Graphics card #0 vendor: NVIDIA
+	Graphics card #0 VRAM (MB): 8188.00
+	Graphics card #0 deviceId: VideoController1
+	Graphics card #0 versionInfo: 32.0.15.6094
+	Memory slot #0 capacity (MB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MB): 40812.33
+	Virtual memory used (MB): 19904.12
+	Swap memory total (MB): 8192.00
+	Swap memory used (MB): 141.50
+	JVM Flags: 2 total; -Xmx4G -Xms512M
+	Quilt Mods:
+		| Index | Mod                                                         | ID                 | Version             | Plugin  | Flags | File(s)                                                                     |
+		|------:|-------------------------------------------------------------|--------------------|---------------------|---------|-------|-----------------------------------------------------------------------------|
+		|     0 | Minecraft                                                   | minecraft          | 1.20.1              | builtin |       | <game>/../versions/1.20.1/1.20.1.jar                                        |
+		|     1 | Quilt Loader                                                | quilt_loader       | 0.26.0              | builtin |       | <game>/../libraries/org/quiltmc/quilt-loader/0.26.0/quilt-loader-0.26.0.jar |
+		|     2 | OpenJDK 64-Bit Server VM                                    | java               | 17                  | builtin |       | !missing!                                                                   |
+		|     3 | Quilted Fabric API (QFAPI) / Quilt Standard Libraries (QSL) | quilted_fabric_api | 7.5.0+0.92.0-1.20.1 | quilt   |       | <mods>/qfapi-7.5.0_qsl-6.1.2_fapi-0.92.0_mc-1.20.1.jar                      |
+		|     4 | Tideglass                                                   | tideglass          | 1.1.0               | quilt   |       | <mods>/tideglass-quilt-1.20.1-1.1.0.jar                                     |
+		|     5 | Mod Menu                                                    | modmenu            | 7.2.2               | fabric  |       | <mods>/modmenu-7.2.2.jar                                                    |
+	Launched Version: 1.20.1-quilt-loader-0.26.0
+	Backend library: LWJGL version 3.3.1 build 7
+	Backend API: NVIDIA GeForce RTX 4060/PCIe/SSE2 GL version 3.2.0 NVIDIA 561.09, NVIDIA Corporation
+	Window size: 1920x1080
+	GL Caps: Using framebuffer using OpenGL 3.2
+	GL debug messages:
+	Using VBOs: Yes
+	Is Modded: Definitely; Client brand changed to 'quilt'
+	Type: Client (map_client.txt)
+	Graphics mode: fancy
+	Resource Packs: vanilla, fabric
+	Current Language: en_us
+	CPU: 12x 12th Gen Intel(R) Core(TM) i5-12400F

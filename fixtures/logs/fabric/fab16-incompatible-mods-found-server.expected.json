@@ -1,0 +1,48 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.16.5",
+  "jars": [
+    {
+      "fileName": "lumenlanterns-1.16.5-0.4.2.jar",
+      "modIds": [
+        "lumenlanterns"
+      ],
+      "packages": [
+        "io.lumen.lanterns"
+      ],
+      "mixinConfigs": [
+        "lumenlanterns.mixins.json"
+      ]
+    },
+    {
+      "fileName": "fabric-api-0.29.3+1.16.jar",
+      "modIds": [
+        "fabric-api"
+      ],
+      "packages": [
+        "net.fabricmc.fabric.api"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-FABRIC-INCOMPAT",
+      "culpritModIds": [
+        "lumenlanterns"
+      ],
+      "culpritFileNames": [
+        "lumenlanterns-1.16.5-0.4.2.jar"
+      ],
+      "lineContains": "Incompatible mods found!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE"
+  ],
+  "notes": "Headless dedicated server, so the GUI title \"Incompatible mods found!\" is logged instead of shown. Pre-0.12 loader package names (net.fabricmc.loader.discovery). Uncertain #3: old wording from memory."
+}

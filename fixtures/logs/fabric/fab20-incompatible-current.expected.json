@@ -1,0 +1,78 @@
+{
+  "kind": "latestLog",
+  "loader": "fabric",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "shoalbound-1.20.1-2.0.1.jar",
+      "modIds": [
+        "shoalbound"
+      ],
+      "packages": [
+        "dev.shoal.bound"
+      ],
+      "mixinConfigs": [
+        "shoalbound.mixins.json"
+      ]
+    },
+    {
+      "fileName": "trinketry-1.20.1-1.4.0.jar",
+      "modIds": [
+        "trinketry"
+      ],
+      "packages": [
+        "com.pebble.trinketry"
+      ],
+      "mixinConfigs": [
+        "trinketry.mixins.json"
+      ]
+    },
+    {
+      "fileName": "modmenu-7.2.2.jar",
+      "modIds": [
+        "modmenu"
+      ],
+      "packages": [
+        "com.terraformersmc.modmenu"
+      ],
+      "mixinConfigs": [
+        "modmenu.mixins.json"
+      ]
+    },
+    {
+      "fileName": "lithium-fabric-mc1.20.1-0.11.2.jar",
+      "modIds": [
+        "lithium"
+      ],
+      "packages": [
+        "me.jellysquid.mods.lithium"
+      ],
+      "mixinConfigs": [
+        "lithium.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-FABRIC-INCOMPAT",
+      "culpritFileNames": [
+        "shoalbound-1.20.1-2.0.1.jar",
+        "trinketry-1.20.1-1.4.0.jar"
+      ],
+      "culpritModIds": [
+        "shoalbound",
+        "trinketry"
+      ],
+      "lineContains": "Mod 'Shoalbound' (shoalbound) 2.0.1 requires any version of fabric-api, which is missing!"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-JAVA-VERSION",
+    "C-MISSING-MANDATORY"
+  ],
+  "notes": "Complete latest.log of a launch that fails during mod resolution (the loader shows its GUI; no crash report). fabric-api is not installed and Trinketry needs a newer Fabric Loader."
+}

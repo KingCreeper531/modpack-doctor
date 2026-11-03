@@ -1,0 +1,59 @@
+{
+  "kind": "crashReport",
+  "loader": "neoforge",
+  "mcVersion": "1.21",
+  "jars": [
+    {
+      "fileName": "glowgrove-1.21-0.5.0.jar",
+      "modIds": [
+        "glowgrove"
+      ],
+      "packages": [
+        "com.lumenfield.glowgrove",
+        "com.lumenfield.glowgrove.registry"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "jei-1.21-neoforge-19.5.0.33.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "mossypaths-1.21-2.3.0.jar",
+      "modIds": [
+        "mossypaths"
+      ],
+      "packages": [
+        "net.mossy.paths"
+      ],
+      "mixinConfigs": []
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-SUSPECTED",
+      "culpritFileNames": [
+        "glowgrove-1.21-0.5.0.jar"
+      ],
+      "culpritModIds": [
+        "glowgrove"
+      ],
+      "lineContains": "Mod File: /C:/Users/Dev/AppData/Roaming/ModrinthApp/profiles/Glow 1.21/mods/glowgrove-1.21-0.5.0.jar"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NATIVE",
+    "C-NOCLASSDEF",
+    "C-RESOLUTION"
+  ],
+  "notes": "Early NeoForge 21.0 mod-loading crash: the Failure message is the raw key fml.modloading.errorduringevent; the `-- MOD glowgrove --` section and its Mod File line name the culprit."
+}

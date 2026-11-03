@@ -1,0 +1,71 @@
+[21:12:03] [main/INFO]: Loading Minecraft 1.20.1 with Fabric Loader 0.15.11
+[21:12:04] [main/INFO]: Loading 14 mods:
+	- brightbark 1.3.0
+	- fabric-api 0.92.2+1.20.1
+	   |-- fabric-api-base 0.4.31+1802ada577
+	   |-- fabric-lifecycle-events-v1 2.2.22+afab492177
+	   |-- fabric-networking-api-v1 1.3.11+503a202477
+	   |-- fabric-rendering-v1 3.0.8+b3f4d7a777
+	   \-- fabric-resource-loader-v0 0.11.10+bcd08ed377
+	- fabricloader 0.15.11
+	   \-- mixinextras 0.3.5
+	- java 17
+	- lithium 0.11.2
+	- minecraft 1.20.1
+	- modmenu 7.2.2
+	- stackcount 0.9.0
+[21:12:05] [main/INFO]: SpongePowered MIXIN Subsystem Version=0.8.5 Source=file:/C:/Users/Dev/AppData/Roaming/.minecraft/libraries/net/fabricmc/sponge-mixin/0.13.3+mixin.0.8.5/sponge-mixin-0.13.3+mixin.0.8.5.jar Service=Knot/Fabric Env=CLIENT
+[21:12:06] [main/WARN]: Mixin config stackcount.mixins.json does not specify "minVersion" property
+[21:12:07] [main/INFO]: Compatibility level set to JAVA_17
+[21:12:07] [main/INFO]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.3.5).
+[21:12:08] [Datafixer Bootstrap/INFO]: 188 Datafixer optimizations took 112 milliseconds
+[21:12:08] [Render thread/INFO]: Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
+[21:12:10] [Render thread/INFO]: Setting user: Dev
+[21:12:10] [Render thread/INFO]: [Indigo] Different rendering plugin detected; not applying Indigo.
+[21:12:11] [Render thread/INFO]: Backend library: LWJGL version 3.3.1 SNAPSHOT
+[21:12:13] [Render thread/INFO]: Reloading ResourceManager: vanilla, fabric, fabric-api, brightbark, lithium, stackcount, modmenu
+[21:12:13] [Worker-Main-3/INFO]: Found unifont_all_no_pua-15.0.06.hex, loading
+[21:12:13] [Render thread/INFO]: OpenAL initialized on device OpenAL Soft on Speakers (Realtek(R) Audio)
+[21:12:13] [Render thread/INFO]: Sound engine started
+[21:12:14] [Render thread/INFO]: Created: 1024x512x4 minecraft:textures/atlas/blocks.png-atlas
+[21:12:14] [Render thread/INFO]: Created: 256x256x4 minecraft:textures/atlas/signs.png-atlas
+[21:12:16] [Render thread/INFO]: Created: 512x512x4 minecraft:textures/atlas/shield_patterns.png-atlas
+[21:12:16] [Render thread/INFO]: Created: 1024x1024x4 minecraft:textures/atlas/armor_trims.png-atlas
+[21:12:17] [Render thread/INFO]: Created: 256x128x0 minecraft:textures/atlas/particles.png-atlas
+[21:12:17] [Render thread/INFO]: Created: 128x128x0 minecraft:textures/atlas/mob_effects.png-atlas
+[21:12:18] [Server thread/INFO]: Starting integrated minecraft server version 1.20.1
+[21:12:18] [Server thread/INFO]: Generating keypair
+[21:12:19] [Server thread/INFO]: Preparing start region for dimension minecraft:overworld
+[21:12:20] [Worker-Main-6/ERROR]: Mixin apply for mod brightbark failed brightbark.mixins.json:LeavesBlockMixin from mod brightbark -> net.minecraft.class_2397: org.spongepowered.asm.mixin.injection.throwables.InvalidInjectionException Critical injection failure: @Inject annotation on onRandomTick could not find any targets matching 'method_9514' in net.minecraft.class_2397. Using refmap brightbark-refmap.json [PREINJECT Applicator Phase -> brightbark.mixins.json:LeavesBlockMixin from mod brightbark -> Prepare Injections ->  -> handler$zfk000$brightbark$onRandomTick(Lnet/minecraft/class_2680;Lnet/minecraft/class_3218;Lnet/minecraft/class_2338;Lnet/minecraft/class_5819;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V -> Parse]
+org.spongepowered.asm.mixin.injection.throwables.InvalidInjectionException: Critical injection failure: @Inject annotation on onRandomTick could not find any targets matching 'method_9514' in net.minecraft.class_2397. Using refmap brightbark-refmap.json [PREINJECT Applicator Phase -> brightbark.mixins.json:LeavesBlockMixin from mod brightbark -> Prepare Injections ->  -> handler$zfk000$brightbark$onRandomTick(Lnet/minecraft/class_2680;Lnet/minecraft/class_3218;Lnet/minecraft/class_2338;Lnet/minecraft/class_5819;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V -> Parse]
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.validateTargets(InjectionInfo.java:656) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.findTargets(InjectionInfo.java:587) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.readAnnotation(InjectionInfo.java:330) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.injection.struct.InjectionInfo.<init>(InjectionInfo.java:316) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinTargetContext.prepareInjections(MixinTargetContext.java:1400) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyMixin(MixinApplicatorStandard.java:315) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.apply(MixinApplicatorStandard.java:246) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.TargetClassContext.applyMixins(TargetClassContext.java:418) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClassBytes(MixinTransformer.java:202) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.getPostMixinClassByteArray(KnotClassDelegate.java:422) ~[fabric-loader-0.15.11.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.tryLoadClass(KnotClassDelegate.java:323) ~[fabric-loader-0.15.11.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.loadClass(KnotClassDelegate.java:218) ~[fabric-loader-0.15.11.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClassLoader.loadClass(KnotClassLoader.java:119) ~[fabric-loader-0.15.11.jar:?]
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:525) ~[?:?]
+	at knot//net.minecraft.class_2246.<clinit>(class_2246.java:89) ~[client-intermediary.jar:?]
+	at knot//net.minecraft.class_2378.method_10226(class_2378.java:118) ~[client-intermediary.jar:?]
+	at java.lang.Thread.run(Thread.java:840) ~[?:?]
+[21:12:21] [Render thread/ERROR]: Unreported exception thrown!
+java.lang.RuntimeException: Mixin transformation of net.minecraft.class_2397 failed
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.getPostMixinClassByteArray(KnotClassDelegate.java:427) ~[fabric-loader-0.15.11.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.tryLoadClass(KnotClassDelegate.java:323) ~[fabric-loader-0.15.11.jar:?]
+	at knot//net.minecraft.class_2246.<clinit>(class_2246.java:89) ~[client-intermediary.jar:?]
+Caused by: org.spongepowered.asm.mixin.transformer.throwables.MixinTransformerError: An unexpected critical error was encountered
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	... 3 more
+Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [brightbark.mixins.json:LeavesBlockMixin from mod brightbark] from phase [DEFAULT] in config [brightbark.mixins.json] FAILED during APPLY
+	at org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinError(MixinProcessor.java:638) ~[sponge-mixin-0.13.3+mixin.0.8.5.jar:0.13.3+mixin.0.8.5]
+	... 4 more
+[21:12:22] [Render thread/INFO]: [STDOUT]: #@!@# Game crashed! Crash report saved to: #@!@# C:\Users\Dev\AppData\Roaming\.minecraft\crash-reports\crash-2024-06-10_21.13.02-client.txt

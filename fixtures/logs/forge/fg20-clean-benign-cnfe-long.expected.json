@@ -1,0 +1,661 @@
+{
+  "kind": "latestLog",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [
+    {
+      "fileName": "emberforge-1.20.1-2.4.0.jar",
+      "modIds": [
+        "emberforge"
+      ],
+      "packages": [
+        "com.cinderwick.emberforge",
+        "com.cinderwick.emberforge.client",
+        "com.cinderwick.emberforge.mixin.client",
+        "com.cinderwick.emberforge.block"
+      ],
+      "mixinConfigs": [
+        "emberforge.mixins.json"
+      ]
+    },
+    {
+      "fileName": "tidyterrain-1.20.1-1.8.2.jar",
+      "modIds": [
+        "tidyterrain"
+      ],
+      "packages": [
+        "dev.tidy.terrain",
+        "dev.tidy.terrain.mixin",
+        "dev.tidy.terrain.worldgen"
+      ],
+      "mixinConfigs": [
+        "tidyterrain.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pipeworks-1.20.1-2.3.1.jar",
+      "modIds": [
+        "pipeworks"
+      ],
+      "packages": [
+        "net.brassgear.pipeworks",
+        "net.brassgear.pipeworks.block.entity",
+        "net.brassgear.pipeworks.network"
+      ],
+      "mixinConfigs": [
+        "pipeworks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.20.1-forge-15.2.0.27.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.forge",
+        "mezz.jei.library",
+        "mezz.jei.common",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "cloth-config-11.1.106-forge.jar",
+      "modIds": [
+        "cloth_config"
+      ],
+      "packages": [
+        "me.shedaniel.clothconfig2",
+        "me.shedaniel.autoconfig",
+        "me.shedaniel.clothconfig2.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "lanternlight-1.20.1-1.0.3.jar",
+      "modIds": [
+        "lanternlight"
+      ],
+      "packages": [
+        "io.github.lumenworks.lanternlight",
+        "io.github.lumenworks.lanternlight.mixin"
+      ],
+      "mixinConfigs": [
+        "lanternlight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "saplingsplus-forge-1.20.1-3.0.0.jar",
+      "modIds": [
+        "saplingsplus"
+      ],
+      "packages": [
+        "org.grovekeep.saplings",
+        "org.grovekeep.saplings.common"
+      ],
+      "mixinConfigs": [
+        "saplingsplus.mixins.json"
+      ]
+    },
+    {
+      "fileName": "hearthstone-hud-1.20.1-0.6.1.jar",
+      "modIds": [
+        "hearthhud"
+      ],
+      "packages": [
+        "net.kilnworks.hearthhud",
+        "net.kilnworks.hearthhud.client",
+        "net.kilnworks.hearthhud.mixin"
+      ],
+      "mixinConfigs": [
+        "hearthhud.mixins.json"
+      ]
+    },
+    {
+      "fileName": "Larder-Forge-1.20.1-4.2.17.jar",
+      "modIds": [
+        "larder"
+      ],
+      "packages": [
+        "net.pantrydev.larder",
+        "net.pantrydev.larder.api"
+      ],
+      "mixinConfigs": [
+        "larder.mixins.json"
+      ]
+    },
+    {
+      "fileName": "ferndelight-forge-1.20.1-3.3.7.jar",
+      "modIds": [
+        "ferndelight"
+      ],
+      "packages": [
+        "net.fernworks.delight"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "amberexpanded-forge-1.20.1-4.2.14.jar",
+      "modIds": [
+        "amberexpanded"
+      ],
+      "packages": [
+        "net.amberworks.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "glimmerdecor-forge-1.20.1-3.6.17.jar",
+      "modIds": [
+        "glimmerdecor"
+      ],
+      "packages": [
+        "net.glimmerworks.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "slatecore-forge-1.20.1-4.2.15.jar",
+      "modIds": [
+        "slatecore"
+      ],
+      "packages": [
+        "net.slateworks.core"
+      ],
+      "mixinConfigs": [
+        "slatecore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "marshtweaks-forge-1.20.1-2.5.12.jar",
+      "modIds": [
+        "marshtweaks"
+      ],
+      "packages": [
+        "net.marshworks.tweaks"
+      ],
+      "mixinConfigs": [
+        "marshtweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelpexpanded-forge-1.20.1-3.4.6.jar",
+      "modIds": [
+        "kelpexpanded"
+      ],
+      "packages": [
+        "net.kelpworks.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ironstorage-forge-1.20.1-4.0.14.jar",
+      "modIds": [
+        "ironstorage"
+      ],
+      "packages": [
+        "net.ironworks.storage"
+      ],
+      "mixinConfigs": [
+        "ironstorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "thistletools-forge-1.20.1-4.0.7.jar",
+      "modIds": [
+        "thistletools"
+      ],
+      "packages": [
+        "net.thistleworks.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebblestorage-forge-1.20.1-1.2.17.jar",
+      "modIds": [
+        "pebblestorage"
+      ],
+      "packages": [
+        "net.pebbleworks.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "thistleexpanded-forge-1.20.1-2.3.4.jar",
+      "modIds": [
+        "thistleexpanded"
+      ],
+      "packages": [
+        "net.thistleworks.expanded"
+      ],
+      "mixinConfigs": [
+        "thistleexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "copperbiomes-forge-1.20.1-3.4.4.jar",
+      "modIds": [
+        "copperbiomes"
+      ],
+      "packages": [
+        "net.copperworks.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loambiomes-forge-1.20.1-1.1.14.jar",
+      "modIds": [
+        "loambiomes"
+      ],
+      "packages": [
+        "net.loamworks.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ambertools-forge-1.20.1-3.8.6.jar",
+      "modIds": [
+        "ambertools"
+      ],
+      "packages": [
+        "net.amberworks.tools"
+      ],
+      "mixinConfigs": [
+        "ambertools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "rustpaths-forge-1.20.1-3.8.9.jar",
+      "modIds": [
+        "rustpaths"
+      ],
+      "packages": [
+        "net.rustworks.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "emberstorage-forge-1.20.1-1.2.11.jar",
+      "modIds": [
+        "emberstorage"
+      ],
+      "packages": [
+        "net.emberworks.storage"
+      ],
+      "mixinConfigs": [
+        "emberstorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "nethermobs-forge-1.20.1-2.2.8.jar",
+      "modIds": [
+        "nethermobs"
+      ],
+      "packages": [
+        "net.netherworks.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "pebbletools-forge-1.20.1-2.2.12.jar",
+      "modIds": [
+        "pebbletools"
+      ],
+      "packages": [
+        "net.pebbleworks.tools"
+      ],
+      "mixinConfigs": [
+        "pebbletools.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatedelight-forge-1.20.1-1.3.8.jar",
+      "modIds": [
+        "slatedelight"
+      ],
+      "packages": [
+        "net.slateworks.delight"
+      ],
+      "mixinConfigs": [
+        "slatedelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "glimmerstorage-forge-1.20.1-3.9.6.jar",
+      "modIds": [
+        "glimmerstorage"
+      ],
+      "packages": [
+        "net.glimmerworks.storage"
+      ],
+      "mixinConfigs": [
+        "glimmerstorage.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatetools-forge-1.20.1-2.3.10.jar",
+      "modIds": [
+        "slatetools"
+      ],
+      "packages": [
+        "net.slateworks.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "juniperpaths-forge-1.20.1-3.3.9.jar",
+      "modIds": [
+        "juniperpaths"
+      ],
+      "packages": [
+        "net.juniperworks.paths"
+      ],
+      "mixinConfigs": [
+        "juniperpaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "slatetweaks-forge-1.20.1-4.0.0.jar",
+      "modIds": [
+        "slatetweaks"
+      ],
+      "packages": [
+        "net.slateworks.tweaks"
+      ],
+      "mixinConfigs": [
+        "slatetweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "kelptweaks-forge-1.20.1-3.4.14.jar",
+      "modIds": [
+        "kelptweaks"
+      ],
+      "packages": [
+        "net.kelpworks.tweaks"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "rustdelight-forge-1.20.1-1.6.12.jar",
+      "modIds": [
+        "rustdelight"
+      ],
+      "packages": [
+        "net.rustworks.delight"
+      ],
+      "mixinConfigs": [
+        "rustdelight.mixins.json"
+      ]
+    },
+    {
+      "fileName": "pebbledecor-forge-1.20.1-1.9.0.jar",
+      "modIds": [
+        "pebbledecor"
+      ],
+      "packages": [
+        "net.pebbleworks.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "rustbiomes-forge-1.20.1-3.8.2.jar",
+      "modIds": [
+        "rustbiomes"
+      ],
+      "packages": [
+        "net.rustworks.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "marshtools-forge-1.20.1-1.6.3.jar",
+      "modIds": [
+        "marshtools"
+      ],
+      "packages": [
+        "net.marshworks.tools"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "oakcore-forge-1.20.1-3.3.3.jar",
+      "modIds": [
+        "oakcore"
+      ],
+      "packages": [
+        "net.oakworks.core"
+      ],
+      "mixinConfigs": [
+        "oakcore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "thistlepaths-forge-1.20.1-3.0.9.jar",
+      "modIds": [
+        "thistlepaths"
+      ],
+      "packages": [
+        "net.thistleworks.paths"
+      ],
+      "mixinConfigs": [
+        "thistlepaths.mixins.json"
+      ]
+    },
+    {
+      "fileName": "oakstorage-forge-1.20.1-1.2.11.jar",
+      "modIds": [
+        "oakstorage"
+      ],
+      "packages": [
+        "net.oakworks.storage"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "fernbiomes-forge-1.20.1-1.6.9.jar",
+      "modIds": [
+        "fernbiomes"
+      ],
+      "packages": [
+        "net.fernworks.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ambermobs-forge-1.20.1-4.9.12.jar",
+      "modIds": [
+        "ambermobs"
+      ],
+      "packages": [
+        "net.amberworks.mobs"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "ironcore-forge-1.20.1-4.2.10.jar",
+      "modIds": [
+        "ironcore"
+      ],
+      "packages": [
+        "net.ironworks.core"
+      ],
+      "mixinConfigs": [
+        "ironcore.mixins.json"
+      ]
+    },
+    {
+      "fileName": "oakbiomes-forge-1.20.1-2.0.0.jar",
+      "modIds": [
+        "oakbiomes"
+      ],
+      "packages": [
+        "net.oakworks.biomes"
+      ],
+      "mixinConfigs": [
+        "oakbiomes.mixins.json"
+      ]
+    },
+    {
+      "fileName": "brambledecor-forge-1.20.1-2.4.14.jar",
+      "modIds": [
+        "brambledecor"
+      ],
+      "packages": [
+        "net.brambleworks.decor"
+      ],
+      "mixinConfigs": [
+        "brambledecor.mixins.json"
+      ]
+    },
+    {
+      "fileName": "embertweaks-forge-1.20.1-2.0.2.jar",
+      "modIds": [
+        "embertweaks"
+      ],
+      "packages": [
+        "net.emberworks.tweaks"
+      ],
+      "mixinConfigs": [
+        "embertweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "loamexpanded-forge-1.20.1-4.5.8.jar",
+      "modIds": [
+        "loamexpanded"
+      ],
+      "packages": [
+        "net.loamworks.expanded"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "marshcore-forge-1.20.1-4.1.10.jar",
+      "modIds": [
+        "marshcore"
+      ],
+      "packages": [
+        "net.marshworks.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "copperdecor-forge-1.20.1-2.2.14.jar",
+      "modIds": [
+        "copperdecor"
+      ],
+      "packages": [
+        "net.copperworks.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "duskpaths-forge-1.20.1-3.2.2.jar",
+      "modIds": [
+        "duskpaths"
+      ],
+      "packages": [
+        "net.duskworks.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "oakexpanded-forge-1.20.1-2.1.4.jar",
+      "modIds": [
+        "oakexpanded"
+      ],
+      "packages": [
+        "net.oakworks.expanded"
+      ],
+      "mixinConfigs": [
+        "oakexpanded.mixins.json"
+      ]
+    },
+    {
+      "fileName": "oakpaths-forge-1.20.1-3.4.18.jar",
+      "modIds": [
+        "oakpaths"
+      ],
+      "packages": [
+        "net.oakworks.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "loamcore-forge-1.20.1-4.9.6.jar",
+      "modIds": [
+        "loamcore"
+      ],
+      "packages": [
+        "net.loamworks.core"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "bramblepaths-forge-1.20.1-2.7.6.jar",
+      "modIds": [
+        "bramblepaths"
+      ],
+      "packages": [
+        "net.brambleworks.paths"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "coppertweaks-forge-1.20.1-1.9.5.jar",
+      "modIds": [
+        "coppertweaks"
+      ],
+      "packages": [
+        "net.copperworks.tweaks"
+      ],
+      "mixinConfigs": [
+        "coppertweaks.mixins.json"
+      ]
+    },
+    {
+      "fileName": "bramblebiomes-forge-1.20.1-2.3.0.jar",
+      "modIds": [
+        "bramblebiomes"
+      ],
+      "packages": [
+        "net.brambleworks.biomes"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "duskdecor-forge-1.20.1-2.1.0.jar",
+      "modIds": [
+        "duskdecor"
+      ],
+      "packages": [
+        "net.duskworks.decor"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "quartzdecor-forge-1.20.1-3.0.10.jar",
+      "modIds": [
+        "quartzdecor"
+      ],
+      "packages": [
+        "net.quartzworks.decor"
+      ],
+      "mixinConfigs": [
+        "quartzdecor.mixins.json"
+      ]
+    }
+  ],
+  "expect": [],
+  "forbid": [
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-MIXIN",
+    "C-OOM",
+    "C-SUSPECTED",
+    "C-MISSING-MANDATORY",
+    "C-RESOLUTION"
+  ],
+  "notes": "Negative case: a successful session that ends with a clean \"Stopping!\". ClassNotFoundExceptions are logged at WARN for optional integrations (EMI, Jade, Patchouli are not installed), plus recipe parsing errors and \"Can't keep up!\" noise."
+}

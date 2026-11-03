@@ -1,0 +1,19 @@
+{
+  "kind": "hsErr",
+  "loader": "forge",
+  "mcVersion": "1.20.1",
+  "jars": [],
+  "expect": [
+    {
+      "code": "C-NATIVE",
+      "lineContains": "# C  [atio6axx.dll+0x1b3e4f]"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-ROOT-CAUSE",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "AMD OpenGL driver access violation in the render thread (glDrawElements). The heap summary mentions \"Metaspace used ...\" as normal hs_err content, which must not be read as an OOM."
+}

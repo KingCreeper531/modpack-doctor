@@ -1,0 +1,19 @@
+{
+  "kind": "hsErr",
+  "loader": "fabric",
+  "mcVersion": null,
+  "jars": [],
+  "expect": [
+    {
+      "code": "C-NATIVE",
+      "lineContains": "# C  [nvoglv64.dll+0xcd2a7]"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-ROOT-CAUSE",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "NVIDIA OpenGL driver crash in glBufferData under Fabric (KnotClient in the command line). The MC version is only implied by the launcher profile name, so mcVersion is null."
+}

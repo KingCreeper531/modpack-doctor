@@ -1,0 +1,13 @@
+[15:22:09] [main/INFO]: Loading Minecraft 1.18.1 with Fabric Loader 0.12.12
+[15:22:09] [main/ERROR]: Incompatible mod set!
+net.fabricmc.loader.impl.discovery.ModResolutionException: Mod resolution encountered an incompatible mod set!
+A potential solution has been determined:
+	 - Replace mod 'Fabric API' (fabric-api) 0.43.1+1.18 with version 0.44.0 or later.
+Unmet dependency listing:
+	 - Mod 'Hollow Logs' (hollowlogs) 1.1.0 requires version 0.44.0 or later of mod 'Fabric API' (fabric-api), but only the wrong version is present: 0.43.1+1.18!
+	at net.fabricmc.loader.impl.discovery.ModResolver.resolve(ModResolver.java:204) ~[fabric-loader-0.12.12.jar:?]
+	at net.fabricmc.loader.impl.discovery.ModDiscoverer.discoverMods(ModDiscoverer.java:171) ~[fabric-loader-0.12.12.jar:?]
+	at net.fabricmc.loader.impl.FabricLoaderImpl.setup(FabricLoaderImpl.java:205) ~[fabric-loader-0.12.12.jar:?]
+	at net.fabricmc.loader.impl.FabricLoaderImpl.load(FabricLoaderImpl.java:186) ~[fabric-loader-0.12.12.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.init(Knot.java:142) ~[fabric-loader-0.12.12.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) ~[fabric-loader-0.12.12.jar:?]

@@ -1,0 +1,92 @@
+---- Minecraft Crash Report ----
+// Out of space, out of time.
+
+Time: 2024-11-02 23:58:41
+Description: Exception in server tick loop
+
+java.lang.OutOfMemoryError: Metaspace
+	at java.base/java.lang.ClassLoader.defineClass1(Native Method)
+	at java.base/java.lang.ClassLoader.defineClass(ClassLoader.java:1012)
+	at net.fabricmc.loader.impl.launch.knot.KnotClassLoader.defineClassFwd(KnotClassLoader.java:160)
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.tryLoadClass(KnotClassDelegate.java:355)
+	at net.fabricmc.loader.impl.launch.knot.KnotClassDelegate.loadClass(KnotClassDelegate.java:218)
+	at net.fabricmc.loader.impl.launch.knot.KnotClassLoader.loadClass(KnotClassLoader.java:119)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	at knot//net.minecraft.class_3215.method_12127(class_3215.java:261)
+	at knot//net.minecraft.class_3218.method_18765(class_3218.java:390)
+	at knot//net.minecraft.server.MinecraftServer.method_3813(MinecraftServer.java:976)
+	at knot//net.minecraft.server.MinecraftServer.method_3748(MinecraftServer.java:906)
+	at knot//net.minecraft.class_1132.method_3748(class_1132.java:110)
+	at knot//net.minecraft.server.MinecraftServer.method_29741(MinecraftServer.java:721)
+	at knot//net.minecraft.server.MinecraftServer.method_29739(MinecraftServer.java:270)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- System Details --
+Details:
+	Minecraft Version: 1.20.1
+	Minecraft Version ID: 1.20.1
+	Operating System: Windows 10 (amd64) version 10.0
+	Java Version: 17.0.8, Microsoft
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode), Microsoft
+	Memory: 3104172032 bytes (2960 MiB) / 4294967296 bytes (4096 MiB) up to 6442450944 bytes (6144 MiB)
+	CPUs: 12
+	Processor Vendor: GenuineIntel
+	Processor Name: 12th Gen Intel(R) Core(TM) i5-12400F
+	Identifier: Intel64 Family 6 Model 151 Stepping 5
+	Microarchitecture: Alder Lake
+	Frequency (GHz): 2.50
+	Number of physical packages: 1
+	Number of physical CPUs: 6
+	Number of logical CPUs: 12
+	Graphics card #0 name: NVIDIA GeForce RTX 4060
+	Graphics card #0 vendor: NVIDIA
+	Graphics card #0 VRAM (MB): 8188.00
+	Graphics card #0 deviceId: VideoController1
+	Graphics card #0 versionInfo: 32.0.15.6094
+	Memory slot #0 capacity (MB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MB): 40812.33
+	Virtual memory used (MB): 19904.12
+	Swap memory total (MB): 8192.00
+	Swap memory used (MB): 141.50
+	JVM Flags: 5 total; -Xss1M -Xmx6G -Xms4G -XX:MetaspaceSize=128M -XX:MaxMetaspaceSize=256M
+	Fabric Mods:
+		fabric-api: Fabric API 0.92.2+1.20.1
+			fabric-api-base: Fabric API Base 0.4.31+1802ada577
+			fabric-lifecycle-events-v1: Fabric Lifecycle Events (v1) 2.2.22+afab492177
+			fabric-networking-api-v1: Fabric Networking API (v1) 1.3.11+503a202477
+			fabric-rendering-v1: Fabric Rendering (v1) 3.0.8+b3f4d7a777
+			fabric-resource-loader-v0: Fabric Resource Loader (v0) 0.11.10+bcd08ed377
+		fabricloader: Fabric Loader 0.15.11
+			mixinextras: MixinExtras 0.3.5
+		java: OpenJDK 64-Bit Server VM 17
+		lithium: Lithium 0.11.2
+		minecraft: Minecraft 1.20.1
+		shoalbound: Shoalbound 2.0.1
+		terralith: Terralith 2.5.4
+	Launched Version: fabric-loader-0.15.11-1.20.1
+	Backend library: LWJGL version 3.3.1 build 7
+	Backend API: NVIDIA GeForce RTX 4060/PCIe/SSE2 GL version 3.2.0 NVIDIA 561.09, NVIDIA Corporation
+	Window size: 1920x1080
+	GL Caps: Using framebuffer using OpenGL 3.2
+	GL debug messages:
+	Using VBOs: Yes
+	Is Modded: Definitely; Client brand changed to 'fabric'; Server brand changed to 'fabric'
+	Type: Integrated Server (map_client.txt)
+	Graphics mode: fancy
+	Resource Packs: vanilla, fabric
+	Current Language: en_us
+	CPU: 12x 12th Gen Intel(R) Core(TM) i5-12400F
+	Server Running: true
+	Player Count: 1 / 8; [class_3222['Dev'/402, l='ServerLevel[New World]', x=3012.44, y=72.00, z=-881.30]]
+	Data Packs: vanilla, fabric, terralith
+	Enabled Feature Flags: minecraft:vanilla
+	World Generation: Stable

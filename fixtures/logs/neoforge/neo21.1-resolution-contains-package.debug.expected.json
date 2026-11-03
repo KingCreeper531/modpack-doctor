@@ -1,0 +1,86 @@
+{
+  "kind": "debugLog",
+  "loader": "neoforge",
+  "mcVersion": "1.21.1",
+  "jars": [
+    {
+      "fileName": "ashenrealms-1.21.1-1.4.0.jar",
+      "modIds": [
+        "ashenrealms"
+      ],
+      "packages": [
+        "net.ashen.realms",
+        "net.ashen.realms.setup",
+        "net.ashen.realms.world",
+        "com.corvus.lib.util"
+      ],
+      "mixinConfigs": [
+        "ashenrealms.mixins.json"
+      ]
+    },
+    {
+      "fileName": "jei-1.21.1-neoforge-19.21.0.247.jar",
+      "modIds": [
+        "jei"
+      ],
+      "packages": [
+        "mezz.jei.neoforge",
+        "mezz.jei.api"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "emberlantern-1.21.1-0.8.2.jar",
+      "modIds": [
+        "emberlantern"
+      ],
+      "packages": [
+        "io.emberlantern"
+      ],
+      "mixinConfigs": [
+        "emberlantern.mixins.json"
+      ]
+    },
+    {
+      "fileName": "quietcaves-neoforge-1.21.1-1.1.0.jar",
+      "modIds": [
+        "quietcaves"
+      ],
+      "packages": [
+        "org.quietcaves"
+      ],
+      "mixinConfigs": []
+    },
+    {
+      "fileName": "corvuslib-neoforge-1.21.1-2.1.3.jar",
+      "modIds": [
+        "corvuslib"
+      ],
+      "packages": [
+        "com.corvus.lib",
+        "com.corvus.lib.util"
+      ],
+      "mixinConfigs": [
+        "corvuslib.mixins.json"
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "code": "C-RESOLUTION",
+      "culpritFileNames": [
+        "ashenrealms-1.21.1-1.4.0.jar",
+        "corvuslib-neoforge-1.21.1-2.1.3.jar"
+      ],
+      "lineContains": "Module ashenrealms contains package com.corvus.lib.util, module corvuslib exports package com.corvus.lib.util to ashenrealms"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-NOCLASSDEF",
+    "C-ROOT-CAUSE",
+    "C-MISSING-MANDATORY"
+  ],
+  "notes": "Ashen Realms shades part of CorvusLib (package com.corvus.lib.util) while CorvusLib is also installed. debug.log with DEBUG/TRACE discovery noise; the stderr trace was appended by the launcher."
+}

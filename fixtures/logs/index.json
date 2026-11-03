@@ -1,0 +1,178 @@
+[
+  {
+    "file": "forge/fg16-noclassdef-package.txt",
+    "expected": "forge/fg16-noclassdef-package.expected.json"
+  },
+  {
+    "file": "forge/fg17-resolution-reads-package.log",
+    "expected": "forge/fg17-resolution-reads-package.expected.json"
+  },
+  {
+    "file": "forge/fg19-suspected-crlf.txt",
+    "expected": "forge/fg19-suspected-crlf.expected.json"
+  },
+  {
+    "file": "forge/fg20-clean-benign-cnfe-long.log",
+    "expected": "forge/fg20-clean-benign-cnfe-long.expected.json"
+  },
+  {
+    "file": "forge/fg20-java-version-mod-class.txt",
+    "expected": "forge/fg20-java-version-mod-class.expected.json"
+  },
+  {
+    "file": "forge/fg20-missing-mandatory.log",
+    "expected": "forge/fg20-missing-mandatory.expected.json"
+  },
+  {
+    "file": "forge/fg20-mixin-apply-failed.log",
+    "expected": "forge/fg20-mixin-apply-failed.expected.json"
+  },
+  {
+    "file": "forge/fg20-mixin-transformer-error.txt",
+    "expected": "forge/fg20-mixin-transformer-error.expected.json"
+  },
+  {
+    "file": "forge/fg20-oom-heap.txt",
+    "expected": "forge/fg20-oom-heap.expected.json"
+  },
+  {
+    "file": "forge/fg20-oom-text-in-config-dump.txt",
+    "expected": "forge/fg20-oom-text-in-config-dump.expected.json"
+  },
+  {
+    "file": "forge/fg20-resolution-export-package.log",
+    "expected": "forge/fg20-resolution-export-package.expected.json"
+  },
+  {
+    "file": "forge/fg20-root-cause-only.txt",
+    "expected": "forge/fg20-root-cause-only.expected.json"
+  },
+  {
+    "file": "forge/fg20-server-missing-dep-fml.txt",
+    "expected": "forge/fg20-server-missing-dep-fml.expected.json"
+  },
+  {
+    "file": "forge/fg20-suspected-mod.txt",
+    "expected": "forge/fg20-suspected-mod.expected.json"
+  },
+  {
+    "file": "forge/fg20-suspected-mods-mixin.txt",
+    "expected": "forge/fg20-suspected-mods-mixin.expected.json"
+  },
+  {
+    "file": "forge/fgboot-1.20.4-noclassdef-missing-dep.txt",
+    "expected": "forge/fgboot-1.20.4-noclassdef-missing-dep.expected.json"
+  },
+  {
+    "file": "neoforge/neo20.4-injection-check-failed.txt",
+    "expected": "neoforge/neo20.4-injection-check-failed.expected.json"
+  },
+  {
+    "file": "neoforge/neo20.4-missing-mandatory.log",
+    "expected": "neoforge/neo20.4-missing-mandatory.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.0-errorduringevent-key.txt",
+    "expected": "neoforge/neo21.0-errorduringevent-key.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.1-mod-loading-issue.txt",
+    "expected": "neoforge/neo21.1-mod-loading-issue.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.1-resolution-contains-package.debug.log",
+    "expected": "neoforge/neo21.1-resolution-contains-package.debug.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.1-server-loading-errors.log",
+    "expected": "neoforge/neo21.1-server-loading-errors.expected.json"
+  },
+  {
+    "file": "neoforge/neo21.1-unicode-paths.txt",
+    "expected": "neoforge/neo21.1-unicode-paths.expected.json"
+  },
+  {
+    "file": "neoforge/neo26.1-mixin-shadow-class-processors.txt",
+    "expected": "neoforge/neo26.1-mixin-shadow-class-processors.expected.json"
+  },
+  {
+    "file": "neoforge/neo26.1-oom-gc-overhead.log",
+    "expected": "neoforge/neo26.1-oom-gc-overhead.expected.json"
+  },
+  {
+    "file": "fabric/fab16-incompatible-mods-found-server.log",
+    "expected": "fabric/fab16-incompatible-mods-found-server.expected.json"
+  },
+  {
+    "file": "fabric/fab18-incompatible-mod-set-old.log",
+    "expected": "fabric/fab18-incompatible-mod-set-old.expected.json"
+  },
+  {
+    "file": "fabric/fab20-incompatible-current.log",
+    "expected": "fabric/fab20-incompatible-current.expected.json"
+  },
+  {
+    "file": "fabric/fab20-long-lines-noclassdef.log",
+    "expected": "fabric/fab20-long-lines-noclassdef.expected.json"
+  },
+  {
+    "file": "fabric/fab20-mixin-apply-for-mod.log",
+    "expected": "fabric/fab20-mixin-apply-for-mod.expected.json"
+  },
+  {
+    "file": "fabric/fab20-noclassdef-missing-dep.txt",
+    "expected": "fabric/fab20-noclassdef-missing-dep.expected.json"
+  },
+  {
+    "file": "fabric/fab20-oom-metaspace.txt",
+    "expected": "fabric/fab20-oom-metaspace.expected.json"
+  },
+  {
+    "file": "fabric/fab20.6-requires-java-21.log",
+    "expected": "fabric/fab20.6-requires-java-21.expected.json"
+  },
+  {
+    "file": "fabric/fab21-clean-session-long.log",
+    "expected": "fabric/fab21-clean-session-long.expected.json"
+  },
+  {
+    "file": "fabric/fab21-mixin-transformation-failed.txt",
+    "expected": "fabric/fab21-mixin-transformation-failed.expected.json"
+  },
+  {
+    "file": "fabric/fab21-root-cause-chain.txt",
+    "expected": "fabric/fab21-root-cause-chain.expected.json"
+  },
+  {
+    "file": "quilt/qlt-loader-report-missing-dep.txt",
+    "expected": "quilt/qlt-loader-report-missing-dep.expected.json"
+  },
+  {
+    "file": "quilt/qlt20-breaks-latest.log",
+    "expected": "quilt/qlt20-breaks-latest.expected.json"
+  },
+  {
+    "file": "quilt/qlt20-mixin-shadow-crash.txt",
+    "expected": "quilt/qlt20-mixin-shadow-crash.expected.json"
+  },
+  {
+    "file": "jvm/hs_err_pid14872-amd-atio6axx.log",
+    "expected": "jvm/hs_err_pid14872-amd-atio6axx.expected.json"
+  },
+  {
+    "file": "jvm/hs_err_pid20516-nvidia-nvoglv64.log",
+    "expected": "jvm/hs_err_pid20516-nvidia-nvoglv64.expected.json"
+  },
+  {
+    "file": "jvm/hs_err_pid48211-linux-libgl.log",
+    "expected": "jvm/hs_err_pid48211-linux-libgl.expected.json"
+  },
+  {
+    "file": "jvm/hs_err_pid9120-insufficient-memory.log",
+    "expected": "jvm/hs_err_pid9120-insufficient-memory.expected.json"
+  },
+  {
+    "file": "jvm/hs_err_pid9932-intel-ig9icd64.log",
+    "expected": "jvm/hs_err_pid9932-intel-ig9icd64.expected.json"
+  }
+]

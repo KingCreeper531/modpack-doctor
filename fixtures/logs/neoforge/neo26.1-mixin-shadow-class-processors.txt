@@ -1,0 +1,133 @@
+---- Minecraft Crash Report ----
+// It never rains in the shadow of a mountain.
+
+Time: 2026-04-29 19:55:12
+Description: Unexpected error
+
+org.spongepowered.asm.mixin.transformer.throwables.MixinTransformerError: An unexpected critical error was encountered
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.transformation.MixinClassProcessor.processClass(MixinClassProcessor.java:61) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.transformation.ClassTransformer.transform(ClassTransformer.java:144) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.TransformingClassLoader.maybeTransformClassBytes(TransformingClassLoader.java:58) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.ModuleClassLoader.findClass(ModuleClassLoader.java:205) ~[loader-11.0.13.jar:11.0] {}
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:526) ~[?:?] {}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.multiplayer.ClientLevel.<init>(ClientLevel.java:233) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer,neoforge:mixin[APP:ferrolib.mixins.json:ClientLevelMixin from mod ferrolib]}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.multiplayer.ClientPacketListener.handleLogin(ClientPacketListener.java:466) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.network.protocol.PacketUtils.lambda$ensureRunningOnSameThread$0(PacketUtils.java:29) ~[minecraft-26.1.2-client.jar:?] {}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.util.thread.BlockableEventLoop.doRunTask(BlockableEventLoop.java:164) ~[minecraft-26.1.2-client.jar:?] {}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.Minecraft.runTick(Minecraft.java:1301) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.Minecraft.run(Minecraft.java:902) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.main.Main.main(Main.java:236) ~[minecraft-26.1.2-client.jar:?] {}
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733) ~[?:?] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.startup.FancyModLoader.run(FancyModLoader.java:212) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.startup.Client.main(Client.java:22) ~[loader-11.0.13.jar:11.0] {}
+Caused by: org.spongepowered.asm.mixin.throwables.MixinApplyError: Mixin [rainshadow.mixins.json:LevelRainMixin from mod rainshadow] from phase [DEFAULT] in config [rainshadow.mixins.json] FAILED during APPLY
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinError(MixinProcessor.java:638) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.handleMixinApplyError(MixinProcessor.java:589) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:379) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	... 16 more
+Caused by: org.spongepowered.asm.mixin.transformer.throwables.InvalidMixinException: @Shadow field rainLevelOld was not located in the target class net.minecraft.world.level.Level. No refMap loaded.
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attachShadowField(MixinPreProcessorStandard.java:592) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attachFields(MixinPreProcessorStandard.java:571) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinPreProcessorStandard.attach(MixinPreProcessorStandard.java:320) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinTargetContext.preApply(MixinTargetContext.java:1360) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.applyMixin(MixinApplicatorStandard.java:385) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinApplicatorStandard.apply(MixinApplicatorStandard.java:327) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.TargetClassContext.apply(TargetClassContext.java:422) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:363) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	... 16 more
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Render thread
+Stacktrace:
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinProcessor.applyMixins(MixinProcessor.java:392) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/org.spongepowered.mixin@0.16.3+mixin.0.8.7/org.spongepowered.asm.mixin.transformer.MixinTransformer.transformClass(MixinTransformer.java:234) ~[sponge-mixin-0.16.3+mixin.0.8.7.jar:?] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.transformation.MixinClassProcessor.processClass(MixinClassProcessor.java:61) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.transformation.ClassTransformer.transform(ClassTransformer.java:144) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.TransformingClassLoader.maybeTransformClassBytes(TransformingClassLoader.java:58) ~[loader-11.0.13.jar:11.0] {}
+	at MC-BOOTSTRAP/fml_loader@11.0.13/net.neoforged.fml.classloading.ModuleClassLoader.findClass(ModuleClassLoader.java:205) ~[loader-11.0.13.jar:11.0] {}
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:526) ~[?:?] {}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.multiplayer.ClientLevel.<init>(ClientLevel.java:233) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer,neoforge:mixin[APP:ferrolib.mixins.json:ClientLevelMixin from mod ferrolib]}
+
+-- Uptime --
+Details:
+	JVM uptime: 41.902s
+	Wall uptime: 33.115s
+	High-level uptime: 28.740s
+	Client ticks: 412 ticks / 20.601s
+Stacktrace:
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.Minecraft.fillReport(Minecraft.java:2611) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.Minecraft.run(Minecraft.java:926) ~[minecraft-26.1.2-client.jar:?] {neoforge:access_transformer}
+	at TRANSFORMER/minecraft@26.1.2/net.minecraft.client.main.Main.main(Main.java:236) ~[minecraft-26.1.2-client.jar:?] {}
+
+-- System Details --
+Details:
+	Minecraft Version: 26.1.2
+	Minecraft Version ID: 26.1.2
+	Operating System: Windows 11 (amd64) version 10.0
+	Java Version: 25.0.2, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: 1588143064 bytes (1514 MiB) / 3221225472 bytes (3072 MiB) up to 8589934592 bytes (8192 MiB)
+	CPUs: 16
+	Processor Vendor: AuthenticAMD
+	Processor Name: AMD Ryzen 7 5800X 8-Core Processor
+	Identifier: AuthenticAMD Family 25 Model 33 Stepping 0
+	Microarchitecture: Zen 3
+	Frequency (GHz): 3.80
+	Number of physical packages: 1
+	Number of physical CPUs: 8
+	Number of logical CPUs: 16
+	Graphics card #0 name: NVIDIA GeForce RTX 3060
+	Graphics card #0 vendor: NVIDIA (0x10de)
+	Graphics card #0 VRAM (MiB): 4095.00
+	Graphics card #0 deviceId: 0x2504
+	Graphics card #0 versionInfo: DriverVersion=31.0.15.4633
+	Memory slot #0 capacity (MiB): 16384.00
+	Memory slot #0 clockSpeed (GHz): 3.20
+	Memory slot #0 type: DDR4
+	Memory slot #1 capacity (MiB): 16384.00
+	Memory slot #1 clockSpeed (GHz): 3.20
+	Memory slot #1 type: DDR4
+	Virtual memory max (MiB): 37578.18
+	Virtual memory used (MiB): 21966.40
+	Swap memory total (MiB): 4864.00
+	Swap memory used (MiB): 233.06
+	JVM Flags: 2 total; -Xmx8G -Xms2G
+	Launched Version: neoforge-26.1.2.48-beta
+	Backend library: LWJGL version 3.3.6+1
+	Backend API: NVIDIA GeForce RTX 3060/PCIe/SSE2 GL version 3.2.0 NVIDIA 566.36, NVIDIA Corporation
+	Window size: 1920x1017
+	GFLW Platform: win32
+	Render Extensions: GL_KHR_debug, GL_ARB_vertex_attrib_binding, GL_ARB_direct_state_access
+	GL debug messages:
+	Is Modded: Definitely; Client brand changed to 'neoforge'
+	Universe: 400921fb54442d18
+	Type: Client (map_client.txt)
+	Locale: en_US
+	System encoding: Cp1252
+	File encoding: UTF-8
+	CPU: 16x AMD Ryzen 7 5800X 8-Core Processor
+	Class Processors:
+		02.15%: neoforge:access_transformer
+		11.40%: neoforge:mixin
+		00.62%: neoforge:runtime_enum_extender
+		00.31%: neoforge:dist_cleaner
+		00.08%: neoforge:object_holder_definalize
+	FML Language Providers:
+		javafml@11.0
+		lowcodefml@11.0
+		minecraft@11.0
+	Mod List:
+		minecraft-26.1.2-client.jar                       |Minecraft                     |minecraft                     |26.1.2              |Manifest: NOSIGNATURE
+		rainshadow-26.1.2-1.0.1.jar                       |Rainshadow                    |rainshadow                    |1.0.1               |Manifest: NOSIGNATURE
+		ferrolib-neoforge-26.1-4.0.0.jar                  |FerroLib                      |ferrolib                      |4.0.0               |Manifest: NOSIGNATURE
+		jei-26.1.2-neoforge-28.0.0.12.jar                 |Just Enough Items             |jei                           |28.0.0.12           |Manifest: NOSIGNATURE
+		neoforge-26.1.2.48-beta-universal.jar             |NeoForge                      |neoforge                      |26.1.2.48-beta      |Manifest: NOSIGNATURE
+	Crash Report UUID: 26a1b2c3-d4e5-4f60-8172-93a4b5c6d7e8
+	FML: 11.0.13
+	NeoForge: 26.1.2.48-beta

@@ -1,0 +1,19 @@
+{
+  "kind": "hsErr",
+  "loader": "neoforge",
+  "mcVersion": "1.21.1",
+  "jars": [],
+  "expect": [
+    {
+      "code": "C-NATIVE",
+      "lineContains": "# C  [ig9icd64.dll+0x4a0f3]"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-ROOT-CAUSE",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "Intel UHD 620 OpenGL driver (ig9icd64.dll) crashing while linking a shader at startup; NeoForge 21.1.77 on Java 21."
+}

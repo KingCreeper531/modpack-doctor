@@ -1,0 +1,19 @@
+{
+  "kind": "hsErr",
+  "loader": "vanilla",
+  "mcVersion": "1.21.1",
+  "jars": [],
+  "expect": [
+    {
+      "code": "C-NATIVE",
+      "lineContains": "# C  [libGL.so.1+0x2a3b1]"
+    }
+  ],
+  "forbid": [
+    "C-OOM",
+    "C-MIXIN",
+    "C-ROOT-CAUSE",
+    "C-NOCLASSDEF"
+  ],
+  "notes": "Linux SIGSEGV inside Mesa libGL during glfwSwapBuffers on vanilla 1.21.1 (radeonsi). Linux siginfo and /proc-style library map."
+}
