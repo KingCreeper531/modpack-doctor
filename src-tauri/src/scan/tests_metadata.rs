@@ -223,3 +223,39 @@ versionRange="[1.21,${mc_max})"
     assert_eq!(m.mc_range, unrepresentable(RangeSyntax::Fabric, "${mc}"));
     assert_eq!(m.loader_range, unrepresentable(RangeSyntax::Fabric, r#"{"all":[">=0.19","${max}"]}"#));
 }
+
+fn with_manifest(manifest: &str) -> JarRecord {
+    run(JarBuilder::new().file("META-INF/MANIFEST.MF", manifest).class("a/A.class", 61)).0.remove(0)
+}
+
+#[test]
+fn fml_mod_type_from_manifest() {
+    for ty in ["MOD", "LIBRARY", "GAMELIBRARY", "LANGPROVIDER"] {
+        let r = with_manifest(&format!("Manifest-Version: 1.0\r\nFMLModType: {ty}\r\nAutomatic-Module-Name: x\r\n\r\n"));
+        assert_eq!(r.fml_mod_type.as_deref(), Some(ty));
+        assert_eq!(r.status, JarStatus::Ok, "a library jar without mods metadata is fine");
+    }
+    // Trailing whitespace trimmed, LF line endings, case-insensitive key.
+    assert_eq!(with_manifest("Manifest-Version: 1.0\nfmlmodtype:   GAMELIBRARY  \t\n").fml_mod_type.as_deref(), Some("GAMELIBRARY"));
+    // Continuation line (72-byte wrapping) is joined.
+    assert_eq!(with_manifest("Manifest-Version: 1.0\r\nFMLModType: LANGPROV\r\n IDER\r\n\r\n").fml_mod_type.as_deref(), Some("LANGPROVIDER"));
+    // Absent, empty, or only in a per-entry section: None.
+    assert_eq!(with_manifest("Manifest-Version: 1.0\r\n\r\n").fml_mod_type, None);
+    assert_eq!(with_manifest("Manifest-Version: 1.0\r\nFMLModType:   \r\n").fml_mod_type, None);
+    assert_eq!(with_manifest("Manifest-Version: 1.0\r\n\r\nName: a/A.class\r\nFMLModType: MOD\r\n").fml_mod_type, None);
+    assert_eq!(run(JarBuilder::new().class("a/A.class", 61)).0[0].fml_mod_type, None);
+}
+
+#[test]
+fn fml_mod_type_on_nested_jars() {
+    let inner = JarBuilder::new().file("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\r\nFMLModType: LIBRARY\r\n\r\n");
+    let jarjar = r#"{"jars":[{"identifier":{"group":"g","artifact":"lib"},"version":{"range":"[1,)","artifactVersion":"1"},"path":"META-INF/jarjar/lib.jar"}]}"#;
+    let (out, _) = run(
+        JarBuilder::new()
+            .neoforge_mods_toml(&neoforge_toml("outer", "[1.21.1]"))
+            .file("META-INF/jarjar/metadata.json", jarjar)
+            .nested("META-INF/jarjar/lib.jar", inner),
+    );
+    assert_eq!(out[0].fml_mod_type, None);
+    assert_eq!(out[1].fml_mod_type.as_deref(), Some("LIBRARY"));
+}
