@@ -14,3 +14,5 @@ coverage/
 .vite/
 # Agent worktrees
 .claude/worktrees/
+# Generated screenshots (regenerated each visual review)
+docs/screenshots/
