@@ -81,7 +81,7 @@ fn perf_300_jars() {
     println!("generated 300 jars, {:.1} MB total, in {:?}", total_bytes as f64 / 1e6, t_gen.elapsed());
 
     let t = Instant::now();
-    let res = scan_mods_dir(tmp.path(), "perf", |_| {}, |_| {}).expect("scan");
+    let res = scan_mods_dir(tmp.path(), "perf", &super::tests::guard_for(tmp.path()), |_| {}, |_| {}).expect("scan");
     let elapsed = t.elapsed();
     println!(
         "scan_mods_dir: {} records ({} top-level) in {:?} ({:.0} MB/s), {} rayon threads",
