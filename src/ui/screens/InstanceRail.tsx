@@ -53,6 +53,9 @@ export function InstanceRail({ className }: { className?: string }) {
           </p>
         ) : null}
         {discoveryError ? <ErrorRow error={discoveryError} /> : null}
+        {phase === 'ready' && !list.length && !discoveryError ? (
+          <p className="flex h-12 items-center px-4 t-small text-fg-faint">No instances found yet.</p>
+        ) : null}
         {list.map((id) => (
           <RailRow key={id} id={id} />
         ))}

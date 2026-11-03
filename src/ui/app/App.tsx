@@ -25,13 +25,20 @@ function ThemeSync() {
   return null;
 }
 
+/** Tauri backend inside the app; in a browser the mock, with `?select=` honoured for screenshots. */
+function createDefaultStore(): AppStore {
+  const backend = createBackend();
+  const initialSelect = backend.kind === 'mock' ? new URLSearchParams(window.location.search).get('select') : null;
+  return createAppStore({ backend, initialSelect });
+}
+
 export interface AppProps {
   /** Injected in tests; otherwise created from the environment. */
   store?: AppStore;
 }
 
 export function App({ store: injected }: AppProps) {
-  const [store] = useState(() => injected ?? createAppStore({ backend: createBackend() }));
+  const [store] = useState(() => injected ?? createDefaultStore());
   // `init` is idempotent, so StrictMode's double effect is harmless. Listeners live as long as
   // the app does; tests call `dispose()` themselves.
   useEffect(() => {

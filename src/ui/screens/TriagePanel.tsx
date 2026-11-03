@@ -4,7 +4,7 @@
  * select the jar. Fix buttons go through `plan_work_order`; a refusal renders inline.
  * Scan failures render as an error row with a Retry button (§10).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../components/Button';
 import { ErrorRow } from '../components/ErrorRow';
@@ -30,7 +30,17 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
   const fixPending = useApp((st) => st.fixPending);
   const orderOpen = useApp((st) => st.order !== null);
   const a = useActions();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const expandRequest = useApp((st) => st.expandFindingId);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(expandRequest ? [expandRequest] : []));
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // A finding selected from outside the list (URL hook, later the palette) opens and scrolls in.
+  useEffect(() => {
+    if (!expandRequest) return;
+    setExpanded((cur) => (cur.has(expandRequest) ? cur : new Set(cur).add(expandRequest)));
+    const row = listRef.current?.querySelector(`[data-finding-id="${CSS.escape(expandRequest)}"]`);
+    row?.scrollIntoView?.({ block: 'nearest' });
+  }, [expandRequest, s.findings]);
 
   const findings = useMemo(() => s.findings ?? [], [s.findings]);
   const counts = useMemo(() => severityCounts(findings), [findings]);
@@ -74,9 +84,9 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
         </p>
       ) : null}
       {findings.length ? (
-        <div role="list" aria-label={`Findings, ${formatInt(findings.length)}`}>
+        <div ref={listRef} role="list" aria-label={`Findings, ${formatInt(findings.length)}`}>
           {findings.map((f) => (
-            <div role="listitem" key={f.id}>
+            <div role="listitem" key={f.id} data-finding-id={f.id}>
               <TriageRow
                 finding={f}
                 expanded={expanded.has(f.id)}

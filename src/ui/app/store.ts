@@ -65,6 +65,11 @@ export interface StoreDeps {
   now?: () => number;
   /** Batches progress; defaults to `requestAnimationFrame` (setTimeout outside a browser). */
   frame?: (cb: () => void) => void;
+  /**
+   * A finding id or jar id to select once the first scan that contains it finishes (the mock
+   * backend's `?select=` screenshot hook).
+   */
+  initialSelect?: string | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -92,6 +97,8 @@ export interface AppState {
   selection: Selection | null;
   /** Jar the mod table should scroll to (tile click, chip click). */
   revealJarId: string | null;
+  /** Finding the triage list should expand (selected from outside the list). */
+  expandFindingId: string | null;
   /** Mod-table sort per instance, in memory only. */
   modSort: Readonly<Record<string, SortState<ModSortKey> | null>>;
   /** Fix errors keyed by finding id (or `jar:<id>` for the enable toggle). */
@@ -151,6 +158,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const core: CoreApi = deps.core ?? { resolvePack: coreResolvePack, runChecks: coreRunChecks };
   const now = deps.now ?? (() => Date.now());
   const frame = deps.frame ?? defaultFrame;
+  let initialSelect = deps.initialSelect ?? null;
   const cmd = backend.commands;
 
   const unlisten: Unlisten[] = [];
@@ -221,6 +229,19 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (!exists) set({ selection: null });
     };
 
+    const applyInitialSelect = (id: string) => {
+      const want = initialSelect;
+      const sc = get().scans[id];
+      if (!want || !sc) return;
+      if (sc.findings.some((f) => f.id === want)) {
+        initialSelect = null;
+        set({ selection: { kind: 'finding', id: want }, expandFindingId: want });
+      } else if (sc.result?.jars.some((j) => j.id === want)) {
+        initialSelect = null;
+        set({ selection: { kind: 'jar', id: want }, revealJarId: topLevelId(want) });
+      }
+    };
+
     const start = async () => {
       const ev = backend.events;
       const subs = await Promise.all([
@@ -269,6 +290,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       scans: {},
       selection: null,
       revealJarId: null,
+      expandFindingId: null,
       modSort: {},
       fixErrors: {},
       fixPending: {},
@@ -316,6 +338,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         const checked = check(id);
         patchScan(id, (s) => ({ ...s, ...checked, status: 'done', finishedAt: now() }));
         keepSelection(id);
+        applyInitialSelect(id);
       },
 
       select(sel) {
