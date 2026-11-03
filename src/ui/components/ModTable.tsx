@@ -46,7 +46,8 @@ export type ModSortKey = 'name' | 'version' | 'loader' | 'modrinth' | 'status' |
 const COLUMNS = [
   { key: 'rail', label: '', srLabel: 'Severity', width: '4px', flush: true },
   { key: 'icon', label: '', srLabel: 'Icon', width: '24px', flush: true, align: 'center' as const },
-  { key: 'name', label: 'Name', width: 'minmax(0,1fr)', sortable: true },
+  // 160px floor: below it the name collapsed to nothing in narrow windows (M3 review).
+  { key: 'name', label: 'Name', width: 'minmax(160px,1fr)', sortable: true },
   { key: 'version', label: 'Version', width: '120px', sortable: true },
   { key: 'loader', label: 'Loader', width: '80px', sortable: true },
   { key: 'modrinth', label: 'Modrinth', width: '112px', sortable: true },

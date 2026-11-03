@@ -13,19 +13,22 @@ export interface PanelProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   meta?: ReactNode;
   /** Controls placed between the legend and the meta. */
   actions?: ReactNode;
+  /** Control pinned to the header's right edge (after the meta), e.g. a drawer's Close. */
+  end?: ReactNode;
   /** Remove the body's default padding (tables, grids and logs bring their own). */
   flush?: boolean;
   bodyClassName?: string;
   children?: ReactNode;
 }
 
-export function Panel({ legend, meta, actions, flush = false, className, bodyClassName, children, ...rest }: PanelProps) {
+export function Panel({ legend, meta, actions, end, flush = false, className, bodyClassName, children, ...rest }: PanelProps) {
   return (
     <section className={cx('flex min-w-0 flex-col bg-panel', className)} {...rest}>
       <header className="flex h-8 shrink-0 items-center gap-4 border-b border-line px-4">
         <h2 className="t-label text-fg-faint">{legend}</h2>
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
         {meta !== undefined ? <div className="ml-auto truncate t-mono text-fg-faint">{meta}</div> : null}
+        {end ? <div className={cx('flex shrink-0 items-center', meta === undefined && 'ml-auto')}>{end}</div> : null}
       </header>
       <div className={cx('min-h-0 flex-1', !flush && 'p-4', bodyClassName)}>{children}</div>
     </section>

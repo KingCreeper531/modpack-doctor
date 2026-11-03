@@ -1,12 +1,22 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../app/App';
 import { finding, mockStore, until } from '../../app/__tests__/helpers';
 import { MOCK_INSTANCES } from '../../app/mockData';
 
 afterEach(cleanup);
+
+const UNAVAILABLE_FIX = "Applying fixes isn't available in this version of Modpack Doctor yet.";
+
+/** happy-dom's viewport; the shell docks the inspector only when the window is wide enough. */
+function setViewport(width: number) {
+  (window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }).happyDOM.setViewport({ width, height: 900 });
+  window.dispatchEvent(new Event('resize'));
+}
+
+beforeEach(() => setViewport(1600));
 
 const ATM = MOCK_INSTANCES[0]!;
 const JEI_A = 'mods/jei-1.20.1-forge-15.2.0.27.jar';
@@ -85,8 +95,24 @@ describe('shell', () => {
       fireEvent.click(fix);
       await until(() => !!m.store.getState().fixErrors.dup);
     });
-    expect(screen.getAllByText('plan_work_order is not implemented yet (M6)').length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    // Rendered once (beside the triage button, not again in the inspector), neutrally.
+    const msg = screen.getAllByText(UNAVAILABLE_FIX);
+    expect(msg).toHaveLength(1);
+    const row = msg[0]!.closest('[data-kind]')!;
+    expect(row.getAttribute('role')).toBe('status');
+    expect(row.textContent).not.toContain('internal');
+    expect(row.querySelector('.bg-err')).toBeNull();
+    expect(within(inspector).queryByText(UNAVAILABLE_FIX)).toBeNull();
+    // No promise about work orders while fixes can't run.
+    expect(screen.queryByText(/opens a work order/)).toBeNull();
+
+    // The inspector's own button shows the error in the inspector, and only there.
+    await act(async () => {
+      fireEvent.click(within(inspector).getByRole('button', { name: /^Disable jei/ }));
+      await until(() => m.store.getState().fixErrorFrom.dup === 'inspector');
+    });
+    expect(screen.getAllByText(UNAVAILABLE_FIX)).toHaveLength(1);
+    expect(within(inspector).getByText(UNAVAILABLE_FIX)).toBeTruthy();
   });
 
   it('a culprit chip selects the jar and the inspector shows its facts', async () => {
@@ -164,5 +190,94 @@ describe('empty state', () => {
       await until(() => (m.store.getState().discovery?.instances.length ?? 0) === 1);
     });
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('my-test-pack');
+  });
+});
+
+describe('narrow windows', () => {
+  it('at 960px the inspector is a drawer: closed by default, opened by a selection or the toggle, closed by Esc', async () => {
+    setViewport(960);
+    const m = await renderApp();
+    await scanned(m);
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull();
+    expect(screen.queryByRole('separator', { name: 'Resize inspector' })).toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Inspector' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    const drawer = screen.getByRole('complementary', { name: 'Inspector' });
+    expect(drawer.className).toContain('absolute');
+    expect(drawer.className).toContain('shadow-overlay');
+    fireEvent.keyDown(drawer, { key: 'Escape' });
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /E-DUP-ID/ }));
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close inspector' }));
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull();
+  });
+
+  it('wide windows dock the inspector beside a resizer and show no drawer toggle', async () => {
+    setViewport(1920);
+    await renderApp();
+    expect(screen.getByRole('complementary', { name: 'Inspector' }).className).not.toContain('absolute');
+    expect(screen.getByRole('separator', { name: 'Resize inspector' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Inspector' })).toBeNull();
+  });
+});
+
+describe('no backend (production build outside Tauri)', () => {
+  it('renders one clear error row and no mock data', async () => {
+    const { missingBackend, NO_BACKEND } = await import('../../app/ipc');
+    const { createAppStore } = await import('../../app/store');
+    const store = createAppStore({ backend: missingBackend() });
+    render(<App store={store} />);
+    await act(async () => {
+      await store.getState().init();
+    });
+    expect(screen.getByRole('alert').textContent).toContain(NO_BACKEND.message);
+    expect(screen.queryByText(/All the Mods/)).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Instance list' })).toBeNull();
+  });
+});
+
+describe('override editor', () => {
+  it('shows the detected identity as placeholders, even while an override is active', async () => {
+    const m = await renderApp();
+    await scanned(m);
+    await act(async () => {
+      await m.store.getState().setOverride(ATM.id, { mcVersion: '1.21.1', loader: null, side: null });
+    });
+    const form = screen.getByRole('form', { name: 'Pack identity override' });
+    const mc = within(form).getByLabelText('Minecraft') as HTMLInputElement;
+    expect(mc.value).toBe('1.21.1');
+    expect(mc.placeholder).toBe('1.20.1');
+    expect(within(form).getByRole('option', { name: 'detected: Forge' })).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('Loader'), { target: { value: 'forge' } });
+    expect((within(form).getByLabelText('Loader ver.') as HTMLInputElement).placeholder).toBe('47.3.0');
+    fireEvent.change(within(form).getByLabelText('Loader'), { target: { value: 'fabric' } });
+    expect((within(form).getByLabelText('Loader ver.') as HTMLInputElement).placeholder).toBe('version');
+  });
+
+  it('refuses an unrecognised MC version or a bad loader version with inline hints', async () => {
+    const m = await renderApp();
+    await scanned(m);
+    const spy = vi.spyOn(m.backend.commands, 'setSettings');
+    const form = screen.getByRole('form', { name: 'Pack identity override' });
+    fireEvent.change(within(form).getByLabelText('Minecraft'), { target: { value: '1.20.1 forge' } });
+    expect(within(form).getByText(/Not a Minecraft version this app recognises/)).toBeTruthy();
+    expect(within(form).getByLabelText('Minecraft').getAttribute('aria-invalid')).toBe('true');
+    fireEvent.change(within(form).getByLabelText('Loader'), { target: { value: 'forge' } });
+    fireEvent.change(within(form).getByLabelText('Loader ver.'), { target: { value: '47 3' } });
+    expect(within(form).getByText('A loader version has no spaces.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect((within(form).getByRole('button', { name: 'Apply and recheck' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(form).getByLabelText('Minecraft'), { target: { value: '1.20.4' } });
+    fireEvent.change(within(form).getByLabelText('Loader ver.'), { target: { value: '49.0.3' } });
+    await act(async () => {
+      fireEvent.submit(form);
+      await until(() => spy.mock.calls.length === 1);
+    });
+    expect(m.backend.settings().overrides[ATM.id]).toEqual({ mcVersion: '1.20.4', loader: { kind: 'forge', version: '49.0.3' }, side: null });
   });
 });

@@ -37,6 +37,15 @@ export function tileVisual(state: TileState): TileVisual {
   return VISUALS[state];
 }
 
+/**
+ * Whether a tile starting a fade from `prev` keeps the unscanned outline until the fade ends.
+ * Mid-fade the fill is close to `tile-empty`, so without its outline the tile all but vanishes
+ * (notably in the light theme). A fade that interrupts an outlined fade stays outlined.
+ */
+export function keepsOutline(prev: TileState, running?: { outline: boolean } | null): boolean {
+  return prev === 'unscanned' || (running?.outline ?? false);
+}
+
 /** Every token the grid paints with; TileGrid reads exactly these from CSS each frame. */
 export const TILE_TOKENS: readonly TileToken[] = [
   'tile-empty',

@@ -13,6 +13,18 @@ export function useNow(intervalMs: number, active = true): number {
   return now;
 }
 
+/** `window.innerWidth`, updated on resize. */
+export function useViewportWidth(): number {
+  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth));
+  useEffect(() => {
+    const on = () => setW(window.innerWidth);
+    on();
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return w;
+}
+
 /** Content-box height of an element, tracked with a ResizeObserver. */
 /**
  * Uses a callback ref so the observer re-binds whenever React swaps the DOM node; a

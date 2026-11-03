@@ -7,9 +7,8 @@ import { useMemo } from 'react';
 
 import type { JarRecord, ModMeta } from '../../../bindings';
 import { Chip } from '../../components/Chip';
-import { cx } from '../../components/cx';
 import { formatBytes, formatInt } from '../../components/format';
-import { SEVERITY_TEXT, SeverityRail } from '../../components/Severity';
+import { FindingCode, SeverityRail } from '../../components/Severity';
 import { Table, type Column } from '../../components/Table';
 import { LoaderGlyph } from '../../glyphs/LoaderGlyph';
 import { LOADER_NAME } from '../../glyphs/loaders';
@@ -81,7 +80,7 @@ function CitingFindings({ instanceId, jarId }: { instanceId: string; jarId: stri
               className="flex h-6 w-full items-stretch border-b border-line text-left hover:bg-raised focus-visible:bg-raised focus-visible:outline-1 focus-visible:-outline-offset-1"
             >
               <SeverityRail severity={f.severity} />
-              <span className={cx('flex w-36 shrink-0 items-center truncate pl-4 t-mono', SEVERITY_TEXT[f.severity])}>{f.code}</span>
+              <FindingCode code={f.code} severity={f.severity} className="flex w-36 shrink-0 items-center truncate pl-4" />
               <span className="flex min-w-0 flex-1 items-center truncate pr-4 t-small text-fg">{f.title}</span>
             </button>
           </li>
