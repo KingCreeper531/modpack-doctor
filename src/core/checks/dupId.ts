@@ -12,14 +12,14 @@
  * - Nested jars are never compared: the loaders de-duplicate JarJar libraries by
  *   `group:artifact` and Fabric/Quilt JiJ by mod id, and a top-level copy overrides a nested one.
  * - Jars sharing several ids produce one finding listing every id.
- * - Fix: `removeDuplicate` keeping the newest copy — highest version of the first shared id by
- *   `versionApi.compare` (Maven order for Forge-family entries, Fabric order otherwise); ties →
- *   the most recently modified file, then the smallest jar id. One fix per extra copy.
+ * - Groups, modes and ranking come from checks/duplicates.ts (computed once in the context; the
+ *   copies FML/Fabric drop are excluded from every other check).
+ * - Fix: `removeDuplicate` keeping the newest copy (placeholder / `0.0NONE` versions rank lowest;
+ *   ties → the most recently modified file, then the smallest jar id). One fix per extra copy.
  */
 import type { FixAction, JarRecord, ModMeta } from '../../bindings';
 import type { Check, Evidence, Finding } from '../model';
-import { mcCompare, versionSyntaxFor } from '../pack';
-import { versionApi } from '../version';
+import { mcCompare } from '../pack';
 import { contextFor } from './context';
 import { jarRef, listText, makeFinding, metadataEvidence, modIdLines, modName } from './evidence';
 
@@ -30,43 +30,13 @@ export const dupIdCheck: Check = {
   codes: ['E-DUP-ID'],
   run(input) {
     const ctx = contextFor(input);
-    const owners = new Map<string, JarRecord[]>();
-    for (const jar of ctx.topLevel) {
-      for (const id of new Set(ctx.relevant(jar).map((m) => m.modId))) {
-        const list = owners.get(id) ?? [];
-        list.push(jar);
-        owners.set(id, list);
-      }
-    }
-    const sets = new Map<string, { jars: JarRecord[]; ids: string[] }>();
-    for (const [id, jars] of owners) {
-      if (jars.length < 2) continue;
-      const key = jars.map((j) => j.id).sort().join('\n');
-      const entry = sets.get(key) ?? { jars, ids: [] };
-      entry.ids.push(id);
-      sets.set(key, entry);
-    }
-
     const out: Finding[] = [];
     const kind = ctx.pack.loader?.kind;
-    // Modern FML only: legacy FML (MC < 1.13) throws DuplicateModsFoundException for any duplicate.
-    const legacy = kind === 'forge' && (mcCompare(ctx.pack.mcVersion, '1.13') ?? 0) < 0;
-    const fml = (kind === 'forge' && !legacy) || kind === 'neoforge';
-    for (const { jars, ids } of sets.values()) {
-      ids.sort();
-      const firstIds = jars.map((j) => ctx.relevant(j)[0]?.modId);
-      const groupId = firstIds[0];
-      const grouped = fml && groupId !== undefined && ids.includes(groupId) && firstIds.every((f) => f === groupId);
-      const mode: 'fml-grouped' | 'fabric' | 'error' = grouped ? 'fml-grouped' : kind === 'fabric' ? 'fabric' : 'error';
-      const firstId = grouped && groupId !== undefined ? groupId : (ids[0] ?? '');
+    // Modern FML (legacy FML refuses every duplicate, with its own wording).
+    const fml = kind === 'neoforge' || (kind === 'forge' && (mcCompare(ctx.pack.mcVersion, '1.13') ?? 0) >= 0);
+    for (const { jars, ids, mode, rankId: firstId } of ctx.duplicates) {
+      const ranked = jars;
       const metaOf = (j: JarRecord): ModMeta | undefined => ctx.relevant(j).find((m) => m.modId === firstId);
-      const ranked = [...jars].sort((a, b) => {
-        const ma = metaOf(a);
-        const mb = metaOf(b);
-        const syntax = versionSyntaxFor(ma?.loader ?? 'unknown');
-        const byVersion = ma && mb ? versionApi.compare(mb.version, ma.version, syntax, 'other') : 0;
-        return byVersion || b.mtimeMs - a.mtimeMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-      });
       const keep = ranked[0];
       if (!keep) continue;
       const remove = ranked.slice(1);

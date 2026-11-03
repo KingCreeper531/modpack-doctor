@@ -103,14 +103,17 @@ describe('version boundaries for the stale-mods.toml jar', () => {
   it('NeoForge 1.20.4 with only neoforge.mods.toml → wrong file, reported as E-WRONG-LOADER', () => {
     const j = neoforge({ file: 'future.jar', mods: [{ id: 'future', mc: '[1.21.1]' }] });
     const [f] = only(run([j], pack('neoforge', '1.20.4')), 'E-WRONG-LOADER');
-    expect(f?.title).toBe('future.jar only has META-INF/neoforge.mods.toml, which NeoForge on 1.20.4 does not read');
+    expect(f?.title).toBe('future.jar only has META-INF/neoforge.mods.toml, which NeoForge on 1.20.4 does not read — ignored by the loader');
+    expect(f?.severity).toBe('info');
   });
 
   it('NeoForge 1.21.1 with only a mods.toml (neoforge dep) → wrong file', () => {
     const j = neoforge({ file: 'old.jar', mods: [{ id: 'old', modsToml: true, mc: '[1.20.4]' }] });
     const found = run([j], pack('neoforge', '1.21.1'));
     expect(codes(found)).toEqual(['E-WRONG-LOADER']);
-    expect(found[0]?.title).toBe('old.jar only has META-INF/mods.toml, which NeoForge on 1.21.1 does not read');
+    expect(found[0]?.title).toBe('old.jar only has META-INF/mods.toml, which NeoForge on 1.21.1 does not read — skipped by NeoForge');
+    expect(found[0]?.severity).toBe('warning');
+    expect(found[0]?.explanation).toContain('brokenfile.minecraft_forge');
   });
 
   it('Forge 1.20.1 reads mods.toml: a broken neoforge.mods.toml is ignored, a broken mods.toml is not', () => {

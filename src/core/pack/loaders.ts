@@ -8,9 +8,13 @@
  * - Quilt runs Fabric mods → a Quilt pack accepts `fabric` entries. Fabric does not run Quilt mods.
  * - NeoForge for 1.20.1 is a fork of Forge 47.x (CONTRACTS invariant 12) → on MC 1.20.1 a Forge
  *   pack accepts `neoforge` entries and a NeoForge pack accepts `forge` entries, both ways.
- * - NeoForge 1.20.2–1.20.4 still read `META-INF/mods.toml`. The scanner classifies a mods.toml entry
- *   with neither a `forge` nor a `neoforge` dependency as Forge, so on those versions a NeoForge
- *   pack accepts a `forge` entry that has no loader dependency (`loaderRange === null`).
+ * - Otherwise a Forge entry is accepted by NeoForge (and a NeoForge entry by Forge) unless it has a
+ *   *required* dependency on its own loader id: FML reads the toml and loads any mod whose
+ *   required dependencies it can satisfy. The scanner classifies a mods.toml entry with any
+ *   `neoforge` dependency as NeoForge, so multi-loader jars declaring `forge` and `neoforge` as
+ *   optional (Incendium, Nullscape) load on Forge 1.20.4. Which file is read (`mods.toml` vs
+ *   `neoforge.mods.toml`) is decided separately by `metadataFilesRead`; a required other-loader
+ *   dependency in a read file is E-WRONG-LOADER's error case.
  * - Legacy Forge (`mcmod.info`) entries load only before MC 1.13; modern `mods.toml` only from 1.13.
  * - When the pack's MC version is unknown, the MC-dependent cases above are accepted: a check
  *   reports only what it can be sure of.
@@ -52,11 +56,15 @@ export function mcCompare(mc: string | null, target: string): number | null {
   return versionApi.compare(mc, target, 'fabric', 'minecraft');
 }
 
+function requires(mod: Pick<ModMeta, 'deps'>, id: string): boolean {
+  return (mod.deps ?? []).some((d) => d.modId === id && d.kind === 'required');
+}
+
 /** Whether a metadata entry is loaded by a pack running `packLoader` on `mc` (see file docs). */
 export function loaderAccepts(
   packLoader: LoaderKind,
   mc: string | null,
-  mod: Pick<ModMeta, 'loader' | 'loaderRange'>,
+  mod: Pick<ModMeta, 'loader' | 'loaderRange' | 'deps'>,
 ): boolean {
   const kind = mod.loader;
   if (packLoader === 'unknown' || kind === 'unknown' || kind === packLoader) return true;
@@ -70,18 +78,12 @@ export function loaderAccepts(
     case 'fabric':
       return false;
     case 'forge':
-      if (kind === 'neoforge') return mc === null || mcIs(mc, '1.20.1');
+      if (kind === 'neoforge') return mc === null || mcIs(mc, '1.20.1') || !requires(mod, 'neoforge');
       if (kind === 'legacyforge') return before113() !== false;
       return false;
     case 'neoforge': {
       if (kind !== 'forge') return false;
-      if (mc === null || mcIs(mc, '1.20.1')) return true;
-      if (mod.loaderRange === null) {
-        const lo = mcCompare(mc, '1.20.2');
-        const hi = mcCompare(mc, '1.20.5');
-        return lo !== null && hi !== null && lo >= 0 && hi < 0;
-      }
-      return false;
+      return mc === null || mcIs(mc, '1.20.1') || !requires(mod, 'forge');
     }
     case 'legacyforge':
       if (kind === 'forge') return before113() !== true;
@@ -151,6 +153,64 @@ export function loaderReadsFile(packLoader: LoaderKind, mc: string | null, jar: 
  */
 export function entryRelevant(packLoader: LoaderKind, mc: string | null, jar: Pick<JarRecord, 'mods' | 'metadataErrors'>, mod: ModMeta): boolean {
   return loaderReadsFile(packLoader, mc, jar, mod.metadataFile) && loaderAccepts(packLoader, mc, mod);
+}
+
+/**
+ * How FML treats jars whose metadata it doesn't read (docs/research/loader-enforcement.md, third
+ * round):
+ * - `legacy`: Forge on MC < 1.13 / Legacy Forge — non-mod jars go on the classpath (loaded).
+ * - `silent`: modern Forge (all 1.13+ versions), NeoForge before MC 1.20.6 — ignored silently
+ *   (DEBUG log).
+ * - `warn`: NeoForge on MC 1.20.6+ (incl. 21.x, 26.x) — skipped and listed on the "Warnings
+ *   while loading mods" screen (`brokenfile.*`). The switch happened at FML 3.0.19, somewhere
+ *   inside 1.20.6; all 1.20.6 builds are treated as `warn`. NeoForge with an unknown MC version is
+ *   also `warn` (every current NeoForge line).
+ * - null: not an FML pack.
+ */
+export type FmlEra = 'legacy' | 'silent' | 'warn';
+
+export function fmlEra(kind: LoaderKind | null | undefined, mc: string | null): FmlEra | null {
+  if (kind === 'legacyforge') return 'legacy';
+  if (kind === 'forge') return (mcCompare(mc, '1.13') ?? 0) < 0 ? 'legacy' : 'silent';
+  if (kind === 'neoforge') return (mcCompare(mc, '1.20.6') ?? 0) >= 0 ? 'warn' : 'silent';
+  return null;
+}
+
+/**
+ * Whether modern FML loads a jar without mods metadata through its MANIFEST `FMLModType`:
+ * MOD / GAMELIBRARY / LIBRARY, plus LANGPROVIDER on Forge (NeoForge 21.x skips it as unknown).
+ */
+export function fmlLoadsModType(kind: LoaderKind | null | undefined, fmlModType: string | null | undefined): boolean {
+  const t = fmlModType?.trim().toUpperCase();
+  if (!t) return false;
+  if (t === 'MOD' || t === 'GAMELIBRARY' || t === 'LIBRARY') return true;
+  return t === 'LANGPROVIDER' && kind === 'forge';
+}
+
+/**
+ * Whether a top-level jar with no relevant metadata entry is still loaded by the pack's loader:
+ * legacy FML → yes (classpath), unless it only has 1.13+ FML metadata; modern FML → only through a
+ * recognised `FMLModType` (assumed for container jars with nested jars, and when `fmlModType` is
+ * absent from the record — older scans);
+ * Fabric/Quilt → no (ignored); unknown loader → only when it has no metadata at all.
+ */
+export function metadataLessJarLoaded(
+  kind: LoaderKind | null | undefined,
+  mc: string | null,
+  jar: Pick<JarRecord, 'mods' | 'fmlModType' | 'nested'>,
+): boolean {
+  const era = fmlEra(kind, mc);
+  // Legacy classpath; a jar with 1.13+ FML metadata is either refused (wrong MC) or a real legacy
+  // mod we cannot see (its @Mod class) — either way we don't model it as loaded.
+  if (era === 'legacy') return !jar.mods.some((m) => m.metadataFile === MODS_TOML || m.metadataFile === NEOFORGE_TOML);
+  if (era !== null) {
+    // `undefined` = scanned before the field existed (unknown): benefit of the doubt. A container
+    // jar with nested jars (kotlinforforge, connector) is only useful with an FMLModType.
+    if (jar.fmlModType === undefined || jar.nested.length > 0) return true;
+    return fmlLoadsModType(kind, jar.fmlModType);
+  }
+  if (kind === 'fabric' || kind === 'quilt') return false;
+  return jar.mods.length === 0;
 }
 
 /** Range syntax a loader's mod versions are ordered with. */

@@ -1,7 +1,8 @@
 /**
  * W-CORRUPT-JAR (warning), one finding per jar:
  * - status `corrupt` (not a valid zip, or none of its metadata files parsed) or `unreadable`
- *   (I/O / permission error); or
+ *   (I/O / permission error) — except a `corrupt` jar whose broken files (`metadataErrors`) are
+ *   all files the pack's loader never reads; or
  * - status `ok`, but a `metadataErrors` entry is for a file the pack's loader reads
  *   (`loaderReadsFile`, pack/loaders.ts): "<file> inside X.jar can't be read: <reason>".
  *   Parse errors in files the loader ignores (a stale `META-INF/mods.toml` next to a valid
@@ -54,11 +55,15 @@ export const corruptJarCheck: Check = {
     for (const jar of jars) {
       if (isDisabledChain(jar, ctx.all)) continue;
       const top = topLevelOf(jar, ctx.all);
+      const fileErrors = jar.metadataErrors ?? [];
+      const readErrors = fileErrors.filter((e) => loaderReadsFile(kind, ctx.pack.mcVersion, jar, e.file));
       if (jar.status.state !== 'ok') {
+        // `corrupt` only because of metadata files the pack's loader never reads → harmless.
+        if (jar.status.state === 'corrupt' && fileErrors.length > 0 && readErrors.length === 0) continue;
         out.push(statusFinding(ctx, jar, top, jar.status.reason, jar.status.state === 'unreadable'));
         continue;
       }
-      const errors = (jar.metadataErrors ?? []).filter((e) => loaderReadsFile(kind, ctx.pack.mcVersion, jar, e.file));
+      const errors = readErrors;
       const firstError = errors[0];
       if (!firstError) continue;
       const nested = jar.depth > 0;

@@ -12,19 +12,24 @@
  * - *loaded* entry: relevant and not excluded by its environment for the pack side (Fabric/Quilt
  *   `environment: client` and Forge `clientSideOnly` mods are skipped on a dedicated server;
  *   Fabric `environment: server` mods are skipped on a client).
- * - *loaded* jar: active, has at least one loaded entry (or no metadata at all — a plain library),
- *   and its parent is loaded (the loader never opens jars nested in a mod it skipped).
+ * - *loaded* jar: active, not a duplicate copy the loader drops (FML same-first-id / Fabric
+ *   duplicates, checks/duplicates.ts), its parent is loaded (the loader never opens jars nested in
+ *   a mod it skipped), and either it has a loaded entry, or it has no relevant entry and the
+ *   loader still loads it: nested metadata-less jars (libraries) always; top-level ones per
+ *   `metadataLessJarLoaded` (legacy FML classpath; modern FML only with a recognised
+ *   `FMLModType`; never on Fabric/Quilt).
  * - *effective* entries: what the loader keeps after de-duplicating nested copies:
  *   - every loaded entry of a loaded top-level jar;
- *   - for nested jars, one selected copy per JarJar `group:artifact` (Forge/NeoForge) or per mod
- *     id (Fabric/Quilt JiJ) — `selectNested` — and only entries whose mod id no top-level jar
+ *   - for nested jars, one selected copy per library — nested jars linked by a shared JarJar
+ *     artifact name (group ignored) or a shared mod id — `selectNested` — and only entries whose mod id no top-level jar
  *     declares or provides (a top-level mod overrides a bundled copy).
  */
 import type { JarRecord, ModEnvironment, ModMeta, Side } from '../../bindings';
 import type { CheckInput, Evidence, JarIndex, PackContext } from '../model';
-import { buildJarIndex, describePack, entryRelevant, topLevelOf, versionSyntaxFor } from '../pack';
+import { buildJarIndex, describePack, entryRelevant, fmlEra, metadataLessJarLoaded, topLevelOf, versionSyntaxFor } from '../pack';
 import { versionApi } from '../version';
 import { connectorView, normalizeId, type ConnectorView } from './connector';
+import { duplicateGroups, type DupGroup } from './duplicates';
 
 export interface ModEntry {
   /** Jar that holds the metadata (nested jar for bundled mods). */
@@ -51,14 +56,27 @@ export interface CheckContext {
   loaded(jar: JarRecord): ModMeta[];
   isLoaded(jar: JarRecord): boolean;
   topOf(jar: JarRecord): JarRecord;
-  /** Loaded entries (any depth) whose mod id or `provides` is `modId`. Presence check. */
-  providers(modId: string): readonly ModEntry[];
+  /**
+   * Loaded entries (any depth) whose mod id or `provides` is `modId`. Presence check.
+   * `normalize`: also match with `-` → `_` (only for deps of Fabric jars loaded through Sinytra
+   * Connector; pass `ctx.connector.via(entry.jar)`).
+   */
+  providers(modId: string, normalize?: boolean): readonly ModEntry[];
   /**
    * Entries whose version the loader would actually use for `modId`: top-level providers when
    * any exist; otherwise nested ones — only the selected copy for JarJar libraries (FML keeps one
    * per `group:artifact`), every copy for Fabric/Quilt JiJ (the resolver may pick any of them).
    */
-  versionProviders(modId: string): readonly ModEntry[];
+  versionProviders(modId: string, normalize?: boolean): readonly ModEntry[];
+  /** Duplicate-id groups among active top-level jars (checks/duplicates.ts). */
+  readonly duplicates: readonly DupGroup[];
+  /** Duplicate copies the loader drops; excluded from `isLoaded`, `effective`, providers. */
+  isDropped(jar: JarRecord): boolean;
+  /**
+   * The jar is really on the loader's classpath/module layer: a loaded top-level jar, or a loaded
+   * nested jar that is the selected JarJar/JiJ copy and not shadowed by a top-level mod.
+   */
+  isEffectiveJar(jar: JarRecord): boolean;
   /** Sinytra Connector state (checks/connector.ts); `active: false` without it. */
   readonly connector: ConnectorView;
   /** `note` evidence describing the pack identity and where it came from. */
@@ -134,12 +152,26 @@ function build(input: CheckInput): CheckContext {
   };
   const loaded = (jar: JarRecord): ModMeta[] => relevant(jar).filter((m) => sideAccepts(m.environment, pack.side));
   const activeIds = new Set(active.map((j) => j.id));
+  const topLevel = active.filter((j) => j.depth === 0);
+  // Duplicate copies FML/Fabric drop are never loaded (E-DUP-ID still reports them).
+  const duplicates = duplicateGroups(topLevel, relevant, pack);
+  const droppedIds = new Set(duplicates.flatMap((g) => g.dropped.map((j) => j.id)));
   const loadedMemo = new Map<string, boolean>();
   const isLoaded = (jar: JarRecord): boolean => {
     const memo = loadedMemo.get(jar.id);
     if (memo !== undefined) return memo;
     loadedMemo.set(jar.id, false); // cycle guard
-    let ok = activeIds.has(jar.id) && (jar.mods.length === 0 || loaded(jar).length > 0);
+    let ok = activeIds.has(jar.id) && !droppedIds.has(jar.id);
+    if (ok && loaded(jar).length === 0) {
+      if (relevant(jar).length > 0) ok = false; // every relevant entry is side-excluded
+      // Nested jars without metadata are libraries the loader loads (NeoForge LIBRARY, Forge
+      // GAMELIBRARY/LIBRARY); top-level ones depend on the loader (`metadataLessJarLoaded`).
+      else if (jar.depth > 0) ok = jar.mods.length === 0;
+      else ok = metadataLessJarLoaded(packKind, pack.mcVersion, jar);
+    }
+    // FML only opens nested jars declared in META-INF/jarjar/metadata.json; a Fabric/Quilt `jars`
+    // entry inside a multi-loader jar is invisible to it.
+    if (ok && jar.depth > 0 && fmlEra(packKind, pack.mcVersion) !== null && jar.jarjar === null) ok = false;
     if (ok && jar.parentId !== null) {
       const parent = all.get(jar.parentId);
       ok = parent !== undefined && isLoaded(parent);
@@ -150,7 +182,6 @@ function build(input: CheckInput): CheckContext {
   const topOf = (jar: JarRecord): JarRecord => topLevelOf(jar, all);
 
   const loadedJars = active.filter(isLoaded);
-  const topLevel = active.filter((j) => j.depth === 0);
   const loadedTopLevel = loadedJars.filter((j) => j.depth === 0);
 
   // Presence map: every loaded entry by mod id and provides.
@@ -170,14 +201,37 @@ function build(input: CheckInput): CheckContext {
   // Nested de-duplication.
   const topIds = new Set<string>();
   for (const jar of loadedTopLevel) for (const m of loaded(jar)) [m.modId, ...m.provides].forEach((id) => topIds.add(id));
+  // Copies of one library are the nested jars linked by a shared JarJar artifact name (the group is
+  // ignored: libraries move groups, e.g. com.github.llamalad7.mixinextras → io.github.llamalad7)
+  // or a shared mod id (FML keeps one file per mod id, Fabric/Quilt one mod per id).
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let r = k;
+    while (parent.get(r) !== undefined && parent.get(r) !== r) r = parent.get(r) ?? r;
+    parent.set(k, r);
+    return r;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra < rb ? rb : ra, ra < rb ? ra : rb);
+  };
+  const nestedJars = loadedJars.filter((j) => j.depth > 0);
+  for (const jar of nestedJars) {
+    const node = `jar:${jar.id}`;
+    parent.set(node, find(node));
+    const keys = [...(jar.jarjar ? [`artifact:${jar.jarjar.artifact}`] : []), ...loaded(jar).map((m) => `mod:${m.modId}`)];
+    for (const k of keys) {
+      if (!parent.has(k)) parent.set(k, k);
+      union(node, k);
+    }
+  }
   const groups = new Map<string, JarRecord[]>();
-  for (const jar of loadedJars) {
-    if (jar.depth === 0) continue;
-    const first = loaded(jar)[0];
-    const key = jar.jarjar ? `jarjar:${jar.jarjar.group}:${jar.jarjar.artifact}` : first ? `mod:${first.modId}` : `jar:${jar.id}`;
-    const list = groups.get(key) ?? [];
+  for (const jar of nestedJars) {
+    const root = find(`jar:${jar.id}`);
+    const list = groups.get(root) ?? [];
     list.push(jar);
-    groups.set(key, list);
+    groups.set(root, list);
   }
   const selected = new Set<string>();
   for (const copies of groups.values()) {
@@ -205,10 +259,10 @@ function build(input: CheckInput): CheckContext {
       normalizedMap.set(key, cur);
     }
   }
-  const providers = (modId: string): readonly ModEntry[] =>
-    providerMap.get(modId) ?? (connector.active ? normalizedMap.get(normalizeId(modId)) : undefined) ?? [];
-  const versionProviders = (modId: string): readonly ModEntry[] => {
-    const list = providers(modId);
+  const providers = (modId: string, normalize = false): readonly ModEntry[] =>
+    providerMap.get(modId) ?? (normalize && connector.active ? normalizedMap.get(normalizeId(modId)) : undefined) ?? [];
+  const versionProviders = (modId: string, normalize = false): readonly ModEntry[] => {
+    const list = providers(modId, normalize);
     const tops = list.filter((e) => e.jar.depth === 0);
     if (tops.length > 0) return tops;
     return list.filter((e) => e.jar.jarjar === null || selected.has(e.jar.id));
@@ -229,6 +283,14 @@ function build(input: CheckInput): CheckContext {
     topOf,
     providers,
     versionProviders,
+    duplicates,
+    isDropped: (jar) => droppedIds.has(jar.id),
+    isEffectiveJar: (jar) => {
+      if (!isLoaded(jar)) return false;
+      if (jar.depth === 0) return true;
+      const mods = loaded(jar);
+      return selected.has(jar.id) && !(mods.length > 0 && mods.every((m) => topIds.has(m.modId)));
+    },
     connector,
     packNote: { kind: 'note', text: describePack(pack) },
   };

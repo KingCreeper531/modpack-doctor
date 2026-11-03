@@ -16,6 +16,8 @@ The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously afte
 | `context.ts` | `contextFor(input)`: the per-input view every check shares — jar index, active/loaded jars, loader- and side-filtered metadata entries, nested-copy de-duplication, providers, pack note. Cached per input. |
 | `evidence.ts` | Helpers: `makeFinding`, `jarRef`/`entryRef`, `metadataEvidence` + line finders (`dependencyLines`, `modIdLines`, `environmentLines`), `disable`/`manual` fixes, wording helpers. |
 | `builtins.ts` | Dependency ids the game/loader provide (never "missing"). |
+| `duplicates.ts` | Duplicate-id groups, loader mode and ranking; which copies the loader drops. |
+| `connector.ts` | Sinytra Connector: which Fabric jars it loads or skips, id normalisation, aliases. |
 | `<name>.ts` | One file per check. Its header comment is the rule's specification. |
 | `__tests__/fixtures.ts` | Realistic `JarRecord` builders (Forge, NeoForge, Fabric, Quilt, multi-loader, nested JarJar/JiJ, disabled, corrupt) with metadata excerpts in the real file formats. |
 | `../pack/` | `resolvePack`, `buildJarIndex`, loader compatibility (`loaderAccepts`), FML compatibility table (`fmlCompat.ts`), pack description. |
@@ -26,6 +28,31 @@ Severity mirrors real loader behaviour, read from loader source
 (`docs/research/loader-enforcement.md` is the spec). A finding the game would shrug off must not be
 an error.
 
+- **Jars for another loader** (E-WRONG-LOADER, `wrongLoader.ts`; FML era from `fmlEra`):
+  - metadata the loader doesn't read: **info** on Forge 1.13+ and NeoForge before 1.20.6 (ignored
+    silently); **warning** on NeoForge 1.20.6+/21.x ("Warnings while loading mods" screen,
+    `brokenfile.fabric` / `minecraft_forge` / `quilt` / `unknown`). The switch came with FML
+    3.0.19 somewhere inside 1.20.6 — every 1.20.6 build (and NeoForge with an unknown MC) is
+    treated as warning;
+  - a file the loader reads *requires* the other FML loader (`neoforge` on Forge, `forge` on
+    NeoForge ≥ 1.20.2, never on 1.20.1) → **error** naming the missing dependency. A read toml
+    whose other-loader dependency is only *optional* is simply loaded (`loaderAccepts`) — e.g.
+    Incendium/Nullscape declare `forge` and `neoforge` both optional and load on Forge 1.20.4;
+  - FML only opens nested jars declared in `META-INF/jarjar/metadata.json` (a Fabric `jars`
+    entry in a multi-loader jar is never loaded on Forge/NeoForge);
+  - Forge/NeoForge jars on Fabric → **warning** (ignored); on Quilt → **warning** (blocking
+    "unsupported mods" prompt);
+  - legacy FML (Forge 1.12): non-mod jars go on the classpath → nothing (except a `mods.toml`
+    whose minecraft range excludes the pack: "made for Minecraft 1.13+").
+- **Metadata-less jars** (no mods metadata the loader reads): modern FML loads a top-level one
+  only with MANIFEST `FMLModType` MOD / GAMELIBRARY / LIBRARY (LANGPROVIDER on Forge only);
+  otherwise it is not loaded (`metadataLessJarLoaded`), so it feeds neither E-SPLIT-PKG nor
+  W-JAVA-CLASS, and on NeoForge 1.20.6+ one E-WRONG-LOADER warning per pack lists them ("not a
+  mod file"). Container jars with nested jars (kotlinforforge, connector) and records without the
+  `fmlModType` field (older scans) get the benefit of the doubt. Nested metadata-less jars *are*
+  loaded (libraries), so the selected copy of a bundled library (copies linked by JarJar artifact
+  name or mod id) takes part in split-package checks (`ctx.isEffectiveJar`), but only as
+  **I-SPLIT-PKG**: real, loading packs have such overlaps.
 - **Which metadata file counts** (`metadataFilesRead` / `entryRelevant` in `../pack/loaders.ts`,
   the single relevance rule): NeoForge ≥ 1.20.5 (and 26.x) reads only
   `META-INF/neoforge.mods.toml`; NeoForge 1.20.1–1.20.4 and Forge read `META-INF/mods.toml`
@@ -49,16 +76,23 @@ an error.
 - **Sinytra Connector** (`connector.ts`): with mod id `connector` / `connectormod` present on
   Forge/NeoForge, Fabric-only jars are loaded (no E-WRONG-LOADER). Skipped silently: upstream
   Fabric API, `mixinextras` on 1.21.x, ids (`-`→`_`) already loaded natively. Dependency ids
-  match with `-`→`_`; cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
+  of those Fabric jars (only — native FML deps stay exact) match with `-`→`_`
+  (`ctx.providers(id, ctx.connector.via(jar))`); cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
   widened; `fabricloader` deps ignored; `minecraft` strict (Fabric semantics); other
   depends/breaks stay errors.
 - **FML side filter**: dependencies with `side = "CLIENT"` are skipped on a server pack and
   `SERVER` on a client pack — including the `minecraft` and loader dependencies behind
   `mcRange` / `loaderRange`.
 - **FML optional dependencies** are enforced when the mod is present (E-DEP-RANGE error);
-  `discouraged` is a warning.
-- **Duplicate ids**: FML keeps the newest file per *first* mod id (warning); a duplicate that is a
-  secondary mod in some file is an error; Fabric keeps one (warning); Quilt refuses (error).
+  `discouraged` is a warning. A provider whose version is an unresolved `${…}` placeholder or
+  `0.0NONE` passes (FML substitutes `0.0NONE`, which passes every check).
+- **Duplicate ids** (`duplicates.ts`, computed once in the context): FML keeps the newest file per
+  *first* mod id (warning); a duplicate that is a secondary mod in some file is an error; Fabric
+  keeps one (warning); Quilt and legacy FML refuse (error). The copies FML/Fabric drop are not
+  loaded: `ctx.isLoaded`, `effective` and `providers` exclude them, so no other check reports
+  them (E-DUP-ID still does). Placeholder versions rank lowest, then file mtime.
+- **Java class versions**: the top-level jar's own classes decide W-JAVA-CLASS (warning); a
+  newer *bundled* module alone is info ("it may be optional").
 
 ### Known gaps
 
