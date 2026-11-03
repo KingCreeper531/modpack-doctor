@@ -26,7 +26,7 @@ use sha1::{Digest, Sha1};
 
 use crate::model::{DiscoveryReport, Launcher, ProbeResult, Settings};
 
-use common::{absolute, canonical, is_dir, location_key, Outcome};
+use common::{canonical, is_dir, location_key, resolve, Outcome};
 
 pub use env::{Env, Os, ENV_VARS};
 pub use modrinth::DbOptions;
@@ -59,10 +59,12 @@ pub struct Discovered {
 }
 
 /// Instance id (CONTRACTS invariant 5): first 16 hex chars of SHA-1 over the canonical game
-/// dir path, lowercased on Windows and macOS. A game dir that does not exist yet is hashed as
-/// its absolute, lexically normalised path.
+/// dir path, lowercased on Windows and macOS. For a game dir that does not exist yet (an
+/// instance never launched) the nearest existing ancestor is canonicalised and the missing
+/// components appended, so the id stays the same after first launch even when a parent is a
+/// junction or symlink.
 pub fn instance_id(game_dir: &Path, os: Os) -> String {
-    let path = canonical(game_dir).unwrap_or_else(|| absolute(game_dir));
+    let path = resolve(game_dir);
     let mut s = path.to_string_lossy().into_owned();
     if os.case_insensitive() {
         s = s.to_lowercase();
@@ -74,10 +76,16 @@ pub fn instance_id(game_dir: &Path, os: Os) -> String {
 }
 
 /// Discover all instances with the default database options.
+///
+/// **Blocking.** This does synchronous filesystem and SQLite I/O. When a Modrinth `app.db`
+/// is locked it waits up to the 2 s busy timeout per attempt, for 4 attempts with short
+/// pauses — about 8.5 s worst case per busy database. Async callers (Tauri commands) must run
+/// it via `tokio::task::spawn_blocking` (or `tauri::async_runtime::spawn_blocking`).
 pub fn discover(env: &Env, input: &DiscoveryInput) -> Discovered {
     discover_with(env, input, &DbOptions::default())
 }
 
+/// [`discover`] with explicit database options. Equally blocking.
 pub fn discover_with(env: &Env, input: &DiscoveryInput, db: &DbOptions) -> Discovered {
     let mut probes = Probes::new(env);
 

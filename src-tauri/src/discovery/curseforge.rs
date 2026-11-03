@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::model::{Launcher, LoaderInfo, LoaderKind, ProbeResult, Side};
 
 use super::common::{
-    build, is_dir, is_file, json_get, json_str, list_subdirs, name_of, read_json, Found, Meta, NewInstance, Outcome,
+    build, is_dir, is_file, json_get, json_str, list_subdirs, name_of, read_json, split_loader_mc, Found, Meta,
+    NewInstance, Outcome,
 };
 use super::env::{Env, Os};
 
@@ -83,7 +84,8 @@ fn parse_meta(v: &serde_json::Value) -> Meta {
     let mut mc = json_str(v, "gameVersion");
     let mut loader = None;
     if let Some(b) = base {
-        let from_name = json_str(b, "name").and_then(|n| parse_loader_name(&n));
+        let known_mc = mc.clone().or_else(|| json_str(b, "minecraftVersion"));
+        let from_name = json_str(b, "name").and_then(|n| parse_loader_name(&n, known_mc.as_deref()));
         if let Some((info, name_mc)) = from_name {
             loader = Some(info);
             if mc.is_none() {
@@ -113,8 +115,10 @@ fn parse_meta(v: &serde_json::Value) -> Meta {
 }
 
 /// `forge-47.3.0`, `neoforge-21.1.256`, `fabric-0.15.11-1.20.1`, `quilt-0.26.4-1.20.1`.
-/// Returns the loader and, for Fabric/Quilt, the MC version embedded in the name.
-pub(crate) fn parse_loader_name(name: &str) -> Option<(LoaderInfo, Option<String>)> {
+/// Returns the loader and, for Fabric/Quilt, the MC version embedded in the name. Both
+/// halves may contain hyphens (`fabric-0.16.0-beta.1-1.20.5-pre1`); `known_mc` (the
+/// instance's `gameVersion`) is matched as a suffix first.
+pub(crate) fn parse_loader_name(name: &str, known_mc: Option<&str>) -> Option<(LoaderInfo, Option<String>)> {
     let (prefix, rest) = name.trim().split_once('-')?;
     let kind = match prefix.to_ascii_lowercase().as_str() {
         "forge" => LoaderKind::Forge,
@@ -128,10 +132,7 @@ pub(crate) fn parse_loader_name(name: &str) -> Option<(LoaderInfo, Option<String
     }
     match kind {
         LoaderKind::Fabric | LoaderKind::Quilt => {
-            let (lv, mc) = match rest.split_once('-') {
-                Some((lv, mc)) => (lv.to_string(), Some(mc.to_string()).filter(|m| !m.is_empty())),
-                None => (rest.to_string(), None),
-            };
+            let (lv, mc) = split_loader_mc(rest, known_mc);
             Some((LoaderInfo { kind, version: Some(lv) }, mc))
         }
         _ => Some((LoaderInfo { kind, version: Some(rest.to_string()) }, None)),
