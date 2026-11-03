@@ -40,8 +40,10 @@ an error.
   21.7.26-beta). Everything else is strict. Range checks call `evaluateRange`: `fail` → error,
   `fallback` → the same code at **info** naming the override, `pass`/`unknown` → nothing.
   Fabric/Quilt ranges are strict (also under Connector).
-- **Legacy FML** (Forge on MC < 1.13): only `mcmod.info` is read; a jar with only a 1.13+
-  `mods.toml` is E-WRONG-LOADER ("made for Minecraft 1.13+"). `mcversion` is never enforced
+- **Legacy FML** (Forge on MC < 1.13): only `mcmod.info` is read; a jar with only a `mods.toml`
+  whose `minecraft` range excludes the pack version is E-WRONG-LOADER ("made for Minecraft
+  1.13+"). Without such a range it is not reported: real 1.12.2 mods ship leftover `mods.toml`
+  templates and FML finds them by their `@Mod` class. `mcversion` is never enforced
   (FML doesn't read it); mcmod.info dependencies are checked only as far as the scanner emits them
   (it does so only under `useDependencyInformation`). Duplicate ids are errors.
 - **Sinytra Connector** (`connector.ts`): with mod id `connector` / `connectormod` present on

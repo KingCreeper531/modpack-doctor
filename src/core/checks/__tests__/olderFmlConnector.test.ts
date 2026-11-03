@@ -94,6 +94,11 @@ describe('legacy FML (MC < 1.13) reads only mcmod.info', () => {
     expect(found[0]?.title).toBe('jei-1.16.5.jar is made for Minecraft 1.13+, but this pack runs 1.12.2');
   });
 
+  it('All the Lucky Blocks: a real 1.12.2 mod with only a leftover mods.toml template (no minecraft range) → nothing', () => {
+    const lucky = forge({ file: 'luckyores-1.12.2-1.3.jar', mods: [{ id: 'luckyores', version: '1.3' }], maxClassMajor: 52 });
+    expect(run([lucky], rl)).toEqual([]);
+  });
+
   it('mcmod.info mcversion is never enforced (FML does not read it)', () => {
     const old = jar({ file: 'old.jar', mods: [{ id: 'old', loader: 'legacyforge', mc: '[1.10.2]' }], maxClassMajor: 52 });
     expect(run([old], rl)).toEqual([]);
