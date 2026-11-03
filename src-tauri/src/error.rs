@@ -37,6 +37,9 @@ pub enum Error {
     Invalid(String),
     #[error("Internal error: {0}. Please report this.")]
     Internal(String),
+    /// A feature that this build doesn't have yet (later milestone). Not an error in the app.
+    #[error("{0} isn't available in this version of Modpack Doctor yet.")]
+    Unavailable(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -69,6 +72,8 @@ pub enum ErrorKind {
     Io,
     Invalid,
     Internal,
+    /// Feature not in this build yet; the UI shows it neutrally, not as a failure.
+    Unavailable,
 }
 
 /// The IPC error shape.
@@ -99,6 +104,7 @@ impl From<Error> for AppError {
             Error::Io { path, .. } => (ErrorKind::Io, Some(path.clone())),
             Error::Invalid(_) => (ErrorKind::Invalid, None),
             Error::Internal(_) => (ErrorKind::Internal, None),
+            Error::Unavailable(_) => (ErrorKind::Unavailable, None),
         };
         AppError { kind, message, path }
     }
