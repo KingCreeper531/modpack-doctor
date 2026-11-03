@@ -221,6 +221,7 @@ function record(spec: JarSpec, loader: LoaderKind, id: string, path: string, dep
     mixinConfigs: [],
     maxClassMajor: spec.maxClassMajor === undefined ? 61 : spec.maxClassMajor,
     moduleName: spec.moduleName ?? null,
+    fmlModType: null,
     jarjar: spec.jarjar ? { group: spec.jarjar.group, artifact: spec.jarjar.artifact, range: spec.jarjar.range ?? null, version: spec.jarjar.version ?? null } : null,
     nested: [],
   };
