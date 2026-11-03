@@ -265,10 +265,10 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (!want || !sc) return;
       if (sc.findings.some((f) => f.id === want)) {
         initialSelect = null;
-        set({ selection: { kind: 'finding', id: want }, expandFindingId: want });
+        set({ selection: { kind: 'finding', id: want }, expandFindingId: want, inspectorOpen: true });
       } else if (sc.result?.jars.some((j) => j.id === want)) {
         initialSelect = null;
-        set({ selection: { kind: 'jar', id: want }, revealJarId: topLevelId(want) });
+        set({ selection: { kind: 'jar', id: want }, revealJarId: topLevelId(want), inspectorOpen: true });
       }
     };
 
