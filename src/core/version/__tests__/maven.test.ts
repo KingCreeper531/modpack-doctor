@@ -156,6 +156,8 @@ describe('Maven VersionRange', () => {
     ['(,1.0],[1.2,)', '1.0', true],
     ['(,1.0],[1.2,)', '5', true],
     ['[1,2],[2,3]', '2', true],
+    ['[1.0,1.0]', '1.0', true],
+    ['[1.0,1]', '1.0.0', true],
     ['[ 1.0 , 2.0 ]', '1.5', true],
     ['[,]', '42', true],
     // Real-world Forge / NeoForge ranges.
@@ -215,6 +217,11 @@ describe('Maven VersionRange', () => {
     '1.0]',
     '1.0,2.0',
     '[1,2) junk',
+    '[1.0,1.0)',
+    '(1.0,1.0]',
+    '(1.0,1.0)',
+    '[1.0,1.0.0)',
+    '[1,2),[3,3)',
   ];
   for (const spec of malformed) {
     it(`malformed "${spec}" → ok:false with a message`, () => {

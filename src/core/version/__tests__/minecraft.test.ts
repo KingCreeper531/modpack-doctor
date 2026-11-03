@@ -53,6 +53,9 @@ describe('normalizeMinecraft', () => {
     ['foo', null],
     ['b1.7.3', null],
     ['24w16a', null],
+    ['26w20a', null],
+    ['27w01a', null],
+    ['25w46a', '1.21.11-alpha.25.46.a'],
     ['1.20.1-forge', null],
     ['v1.20', null],
   ];
@@ -73,11 +76,14 @@ describe('normalizeMinecraft', () => {
     expect(snapshotRelease(24, 33)).toBe('1.21.2');
     expect(snapshotRelease(25, 37)).toBe('1.21.9');
     expect(snapshotRelease(25, 50)).toBe('1.21.11');
+    expect(snapshotRelease(26, 14)).toBe('26.1.1');
+    expect(snapshotRelease(26, 1)).toBeNull();
+    expect(snapshotRelease(30, 10)).toBeNull();
   });
 });
 
-describe('Minecraft ordering', () => {
-  // Strictly ascending, in both syntaxes.
+describe('Minecraft ordering (Fabric syntax: McVersionLookup normalisation)', () => {
+  // Strictly ascending (chronological).
   const ascending = [
     '1.12.2',
     '1.16-pre1',
@@ -118,26 +124,41 @@ describe('Minecraft ordering', () => {
     '26.4-snapshot-6',
     '26.4',
   ];
-  for (const syntax of ['maven', 'fabric'] as const) {
-    for (let i = 0; i + 1 < ascending.length; i++) {
-      const a = ascending[i] ?? '';
-      const b = ascending[i + 1] ?? '';
-      it(`${syntax}: ${a} < ${b}`, () => {
-        expect(compare(a, b, syntax, 'minecraft')).toBe(-1);
-        expect(compare(b, a, syntax, 'minecraft')).toBe(1);
-      });
-    }
+  for (let i = 0; i + 1 < ascending.length; i++) {
+    const a = ascending[i] ?? '';
+    const b = ascending[i + 1] ?? '';
+    it(`fabric: ${a} < ${b}`, () => {
+      expect(compare(a, b, 'fabric', 'minecraft')).toBe(-1);
+      expect(compare(b, a, 'fabric', 'minecraft')).toBe(1);
+    });
   }
 
   it('1.20 == 1.20.0 for MC', () => {
     expect(compare('1.20', '1.20.0', 'maven', 'minecraft')).toBe(0);
     expect(compare('1.20', '1.20.0', 'fabric', 'minecraft')).toBe(0);
   });
+});
 
-  it('without MC normalisation Maven puts -pre1 after the release (why the subject matters)', () => {
-    expect(compare('1.20.5-pre1', '1.20.5', 'maven', 'other')).toBe(1);
-    expect(compare('1.20.5-pre1', '1.20.5', 'maven', 'minecraft')).toBe(-1);
-  });
+describe('Minecraft ordering (Maven syntax: raw ComparableVersion, as FML)', () => {
+  // [a, b, expected compare(a, b)] — the subject does not change Maven ordering.
+  const cases: Array<[string, string, number]> = [
+    ['1.20.5-pre1', '1.20.5', 1], // unknown qualifier `pre` sorts above the release
+    ['1.21-pre1', '1.21', 1],
+    ['1.21-pre1', '1.21.1', -1],
+    ['1.21-rc1', '1.21', -1], // `rc` is a known qualifier, below the release
+    ['1.21-pre1', '1.21-rc1', 1],
+    ['1.20.1', '1.20.4', -1],
+    ['1.21.11', '26.1', -1],
+    ['26.1', '26.1.0', 0],
+    ['26.4-snapshot-6', '26.4', -1], // `snapshot` is a known qualifier
+    ['26.3', '26.4-snapshot-6', -1],
+  ];
+  for (const [a, b, expected] of cases) {
+    it(`maven: compare(${a}, ${b}) = ${expected}`, () => {
+      expect(compare(a, b, 'maven', 'minecraft')).toBe(expected);
+      expect(compare(a, b, 'maven', 'other')).toBe(expected);
+    });
+  }
 });
 
 describe('Minecraft ranges', () => {
@@ -147,31 +168,39 @@ describe('Minecraft ranges', () => {
   const cases: Array<[RawRange, string, boolean | null]> = [
     [maven('[1.20,1.21)'), '1.20.1', true],
     [maven('[1.20,1.21)'), '1.20.5-pre1', true],
-    [maven('[1.20,1.21)'), '23w51a', true],
+    // FML: raw ComparableVersion. `23w51a` parses as 23.w.51.a, far above 1.21.
+    [maven('[1.20,1.21)'), '23w51a', false],
     [maven('[1.20,1.21)'), '1.21', false],
     [maven('[1.20,1.21)'), '1.21-rc1', true],
+    [maven('[1.20,1.21)'), '1.21-pre1', false],
+    [maven('[1.21,)'), '1.21-pre1', true],
     [maven('[1.20,1.21)'), '1.19.4', false],
     [maven('[1.20,1.20.2)'), '1.20.1', true],
     [maven('[1.20,1.20.2)'), '1.20.2', false],
     [maven('[1.20,1.20.2)'), '1.20', true],
     [maven('[1.20.1]'), '1.20.1', true],
     [maven('[1.20.1]'), '1.20.2', false],
-    [maven('[1.20.5,)'), '1.20.5-pre1', false],
+    [maven('[1.20.5,)'), '1.20.5-pre1', true],
+    [maven('(,1.20.5)'), '1.20.5-pre1', false],
     [maven('[1.20.5-pre1,)'), '1.20.5-pre1', true],
-    [maven('[1.20.5-pre1,)'), '1.20.5', true],
+    // FML quirk: the release sorts *below* its own pre-release in ComparableVersion.
+    [maven('[1.20.5-pre1,)'), '1.20.5', false],
+    [maven('[1.20.5-pre1,)'), '1.20.6', true],
     [maven('[1.21,)'), '26.1', true],
     [maven('[1.21,26)'), '26.1', false],
     [maven('[26.1,26.2)'), '26.1.2', true],
     [maven('[26.4,)'), '26.4-snapshot-6', false],
     [maven('(26.3,26.4]'), '26.4-snapshot-6', true],
     [maven('1.20.1'), '1.19.2', true],
-    [maven('[1.20,1.21)'), 'not-a-version', null],
+    // Maven parses every non-empty string, MC-shaped or not (as FML does).
+    [maven('[1.20,1.21)'), 'not-a-version', false],
+    [maven('[1.20,1.21)'), '', null],
     [fabric('1.20.1'), '1.20.1', true],
     [fabric('>=1.20 <1.21'), '1.20.4', true],
     [fabric('~1.20.1'), '1.20.4', true],
     [fabric('~1.20.1'), '1.21', false],
     [fabric('1.21.x'), '1.21.11', true],
-    [fabric('1.21.x'), '24w18a', false],
+    [fabric('1.21.x'), '24w18a', true],
     [fabric('>=1.21-alpha.24.18.a'), '24w18a', true],
     [fabric('1.20.x'), '23w51a', true],
     [fabric('>=1.20.5-beta.1'), '1.20.5-pre1', true],

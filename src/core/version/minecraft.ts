@@ -19,7 +19,7 @@
  * `1.20.4 < 1.20.5-alpha.23.51.a < 1.20.5-beta.1 < 1.20.5-rc.1 < 1.20.5`.
  *
  * Not covered (returns null): Beta/Alpha/Classic/Indev, experimental snapshots, April Fools
- * specials other than 26w14a, and snapshots outside the table.
+ * specials other than 26w14a, and old-style `YYwWWx` snapshots outside the table (e.g. 26w20a).
  */
 
 const DATE_BASED = /^(\d{2})\.(\d+)(?:\.(\d+))?(?:-(snapshot|pre|rc)-(\d+))?$/;
@@ -37,7 +37,9 @@ const CANONICAL =
  */
 const SNAPSHOT_TABLE: ReadonlyArray<readonly [number, number, string]> = [
   [2614, 2614, '26.1.1'], // 2026 April Fools snapshot
-  [2541, 9999, '1.21.11'],
+  // fabric-loader maps every later old-style snapshot to 1.21.11; we stop at the end of 2025
+  // (snapshots since use the `26.x-snapshot-N` form), so an unknown future one is null.
+  [2541, 2552, '1.21.11'],
   [2531, 2537, '1.21.9'],
   [2515, 2521, '1.21.6'],
   [2502, 2510, '1.21.5'],
