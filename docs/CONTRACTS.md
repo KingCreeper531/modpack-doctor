@@ -33,7 +33,8 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
      `InstanceAdded` or `DropRejected` events.
 2. **Symlinks.** Discovery registers as PathGuard roots the instance root plus the canonical
    targets of its `mods/`, `logs/` and `crash-reports/` (one level). Everything else that resolves
-   outside the roots is `OutsideScope`.
+   outside the roots is `OutsideScope`, except the read-only hs_err dirs (invariant 11), where
+   `check_existing` accepts only `hs_err_pid<pid>.log` files and nothing is ever writable.
 3. **`src/core` is pure.** No DOM, no Node, no `@tauri-apps/*`, only `import type` from
    `../bindings`, and no `any`. This is enforced by `purity.test.ts` and `tsc -p src/core`, which
    runs without DOM or Node libs.
@@ -71,10 +72,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    - Nested jar id = `<parentId>!/<entry path>`.
    - Log source id = its path relative to the game dir (`/` separators), or
      `@cwd/hs_err_pid<pid>.log` for a HotSpot crash log in the JVM's working dir when that is not
-     the game dir (the vanilla launcher runs every profile in `.minecraft`). The `@cwd/` form is
+     the game dir (when a launcher runs the JVM outside the game dir). The `@cwd/` form is
      exact: a decimal pid with no leading zero, and nothing else. It names a file directly in a
      working dir that watch mode recorded for that pid of this instance, or, for vanilla
-     instances, in the discovered `.minecraft` when the file's `Command Line:` names the
+     instances, in the discovered `.minecraft` or a CurseForge `Install` hs_err dir when the file's `Command Line:` names the
      instance's `--gameDir`. The file must resolve inside a PathGuard root (invariant 2); nothing
      is registered for it. Only ids that `list_log_sources` returned are accepted. A malformed `@`
      id is `OutsideScope`, an unlisted one `NotFound`.
@@ -168,19 +169,18 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       discovery load, for watched instances that are present and not already armed.
     - Known gaps (M4): a JVM that fails before logging starts (wrong Java, a LinkageError on the
       main class, bad JVM arguments) writes only to stderr and may live less than one poll, so it
-      usually emits nothing. hs_err files in a working dir outside every PathGuard root (the
-      CurseForge launcher's `Install` dir, or a vanilla `.minecraft` that no profile uses) are
-      not read.
-    - **CurseForge hs_err (owner decision 2026-11-07, implement in M6):**
-      - First verify where CurseForge's JVM working dir really is (likely the shared
-        `minecraft/Install` folder); record the evidence in `docs/research/launchers.md`.
-      - Do **not** register that folder as a general root. Add a narrow PathGuard rule instead:
-        read-only, non-recursive, only files matching `hs_err_pid*.log` directly in that folder,
-        active only while at least one CurseForge instance is discovered.
-      - Attribute each file to an instance by parsing `--gameDir` from its `Command Line:`
-        section; files that match no known instance are ignored.
-      - Tests: a matching hs_err is picked up; a non-matching one is ignored; any other file type
-        or any subfolder in that directory is still rejected by the PathGuard.
+      usually emits nothing. hs_err files in a working dir outside every PathGuard root (a
+      vanilla `.minecraft` that no profile uses) are not read.
+    - **CurseForge hs_err (owner decision 2026-11-07, done in M6).** Evidence (`launchers.md` §3):
+      current CurseForge runs the JVM in the instance folder, so hs_err files land in the game
+      dir. As a defensive measure, PathGuard has a read-only hs_err rule for the shared
+      `<root>/Install` folder of discovered CurseForge instances (`set_hs_err_dirs`, re-set on
+      every discovery, empty without CurseForge instances). It is not a root. `check_existing`
+      accepts only regular `hs_err_pid<pid>.log` files directly in it, symlinks resolved, and
+      `check_new` never accepts anything there. Files are attributed by the `--gameDir` in their
+      `Command Line:` and listed as `@cwd/hs_err_pid<pid>.log`; files naming no known instance are
+      ignored. Watch mode reads `<Install>/hs_err_pid<pid>.log` on exit when that is the recorded
+      working dir.
     - Required tests: in M2 (TS), the tier marking itself. In M4, the Rust episode state machine
       with an injected clock and process source:
       - a healthy `latest.log` full of logged exceptions (contextual hits, game keeps running or
@@ -236,10 +236,15 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       value (or absence); a mismatch makes planning fail for that action with a readable error
       (the user changed the file since), never a silent overwrite. Executed undos are recorded
       in `undoneActions`.
-    - **Game guard** (`game_running`): Java process match (cwd / `--gameDir`), plus on Windows a
-      lock probe that can never disturb the game: open a mod jar requesting `DELETE` access with
-      full sharing (`FILE_SHARE_READ | WRITE | DELETE`), never `share_mode(0)`. A sharing
-      violation means another process holds it without delete-sharing (the running game).
+    - **Game guard** (`game_running`): Java process match (cwd / `--gameDir`). On Windows, only
+      when no process matched, a secondary probe that can never disturb the game: open the first
+      `mods/*.jar` for `FILE_READ_ATTRIBUTES` only with full sharing (no read/write/delete access,
+      so it takes no part in share-mode checks) and ask
+      `NtQueryInformationFile(FileProcessIdsUsingFileInformation)` which processes hold it; any
+      process other than this app means the game is running. Never request `DELETE`, read or
+      write access and never use `share_mode(0)`: the JVM's `ZipFile` opens jars with
+      `FILE_SHARE_READ | FILE_SHARE_WRITE` only, so such a handle makes the game's own open fail
+      (measured in M6; the earlier DELETE-probe wording was wrong).
     - **Tests run only on temp-dir copies.** No test, smoke tool or manual check mutates a real
       instance unless the owner asks.
     - **UI:** every mutation goes through a work order shown in the panel (DESIGN §6.4), including
