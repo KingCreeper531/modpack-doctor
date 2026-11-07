@@ -6,6 +6,9 @@
  * Placeholders show the DETECTED identity (resolvePack without the override), so a blank field
  * visibly means "keep this". Unrecognised MC versions and malformed loader versions are refused
  * with an inline hint (app/override.ts).
+ *
+ * An opened `.mrpack` has no override editor (Rust refuses to save overrides for packs): its
+ * identity comes from its index, and the panel says so in one line (`PACK_OVERRIDE_NOTE`).
  */
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -28,6 +31,9 @@ const SOURCE: Record<PackContext['source'], string> = {
   majority: 'majority of jars',
   unknown: 'unknown',
 };
+
+/** Shown instead of the override editor for an opened `.mrpack`. */
+export const PACK_OVERRIDE_NOTE = "A .mrpack's identity comes from its index; overrides aren't available for packs.";
 
 const LOADERS: readonly LoaderKind[] = ['forge', 'neoforge', 'fabric', 'quilt', 'legacyforge'];
 
@@ -182,7 +188,11 @@ export function PackPanel({ instanceId }: { instanceId: string }) {
         </PlateRow>
         <PlateRow label="Side">{side}</PlateRow>
       </Plate>
-      <OverrideEditor key={JSON.stringify(current)} instanceId={instanceId} current={current} detected={detected} />
+      {instance.launcher === 'mrpack' ? (
+        <p className="border-t border-line px-4 py-2 t-small text-fg-dim">{PACK_OVERRIDE_NOTE}</p>
+      ) : (
+        <OverrideEditor key={JSON.stringify(current)} instanceId={instanceId} current={current} detected={detected} />
+      )}
     </Panel>
   );
 }

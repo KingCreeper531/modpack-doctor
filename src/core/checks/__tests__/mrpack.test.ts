@@ -152,7 +152,7 @@ describe('E-MISSING-DEP on declared files', () => {
     const found = mrpackDeclaredCheck.run(packInput([mod], p, mr)).filter((f) => f.code === 'E-MISSING-DEP');
     expect(found).toHaveLength(1);
     const f = found[0] as Finding;
-    expect(f.title).toBe('My Mod requires Fabric API, which the pack does not include');
+    expect(f.title).toBe('My Mod requires Fabric API, which the pack does not seem to include');
     expect(f.fixes).toEqual([]);
     expect(f.missingModIds).toBeUndefined();
     expect(f.id).toBe(findingId('E-MISSING-DEP', [mod.path], `declared:${API}`));
@@ -162,7 +162,7 @@ describe('E-MISSING-DEP on declared files', () => {
   it('falls back to the project id when the dependency project is not in ctx.projects', () => {
     const mr = identified([[mod, { projectId: 'MODPROJ1', dependencies: [req(API)] }]]);
     const [f] = mrpackDeclaredCheck.run(packInput([mod], p, mr));
-    expect(f?.title).toBe(`mod.jar requires Modrinth project ${API}, which the pack does not include`);
+    expect(f?.title).toBe(`mod.jar requires Modrinth project ${API}, which the pack does not seem to include`);
   });
 
   it.each<[string, () => { files: DeclaredFile[]; jars: JarRecord[]; mr: ModrinthContext }]>([
@@ -232,7 +232,7 @@ describe('E-MISSING-DEP on declared files', () => {
       [a, { projectId: API }],
     ]);
     const found = mrpackDeclaredCheck.run(packInput([mod, a], p, mr)).filter((f) => f.code === 'E-MISSING-DEP');
-    expect(found.map((f) => f.title)).toEqual([`mod.jar requires Modrinth project ${API}, which the pack does not include on the server`]);
+    expect(found.map((f) => f.title)).toEqual([`mod.jar requires Modrinth project ${API}, which the pack does not seem to include on the server`]);
   });
 
   it('a server-overrides jar does not provide for the client', () => {
@@ -242,7 +242,7 @@ describe('E-MISSING-DEP on declared files', () => {
       [jar, { projectId: API }],
     ]);
     const found = mrpackDeclaredCheck.run(packInput([mod], p, mr, [jar])).filter((f) => f.code === 'E-MISSING-DEP');
-    expect(found.map((f) => f.title)).toEqual([`mod.jar requires Modrinth project ${API}, which the pack does not include on the client`]);
+    expect(found.map((f) => f.title)).toEqual([`mod.jar requires Modrinth project ${API}, which the pack does not seem to include on the client`]);
   });
 });
 
