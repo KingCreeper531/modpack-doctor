@@ -104,6 +104,21 @@ pub struct OpRecord {
     /// Where startup / list recovery moved a leftover `part` inside the snapshot.
     #[serde(default)]
     pub part_backup: Option<String>,
+    /// The temporary copies (game-relative, `<dir>/.<name>.<hex>.part`) that a cross-volume
+    /// move from the snapshot into the instance writes for this op or its rollback, named ahead.
+    #[serde(default)]
+    pub temps: Vec<TempFile>,
+}
+
+/// A temporary copy a cross-volume move may leave behind when the app dies mid-copy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TempFile {
+    /// Game-relative.
+    pub path: String,
+    /// Where startup / list recovery moved a leftover inside the snapshot.
+    #[serde(default)]
+    pub backup: Option<String>,
 }
 
 impl OpRecord {
@@ -117,8 +132,45 @@ impl OpRecord {
             created_backup: None,
             part: None,
             part_backup: None,
+            temps: Vec::new(),
         }
     }
+
+    /// The recorded temporary copy for a move into the game path `to`.
+    pub fn temp_for(&self, to: &str) -> Option<String> {
+        self.temps.iter().map(|t| &t.path).find(|p| temp_target(p).as_deref() == Some(to)).cloned()
+    }
+}
+
+/// The temporary copy's name for a move into the game path `to` (`<dir>/.<name>.<hex>.part`).
+pub fn temp_name(to: &str) -> String {
+    let hex = super::fsops::random_hex(1);
+    match to.rsplit_once('/') {
+        Some((dir, name)) => format!("{dir}/.{name}.{hex}.part"),
+        None => format!(".{to}.{hex}.part"),
+    }
+}
+
+/// The destination a temporary copy was named for (inverse of [`temp_name`]).
+fn temp_target(temp: &str) -> Option<String> {
+    let (dir, name) = match temp.rsplit_once('/') {
+        Some((d, n)) => (Some(d), n),
+        None => (None, temp),
+    };
+    let inner = name.strip_prefix('.')?.strip_suffix(".part")?;
+    let (target, hex) = inner.rsplit_once('.')?;
+    if target.is_empty() || hex.len() != 16 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(match dir {
+        Some(d) => format!("{d}/{target}"),
+        None => target.to_string(),
+    })
+}
+
+/// A recorded temporary copy name: `<dir>/.<name>.<16 hex>.part`.
+pub fn is_temp_rel(rel: &str) -> bool {
+    temp_target(rel).is_some()
 }
 
 /// One executed (or attempted) undo order of this snapshot.
@@ -139,6 +191,14 @@ pub struct UndoSession {
     /// Found unfinished after a restart (the app was closed or crashed while it ran).
     #[serde(default)]
     pub interrupted: bool,
+    /// A recovery of an interrupted undo: the original actions it put back into their applied
+    /// state (that undo was reverted, so they are not undone).
+    #[serde(default)]
+    pub reapplied: Vec<u32>,
+    /// A recovery: files the fixes created that were changed since the crash and were left in
+    /// place (game paths). The backup stays `incomplete`.
+    #[serde(default)]
+    pub left_in_place: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,35 +243,79 @@ impl Manifest {
         self.records.iter().any(|r| r.action_index == action)
     }
 
-    /// Actions (not undone yet) whose files need a recovery from their actual locations:
-    /// every action with anything in place when the order never finished (it was interrupted,
-    /// so the whole order goes back), an action whose op or rollback broke, and an action of an
-    /// undo session that was interrupted or whose rollback broke.
-    pub fn needs_recovery(&self) -> Vec<u32> {
+    /// Actions with ops that are not undone yet.
+    fn open_actions(&self) -> impl Iterator<Item = u32> + '_ {
         let n = u32::try_from(self.entry.actions.len()).unwrap_or(u32::MAX);
-        (0..n)
-            .filter(|i| !self.entry.undone_actions.contains(i) && self.has_ops(*i))
+        (0..n).filter(|i| !self.entry.undone_actions.contains(i) && self.has_ops(*i))
+    }
+
+    /// Actions (not undone yet) whose own fix records need a recovery: every action with
+    /// anything in place when the order never finished (it was interrupted, so the whole order
+    /// goes back), and an action whose op or automatic rollback broke.
+    pub fn fix_needs_recovery(&self) -> Vec<u32> {
+        self.open_actions()
             .filter(|&i| {
-                let recs = self.records.iter().filter(|r| r.action_index == i);
-                let fix = if self.finished { recs.clone().any(|r| r.state.broken()) } else { recs.clone().any(|r| !r.state.clean()) };
-                let undo = self.undo_log.iter().any(|s| {
+                let mut recs = self.records.iter().filter(|r| r.action_index == i);
+                if self.finished {
+                    recs.any(|r| r.state.broken())
+                } else {
+                    recs.any(|r| !r.state.clean())
+                }
+            })
+            .collect()
+    }
+
+    /// Actions (not undone yet) of an undo session that was interrupted or whose rollback broke,
+    /// unless a later recovery of that action finished.
+    pub fn undo_needs_recovery(&self) -> Vec<u32> {
+        self.open_actions()
+            .filter(|&i| {
+                self.undo_log.iter().enumerate().any(|(k, s)| {
                     let Some(pos) = s.action_indexes.iter().position(|a| *a == i) else { return false };
                     let pos = u32::try_from(pos).unwrap_or(u32::MAX);
-                    !s.finished || s.records.iter().any(|r| r.action_index == pos && r.state.broken())
-                });
-                fix || undo
+                    let broken = !s.finished || s.records.iter().any(|r| r.action_index == pos && r.state.broken());
+                    let resolved = self.undo_log[k + 1..]
+                        .iter()
+                        .any(|t| t.recovery && t.finished && !t.rolled_back && t.action_indexes.contains(&i));
+                    broken && !resolved
+                })
             })
+            .collect()
+    }
+
+    /// Actions (not undone yet) whose files need a recovery from their actual locations.
+    pub fn needs_recovery(&self) -> Vec<u32> {
+        let mut out = self.fix_needs_recovery();
+        out.extend(self.undo_needs_recovery());
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Files a finished recovery left in place because they changed since the crash.
+    pub fn left_in_place(&self) -> Vec<String> {
+        self.undo_log
+            .iter()
+            .filter(|s| s.recovery && s.finished && !s.rolled_back)
+            .flat_map(|s| s.left_in_place.iter().cloned())
             .collect()
     }
 
     /// `BackupEntry.status`, derived from the records (never trusted from disk).
     pub fn derive_status(&self) -> BackupStatus {
-        let recovered = self.undo_log.iter().any(|s| s.recovery && s.finished && !s.rolled_back);
-        if !self.needs_recovery().is_empty() {
+        // A finished recovery that moved files back to their pre-order places (not one that only
+        // reverted an interrupted undo).
+        let recovered = self
+            .undo_log
+            .iter()
+            .any(|s| s.recovery && s.finished && !s.rolled_back && s.reapplied.len() < s.action_indexes.len());
+        if !self.needs_recovery().is_empty() || !self.left_in_place().is_empty() {
+            // Something may still be out of place: interrupted, broken, or a recovery that had
+            // to leave a changed file where it was (so the files are not as before the order).
             BackupStatus::Incomplete
-        } else if !self.finished || self.rolled_back || recovered {
-            // Interrupted before anything stayed applied, rolled back, or recovered: the files
-            // are back to their pre-order state.
+        } else if !self.finished || self.rolled_back || (recovered && self.open_actions().next().is_none()) {
+            // Interrupted before anything stayed applied, rolled back, or recovered back to the
+            // pre-order state: the files are as they were before the order.
             BackupStatus::RolledBack
         } else {
             BackupStatus::Complete
@@ -280,6 +384,15 @@ pub fn load(guard: &PathGuard, snapshot: &Path) -> Result<Manifest> {
                 return Err(corrupt("it names an unsafe temporary file"));
             }
         }
+        for t in &rec.temps {
+            safe(&t.path)?;
+            if !is_temp_rel(&t.path) {
+                return Err(corrupt("it names an unsafe temporary file"));
+            }
+            if let Some(b) = &t.backup {
+                safe(b)?;
+            }
+        }
         Ok(())
     };
     for (i, (op, rec)) in m.entry.ops.iter().zip(&m.records).enumerate() {
@@ -300,6 +413,12 @@ pub fn load(guard: &PathGuard, snapshot: &Path) -> Result<Manifest> {
                 return Err(corrupt("its undo records are inconsistent"));
             }
             check_record(rec)?;
+        }
+        if s.reapplied.iter().any(|a| !s.action_indexes.contains(a)) {
+            return Err(corrupt("its undo records are inconsistent"));
+        }
+        for p in &s.left_in_place {
+            safe(p)?;
         }
     }
     m.entry.status = m.derive_status();

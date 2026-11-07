@@ -16,7 +16,9 @@
 //!   plus `files/` (moved-out jars) and `created/` (files a fix created, moved out by rollback or
 //!   undo). Nothing is ever deleted: "remove" and rollback move files into the snapshot.
 //! - [`recover`] runs at startup and before listing or executing: interrupted manifests are
-//!   marked, and their leftover `.part` downloads are moved into their snapshots.
+//!   marked, and their leftover `.part` downloads and copy temp files are moved into their
+//!   snapshots. It takes a short recovery lock of its own (never the execution claim) and skips
+//!   the manifest of an order that is executing.
 //!
 //! Orders live only in memory ([`FixState`]), are single-use and expire after
 //! [`ORDER_TTL`]. At most one order per instance executes at a time.
@@ -89,6 +91,11 @@ pub(crate) struct UndoOf {
     pub original_actions: Vec<u32>,
     /// Planned as a recovery of an `incomplete` backup (from the actual file locations).
     pub recovery: bool,
+    /// Recovery of an interrupted undo: the original actions this recovery puts back into their
+    /// applied state (the undo is reverted, so they are not undone).
+    pub reapplied: Vec<u32>,
+    /// Recovery: created files left in place because they changed since the crash (game paths).
+    pub left_in_place: Vec<String>,
 }
 
 /// A planned order with its private preconditions.
@@ -108,7 +115,10 @@ pub(crate) struct StoredOrder {
 #[derive(Debug)]
 struct FixInner {
     orders: Mutex<HashMap<String, StoredOrder>>,
-    executing: Mutex<HashSet<String>>,
+    /// Instance id → the backup id (`<instanceId>/<ms>`) its executing order writes, once known.
+    executing: Mutex<HashMap<String, Option<String>>>,
+    /// Held by a recovery pass, and briefly by an order binding its snapshot (see [`recover`]).
+    recovery: Mutex<()>,
     backups_root: Mutex<Option<PathBuf>>,
     last_ms: Mutex<u64>,
     ttl: Mutex<Duration>,
@@ -126,7 +136,8 @@ impl Default for FixState {
         FixState {
             inner: Arc::new(FixInner {
                 orders: Mutex::new(HashMap::new()),
-                executing: Mutex::new(HashSet::new()),
+                executing: Mutex::new(HashMap::new()),
+                recovery: Mutex::new(()),
                 backups_root: Mutex::new(None),
                 last_ms: Mutex::new(0),
                 ttl: Mutex::new(ORDER_TTL),
@@ -140,6 +151,16 @@ impl Default for FixState {
 pub struct ExecTicket {
     inner: Arc<FixInner>,
     instance_id: String,
+}
+
+impl ExecTicket {
+    /// Record which backup this order writes, so recovery passes leave its manifest alone. The
+    /// caller holds the recovery lock ([`FixState::recovery_lock`]).
+    pub(crate) fn bind(&self, backup_id: &str) {
+        if let Some(slot) = lock(&self.inner.executing).get_mut(&self.instance_id) {
+            *slot = Some(backup_id.to_string());
+        }
+    }
 }
 
 impl Drop for ExecTicket {
@@ -227,24 +248,37 @@ impl FixState {
         lock(&self.inner.orders).contains_key(order_id)
     }
 
-    /// Claim the instance for one executing order, or a Conflict naming it (`label`).
+    /// Claim the instance for one executing order, or a Conflict naming it (`label`, the
+    /// instance's name).
     pub fn claim(&self, instance_id: &str, label: &str) -> Result<ExecTicket> {
         let mut ex = lock(&self.inner.executing);
-        if !ex.insert(instance_id.to_string()) {
+        if ex.contains_key(instance_id) {
             return Err(Error::Conflict(format!(
                 "Fixes for \"{label}\" are already being applied. Wait for them to finish, then try again."
             )));
         }
+        ex.insert(instance_id.to_string(), None);
         Ok(ExecTicket { inner: Arc::clone(&self.inner), instance_id: instance_id.to_string() })
     }
 
     pub fn is_executing(&self, instance_id: &str) -> bool {
-        lock(&self.inner.executing).contains(instance_id)
+        lock(&self.inner.executing).contains_key(instance_id)
     }
 
-    /// True while any order (or a recovery pass) holds an instance; the window refuses to close.
+    /// The backups (`<instanceId>/<ms>`) whose manifests executing orders are writing.
+    pub(crate) fn busy_backups(&self) -> HashSet<String> {
+        lock(&self.inner.executing).values().flatten().cloned().collect()
+    }
+
+    /// The recovery lock: one recovery pass at a time, and no order binds its snapshot while a
+    /// pass runs. Short (a pass only marks manifests and moves leftover temporary files).
+    pub(crate) fn recovery_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        lock(&self.inner.recovery)
+    }
+
+    /// True while any order executes or a recovery pass runs; the window refuses to close.
     pub fn any_executing(&self) -> bool {
-        !lock(&self.inner.executing).is_empty()
+        !lock(&self.inner.executing).is_empty() || matches!(self.inner.recovery.try_lock(), Err(std::sync::TryLockError::WouldBlock))
     }
 }
 

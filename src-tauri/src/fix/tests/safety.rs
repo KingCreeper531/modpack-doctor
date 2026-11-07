@@ -14,7 +14,7 @@ use wiremock::{Mock, ResponseTemplate};
 use super::*;
 use crate::error::Error;
 use crate::fix::fsops::hook::{self, Act, Stage};
-use crate::model::{BackupStatus, FileOp, OpState, WorkOrderKind};
+use crate::model::{BackupStatus, FileOp, OpState, PlannedOp, WorkOrderKind};
 
 fn has_component(p: &Path, name: &str) -> bool {
     p.components().any(|c| c.as_os_str() == name)
@@ -69,6 +69,23 @@ fn recover(h: &H, backup: &str, before: &BTreeMap<String, String>) -> WorkOrder 
     assert_eq!(status_of(h, backup), BackupStatus::RolledBack, "a completed recovery means the files are as before");
     let e = plan_undo(&h.st, backup, None).expect_err("nothing left");
     assert!(msg(&e).contains("already undone"), "{e}");
+    o
+}
+
+/// Recover a backup whose only broken part is an undo of completed fixes: the recovery reverts
+/// that undo (the tree equals `after_fix`), touches only that undo's actions, and the backup is
+/// `complete` again (the fixes can still be undone normally).
+fn recover_undo(h: &H, backup: &str, after_fix: &BTreeMap<String, String>, undo_actions: usize) -> WorkOrder {
+    assert_eq!(status_of(h, backup), BackupStatus::Incomplete);
+    let o = plan_undo(&h.st, backup, None).expect("plan recovery");
+    assert!(o.title.starts_with("Recover "), "{}", o.title);
+    assert_eq!(o.actions.len(), undo_actions, "only the broken undo's actions: {:?}", o.actions);
+    assert!(o.notes.iter().any(|n| n.contains("the other fixes are not touched")), "{:?}", o.notes);
+    let r = h.exec(&o.id).0.expect("execute recovery");
+    assert!(!r.rolled_back, "{:?}", r.statuses);
+    assert!(r.statuses.iter().all(|s| s.state == OpState::Done), "{:?}", r.statuses);
+    assert_eq!(&h.tree(), after_fix, "the interrupted undo is reverted");
+    assert_eq!(status_of(h, backup), BackupStatus::Complete);
     o
 }
 
@@ -310,6 +327,7 @@ fn s5_an_undo_whose_rollback_fails_leaves_a_consistent_recoverable_manifest() {
     let before = h.tree();
     let o = h.plan(vec![disable("mods/a.jar"), disable("mods/b.jar")]).expect("plan");
     let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let after_fix = h.tree();
     let u = plan_undo(&h.st, &backup, None).expect("plan undo");
     // Undo: b back first (ok), then a fails; rolling b forward again fails too.
     let r = exec_failing(&h, &u.id, |src, dst| named(src, "a.jar.disabled") || (named(src, "b.jar") && named(dst, "b.jar.disabled")));
@@ -322,7 +340,12 @@ fn s5_an_undo_whose_rollback_fails_leaves_a_consistent_recoverable_manifest() {
     assert!(s.finished && s.rolled_back);
     assert_eq!(s.records[0].state, manifest::RecState::RollbackFailed);
     assert!(m.entry.undone_actions.is_empty());
-    recover(&h, &backup, &before);
+    // The recovery reverts that undo (b goes back to disabled; only b's undo broke), and then
+    // the fixes can be undone.
+    recover_undo(&h, &backup, &after_fix, 1);
+    let u = plan_undo(&h.st, &backup, None).expect("undo again");
+    assert!(!h.exec(&u.id).0.expect("undo").rolled_back);
+    assert_eq!(h.tree(), before);
 }
 
 #[test]
@@ -333,13 +356,240 @@ fn an_interrupted_undo_is_recovered() {
     let before = h.tree();
     let o = h.plan(vec![disable("mods/a.jar"), disable("mods/b.jar")]).expect("plan");
     let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let after_fix = h.tree();
     let u = plan_undo(&h.st, &backup, None).expect("plan undo");
     exec_crashing(&h, &u.id, |s, _, dst| s == Stage::After && named(dst, "b.jar"));
     assert_eq!(status_of(&h, &backup), BackupStatus::Incomplete);
-    crate::fix::recover::recover_with_claim(&h.st, h.id());
+    crate::fix::recover::recover_one(&h.st, h.id());
     let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
     assert!(m.undo_log.last().is_some_and(|s| s.interrupted && !s.finished));
-    recover(&h, &backup, &before);
+    let o = recover_undo(&h, &backup, &after_fix, 2);
+    assert_eq!(o.ops.len(), 1, "only b moved before the crash: {:?}", o.ops);
+    let u = plan_undo(&h.st, &backup, None).expect("undo again");
+    assert!(!h.exec(&u.id).0.expect("undo").rolled_back);
+    assert_eq!(h.tree(), before);
+}
+
+#[test]
+fn r4_recovering_an_interrupted_single_action_undo_never_touches_other_actions() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    h.jar("b.jar", "b");
+    let o = h.plan(vec![disable("mods/a.jar"), disable("mods/b.jar")]).expect("plan");
+    let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let after_fix = h.tree();
+    let u = plan_undo(&h.st, &backup, Some(vec![0])).expect("plan undo of action 0");
+    exec_crashing(&h, &u.id, |s, _, dst| s == Stage::After && named(dst, "a.jar"));
+    assert!(h.mods.join("a.jar").is_file() && h.mods.join("b.jar.disabled").is_file());
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    assert_eq!(m.fix_needs_recovery(), Vec::<u32>::new(), "the order itself is fine");
+    assert_eq!(m.undo_needs_recovery(), vec![0]);
+    let o = recover_undo(&h, &backup, &after_fix, 1);
+    assert_eq!(o.ops, vec![PlannedOp { action_index: 0, op: FileOp::Rename { from: "mods/a.jar".into(), to: "mods/a.jar.disabled".into() } }]);
+    // Both actions can still be undone one by one.
+    let u = plan_undo(&h.st, &backup, Some(vec![1])).expect("undo action 1");
+    assert!(!h.exec(&u.id).0.expect("undo").rolled_back);
+    assert!(h.mods.join("b.jar").is_file() && h.mods.join("a.jar.disabled").is_file());
+    let u = plan_undo(&h.st, &backup, Some(vec![0])).expect("undo action 0");
+    assert!(!h.exec(&u.id).0.expect("undo").rolled_back);
+    assert!(h.mods.join("a.jar").is_file());
+}
+
+#[test]
+fn r4_an_undo_of_a_replace_interrupted_halfway_is_reverted() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    let (old, new) = h.replace_world();
+    let o = h.plan(vec![replace("mods/sodium-0.5.8.jar", NEWER), disable("mods/a.jar")]).expect("plan");
+    let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let after_fix = h.tree();
+    let u = plan_undo(&h.st, &backup, Some(vec![0])).expect("plan undo of the replace");
+    // Crash after the new jar went into created/, before the old jar came back.
+    exec_crashing(&h, &u.id, |s, _, dst| s == Stage::After && has_component(dst, "created"));
+    assert!(fsops::is_absent(&h.mods.join("sodium-0.5.9.jar")) && fsops::is_absent(&h.mods.join("sodium-0.5.8.jar")));
+    let o = recover_undo(&h, &backup, &after_fix, 1);
+    assert!(
+        matches!(&o.ops[..], [PlannedOp { op: FileOp::Restore { to, .. }, .. }] if to == "mods/sodium-0.5.9.jar"),
+        "{:?}",
+        o.ops
+    );
+    assert_eq!(fs::read(h.mods.join("sodium-0.5.9.jar")).expect("new back"), new);
+    assert_eq!(fs::read(h.snapshot(&backup).join("files/mods/sodium-0.5.8.jar")).expect("old in the backup"), old);
+    // The replace can be undone normally afterwards.
+    let u = plan_undo(&h.st, &backup, Some(vec![0])).expect("undo again");
+    assert!(!h.exec(&u.id).0.expect("undo").rolled_back);
+    assert_eq!(fs::read(h.mods.join("sodium-0.5.8.jar")).expect("old back"), old);
+    assert!(h.mods.join("a.jar.disabled").is_file(), "the other action is untouched");
+}
+
+#[test]
+fn an_interrupted_undo_that_cannot_be_reverted_is_finished() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    h.jar("b.jar", "b");
+    let o = h.plan(vec![disable("mods/a.jar"), disable("mods/b.jar")]).expect("plan");
+    let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let u = plan_undo(&h.st, &backup, Some(vec![0])).expect("plan undo of action 0");
+    exec_crashing(&h, &u.id, |s, _, dst| s == Stage::After && named(dst, "a.jar"));
+    // The user put something at the disabled name: reverting the undo would overwrite it.
+    h.write("a.jar.disabled", b"theirs");
+    let o = plan_undo(&h.st, &backup, None).expect("plan recovery");
+    assert_eq!(o.actions.len(), 1);
+    assert!(o.ops.is_empty(), "a.jar is already back: {:?}", o.ops);
+    assert!(o.notes.iter().any(|n| n.contains("cannot be reverted") && n.contains("finishes that undo")), "{:?}", o.notes);
+    let r = h.exec(&o.id).0.expect("execute recovery");
+    assert!(!r.rolled_back);
+    assert_eq!(status_of(&h, &backup), BackupStatus::Complete);
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    assert_eq!(m.entry.undone_actions, vec![0], "the undo of action 0 is finished");
+    assert_eq!(fs::read(h.mods.join("a.jar.disabled")).expect("theirs"), b"theirs");
+    assert!(h.mods.join("b.jar.disabled").is_file(), "action 1 untouched");
+}
+
+#[test]
+fn r5_a_created_jar_edited_after_the_crash_is_left_in_place_and_the_backup_stays_incomplete() {
+    let h = H::new();
+    let (old, _) = h.replace_world();
+    let o = h.plan(vec![replace("mods/sodium-0.5.8.jar", NEWER)]).expect("plan");
+    exec_crashing(&h, &o.id, |s, _, dst| s == Stage::After && named(dst, "sodium-0.5.9.jar"));
+    let backup = only_backup(&h);
+    h.write("sodium-0.5.9.jar", b"edited by the user");
+    let p = plan_undo(&h.st, &backup, None).expect("plan recovery");
+    assert!(
+        p.notes.iter().any(|n| n == "mods/sodium-0.5.9.jar was changed since the crash and was left in place; it may duplicate mods/sodium-0.5.8.jar."),
+        "{:?}",
+        p.notes
+    );
+    assert!(matches!(&p.ops[..], [PlannedOp { op: FileOp::Restore { to, .. }, .. }] if to == "mods/sodium-0.5.8.jar"), "{:?}", p.ops);
+    let r = h.exec(&p.id).0.expect("execute recovery");
+    assert!(r.statuses.iter().all(|s| s.state == OpState::Done), "{:?}", r.statuses);
+    assert_eq!(fs::read(h.mods.join("sodium-0.5.8.jar")).expect("restored"), old);
+    assert_eq!(fs::read(h.mods.join("sodium-0.5.9.jar")).expect("left"), b"edited by the user");
+    // Never "rolledBack" (that would claim the files are as before the fixes).
+    assert_eq!(status_of(&h, &backup), BackupStatus::Incomplete);
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    assert_eq!(m.undo_log.last().expect("session").left_in_place, vec!["mods/sodium-0.5.9.jar".to_string()]);
+    let e = plan_undo(&h.st, &backup, None).expect_err("nothing left to recover");
+    assert!(msg(&e).contains("mods/sodium-0.5.9.jar changed since the crash and was left in place"), "{e}");
+}
+
+// ── Recovery vs execution ────────────────────────────────────────────────────
+
+#[test]
+fn a_recovery_pass_during_an_execution_leaves_its_manifest_alone() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    h.jar("b.jar", "b");
+    let st = h.st.clone();
+    let id = h.id().to_string();
+    let backups = h.backups.clone();
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = seen.clone();
+    // At every move: a list_backups-style pass, then a look at the manifests on disk.
+    let probe = move |st: &crate::state::AppState| {
+        let st = st.clone();
+        let id = id.clone();
+        let backups = backups.clone();
+        let log = log.clone();
+        move |stage: Stage, _: &Path, _: &Path| {
+            if stage == Stage::Before {
+                crate::fix::recover::recover_one(&st, &id);
+                let list = list_backups(&st.guard, &backups, &id).expect("list");
+                for b in list {
+                    let m = manifest::load(&st.guard, &backups.join(&b.id)).expect("manifest");
+                    log.borrow_mut().push((m.interrupted, m.undo_log.iter().any(|s| s.interrupted)));
+                }
+            }
+            Act::Go
+        }
+    };
+    let o = h.plan(vec![disable("mods/a.jar"), disable("mods/b.jar")]).expect("plan");
+    hook::set(probe(&st));
+    let r = h.exec(&o.id).0.expect("exec");
+    hook::clear();
+    assert!(r.statuses.iter().all(|s| s.state == OpState::Done), "{:?}", r.statuses);
+    let backup = r.backup_id.expect("id");
+    assert_eq!(status_of(&h, &backup), BackupStatus::Complete);
+    // The same during an undo of it (its session is appended to that manifest).
+    let u = plan_undo(&h.st, &backup, None).expect("plan undo");
+    hook::set(probe(&st));
+    let r = h.exec(&u.id).0.expect("undo");
+    hook::clear();
+    assert!(!r.rolled_back, "{:?}", r.statuses);
+    let seen = seen.borrow();
+    assert_eq!(seen.len(), 4, "two moves each");
+    assert!(seen.iter().all(|(order, undo)| !order && !undo), "{seen:?}");
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    assert!(!m.interrupted && m.undo_log.iter().all(|s| !s.interrupted && s.finished));
+}
+
+#[test]
+fn a_recovery_pass_never_makes_an_execution_conflict() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    let o = h.plan(vec![disable("mods/a.jar")]).expect("plan");
+    let st = h.st.clone();
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
+    let pass = std::thread::spawn(move || {
+        // A slow recovery pass.
+        let _recovery = st.fixes.recovery_lock();
+        assert!(st.fixes.any_executing(), "the window may not close during a recovery pass");
+        held_tx.send(()).expect("send");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    });
+    held_rx.recv().expect("recv");
+    assert!(!h.st.fixes.is_executing(h.id()), "a recovery pass holds no execution claim");
+    let r = h.exec(&o.id).0.expect("the execution waits for the pass instead of failing");
+    assert_eq!(r.statuses[0].state, OpState::Done);
+    pass.join().expect("pass");
+    assert!(!h.st.fixes.any_executing());
+    // A real conflict names the instance, never its hex id.
+    let o = h.plan(vec![enable("mods/a.jar.disabled")]).expect("plan");
+    let claim = h.st.fixes.claim(h.id(), "Test Pack").expect("claim");
+    let e = h.exec(&o.id).0.expect_err("conflict");
+    drop(claim);
+    assert!(matches!(e, Error::Conflict(_)), "{e:?}");
+    assert!(msg(&e).contains("\"Test Pack\"") && !msg(&e).contains(h.id()), "{e}");
+}
+
+// ── Cross-volume copies ──────────────────────────────────────────────────────
+
+#[test]
+fn a_crash_mid_copy_across_volumes_leaves_a_recorded_temp_that_recovery_moves_away() {
+    let h = H::new();
+    h.jar("a.jar", "a");
+    h.jar("a-copy.jar", "a");
+    let o = h.plan(vec![remove_dup("mods/a.jar", "mods/a-copy.jar")]).expect("plan");
+    let backup = h.exec(&o.id).0.expect("exec").backup_id.expect("id");
+    let after_fix = h.tree();
+    let u = plan_undo(&h.st, &backup, None).expect("plan undo");
+    // The restore out of the snapshot copies across volumes, and the app dies with the copy
+    // written next to its destination.
+    hook::set(|s, src, _| match s {
+        Stage::Before if has_component(src, "files") => Act::CrossDevice,
+        Stage::Copied => Act::Crash,
+        _ => Act::Go,
+    });
+    let r = std::panic::catch_unwind(AssertUnwindSafe(|| h.exec(&u.id)));
+    hook::clear();
+    assert!(r.is_err(), "the simulated crash did not happen");
+    let temps = parts_in_mods(&h);
+    assert_eq!(temps.len(), 1, "{temps:?}");
+    assert!(temps[0].starts_with(".a-copy.jar.") && fsops::is_absent(&h.mods.join("a-copy.jar")), "{temps:?}");
+    // The temp was named in the write-ahead record before it was created.
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    let rec = &m.undo_log.last().expect("session").records[0];
+    assert_eq!(rec.state, manifest::RecState::Running);
+    assert_eq!(rec.temps.iter().map(|t| t.path.clone()).collect::<Vec<_>>(), vec![format!("mods/{}", temps[0])]);
+
+    crate::fix::recover::recover_one(&h.st, h.id());
+    assert!(parts_in_mods(&h).is_empty(), "the leftover copy is moved out of mods/");
+    let m = manifest::load(&h.st.guard, &h.snapshot(&backup)).expect("manifest");
+    let moved = m.undo_log.last().expect("session").records[0].temps[0].backup.clone().expect("recorded as moved");
+    assert!(moved.starts_with("created/mods/.a-copy.jar.") && h.snapshot(&backup).join(&moved).is_file(), "{moved}");
+    // The source never left the snapshot, so reverting the undo has nothing to move.
+    let o = recover_undo(&h, &backup, &after_fix, 1);
+    assert!(o.ops.is_empty(), "{:?}", o.ops);
 }
 
 // ── No replacing moves ───────────────────────────────────────────────────────
@@ -395,6 +645,18 @@ fn a_case_only_replace_is_undone() {
 }
 
 // ── Bound InstallDependency intents ──────────────────────────────────────────
+
+#[test]
+fn the_post_download_mod_id_check_ignores_case_like_planning() {
+    let h = H::new();
+    let dep = h.install_world();
+    // Planned for `Cloth-Config` (matched case-insensitively against `cloth-config`); the jar
+    // declares `cloth-config`.
+    let o = h.plan(vec![install("Cloth-Config", DEP)]).expect("plan");
+    let r = h.exec(&o.id).0.expect("exec");
+    assert_eq!(r.statuses[0].state, OpState::Done, "{:?}", r.statuses);
+    assert_eq!(fs::read(h.mods.join("cloth-config-11.jar")).expect("installed"), dep);
+}
 
 fn refused(r: Result<WorkOrder>, needle: &str) -> String {
     match r {
