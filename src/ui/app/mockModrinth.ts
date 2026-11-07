@@ -11,8 +11,15 @@
  *   Sodium in Fabulously Optimized, Traveler's Backpack (its NeoForge build, for E-WRONG-LOADER);
  * - one beta-only update (EntityCulling in Fabulously Optimized): no compatible release, so the
  *   update shows only through the `["release","beta"]` fallback;
+ * - one jar ahead of the latest release (Jade in All the Mods 9 is a beta newer than the newest
+ *   release): Modrinth answers the older release, which is never offered (a downgrade), and the
+ *   beta fallback answers the jar itself, so the jar reads "up to date";
+ * - Sodium in All the Mods 9 is a Fabric jar with no Forge build: no compatible version at all;
+ * - every version has a `datePublished`; updates are published after the version they replace;
  * - FTB Library's project has no icon; every other icon is a small inline SVG drawn from the
- *   design tokens (never a remote URL, never a real logo);
+ *   design tokens (never a remote URL, never a real logo). As in Rust, `modrinth_projects`
+ *   attaches only icons a previous `modrinth_icons` call cached; `modrinth_icons` "downloads"
+ *   them (the backend keeps the cache);
  * - `botarium` (missing for Ad Astra) resolves to a project with a downloadable release.
  * Client-only projects (Sodium, Iris, Mod Menu…) carry `client_only`, so W-CLIENT-ON-SERVER fires
  * on the server instance.
@@ -32,6 +39,11 @@ interface ProjectSpec {
   beta?: Readonly<Record<string, string>>;
   /** Loader of the release named in `release` (when it differs from the jar's, e.g. a port). */
   releaseLoader?: string;
+  /**
+   * Per instance id: the jar is a beta, newer than this latest release (which Modrinth's update
+   * route still answers when only releases are asked for).
+   */
+  aheadOfRelease?: Readonly<Record<string, string>>;
 }
 
 const ATM9 = '3f9c2a71d0b84e15';
@@ -59,7 +71,7 @@ const PROJECTS: Readonly<Record<string, ProjectSpec>> = {
   ftbquests: { slug: 'ftb-quests-forge', title: 'FTB Quests' },
   ftblibrary: { slug: 'ftb-library-forge', title: 'FTB Library', noIcon: true },
   oculus: { slug: 'oculus', title: 'Oculus', env: 'client_only' },
-  jade: { slug: 'jade', title: 'Jade' },
+  jade: { slug: 'jade', title: 'Jade', aheadOfRelease: { [ATM9]: '11.7.1' } },
   lithium: { slug: 'lithium', title: 'Lithium' },
   'fabric-api': { slug: 'fabric-api', title: 'Fabric API' },
   entityculling: { slug: 'entityculling', title: 'Entity Culling', env: 'client_only', beta: { [FO]: '1.7.1-beta.2' } },
@@ -161,7 +173,31 @@ function file(pid: string, vid: string, filename: string, seed: string, size: nu
   };
 }
 
-function version(spec: ProjectSpec, versionNumber: string, versionType: string, loader: string, mc: string, filename: string, size: number, sha1?: string): MrVersion {
+const DAY_MS = 86_400_000;
+/** 2024-02-01T00:00:00Z: identified versions are published in the 240 days after it. */
+const EPOCH_MS = Date.UTC(2024, 1, 1);
+
+/** ISO publish time, `days` after `EPOCH_MS` plus a deterministic time of day. */
+function published(days: number, seed: string): string {
+  return new Date(EPOCH_MS + days * DAY_MS + (hash(`${seed}@time`) % DAY_MS)).toISOString();
+}
+
+/** Days after `EPOCH_MS` the jar's own version came out. */
+function ownDay(e: Entry): number {
+  return 20 + (hash(`${e.spec.slug}:${e.jar.mods[0]?.version ?? ''}`) % 240);
+}
+
+function version(
+  spec: ProjectSpec,
+  versionNumber: string,
+  versionType: string,
+  loader: string,
+  mc: string,
+  filename: string,
+  size: number,
+  datePublished: string,
+  sha1?: string,
+): MrVersion {
   const pid = projectId(spec.slug);
   const vid = mrId(`version:${spec.slug}:${versionNumber}:${loader}`);
   const f = file(pid, vid, filename, `${spec.slug}:${versionNumber}:${loader}`, size);
@@ -173,6 +209,7 @@ function version(spec: ProjectSpec, versionNumber: string, versionType: string, 
     gameVersions: [mc],
     loaders: [loader],
     versionType,
+    datePublished,
     environment: spec.env ?? 'client_and_server',
     files: [sha1 ? { ...f, sha1 } : f],
     droppedFiles: 0,
@@ -186,7 +223,9 @@ function identified(e: Entry): MrVersion {
   const loader = e.jar.loaders[0] ?? 'forge';
   const meta = e.jar.mods[0]!;
   const mc = e.mc;
-  return version(e.spec, meta.version, 'release', loader, mc, e.jar.fileName.replace(/\.disabled$/, ''), e.jar.size, e.jar.sha1);
+  const type = e.spec.aheadOfRelease?.[e.instanceId] ? 'beta' : 'release';
+  const date = published(ownDay(e), `${e.spec.slug}:${meta.version}`);
+  return version(e.spec, meta.version, type, loader, mc, e.jar.fileName.replace(/\.disabled$/, ''), e.jar.size, date, e.jar.sha1);
 }
 
 function lookup(sha1s: string[], answer: (e: Entry) => MrVersion | null): HashLookup {
@@ -215,13 +254,25 @@ export function mockFindUpdates(sha1s: string[], loaders: string[], gameVersions
     if (!gameVersions.includes(e.mc)) return null;
     const own = identified(e);
     const ownLoader = own.loaders[0]!;
+    const day = ownDay(e);
+    const ahead = e.spec.aheadOfRelease?.[e.instanceId];
+    if (ahead) {
+      if (!loaders.includes(ownLoader)) return null;
+      // The newest *matching* version: the jar itself once betas count, else an older release.
+      if (versionTypes.includes('beta')) return own;
+      const older = day - 20 - (hash(`${e.spec.slug}:${ahead}`) % 40);
+      return version(e.spec, ahead, 'release', ownLoader, e.mc, `${e.spec.slug}-${ahead}.jar`, e.jar.size - 1024, published(older, `${e.spec.slug}:${ahead}`));
+    }
     const beta = e.spec.beta?.[e.instanceId];
     if (beta && versionTypes.includes('beta') && loaders.includes(ownLoader)) {
-      return version(e.spec, beta, 'beta', ownLoader, e.mc, `${e.spec.slug}-${beta}.jar`, e.jar.size);
+      return version(e.spec, beta, 'beta', ownLoader, e.mc, `${e.spec.slug}-${beta}.jar`, e.jar.size, published(day + 9, `${e.spec.slug}:${beta}`));
     }
     const release = e.spec.release?.[e.instanceId];
     const loader = e.spec.releaseLoader ?? ownLoader;
-    if (release && loaders.includes(loader)) return version(e.spec, release, 'release', loader, e.mc, `${e.spec.slug}-${release}.jar`, e.jar.size + 2048);
+    if (release && loaders.includes(loader)) {
+      const later = day + 14 + (hash(`${e.spec.slug}:${release}`) % 60);
+      return version(e.spec, release, 'release', loader, e.mc, `${e.spec.slug}-${release}.jar`, e.jar.size + 2048, published(later, `${e.spec.slug}:${release}`));
+    }
     // The beta-only project has no compatible release at all.
     if (beta) return null;
     return loaders.includes(ownLoader) ? own : null;
@@ -250,36 +301,59 @@ function icon(slug: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-function project(spec: ProjectSpec): MrProject {
+/** Project ids whose icon a `modrinth_icons` call has "downloaded" (the mock icon cache). */
+export type MockIconCache = ReadonlySet<string>;
+
+function project(spec: ProjectSpec, cached: MockIconCache): MrProject {
   const env = spec.env ?? 'client_and_server';
+  const id = projectId(spec.slug);
   return {
-    id: projectId(spec.slug),
+    id,
     slug: spec.slug,
     title: spec.title,
     projectType: 'mod',
     environment: [env],
     ...sides(env),
-    iconPath: spec.noIcon ? null : icon(spec.slug),
+    // Like Rust: only an icon already in the cache; `modrinth_projects` never downloads one.
+    iconPath: !spec.noIcon && cached.has(id) ? icon(spec.slug) : null,
   };
 }
 
+let specs: Map<string, ProjectSpec> | null = null;
+
+/** Project id → spec, over every identified jar and every resolvable dependency. */
+function specById(): Map<string, ProjectSpec> {
+  if (specs) return specs;
+  specs = new Map();
+  for (const e of entries().values()) specs.set(projectId(e.spec.slug), e.spec);
+  for (const r of Object.values(RESOLVABLE)) specs.set(projectId(r.slug), r);
+  return specs;
+}
+
 /** `modrinth_projects`, keyed by the requested id. */
-export function mockProjects(ids: string[]): ProjectLookup {
-  const byId = new Map<string, ProjectSpec>();
-  for (const e of entries().values()) byId.set(projectId(e.spec.slug), e.spec);
-  for (const r of Object.values(RESOLVABLE)) byId.set(projectId(r.slug), r);
+export function mockProjects(ids: string[], cached: MockIconCache = new Set()): ProjectLookup {
   const found: Record<string, MrProject> = {};
   for (const id of ids) {
-    const spec = byId.get(id);
-    if (spec) found[id] = project(spec);
+    const spec = specById().get(id);
+    if (spec) found[id] = project(spec, cached);
   }
   return { found, failed: [], offline: false };
 }
 
+/** `modrinth_icons`: project id → icon for every requested project that has one. */
+export function mockIcons(ids: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const id of ids) {
+    const spec = specById().get(id);
+    if (spec && !spec.noIcon) out[id] = icon(spec.slug);
+  }
+  return out;
+}
+
 /** `modrinth_resolve_mod_id`. */
-export function mockResolveModId(modId: string): MrProject | null {
+export function mockResolveModId(modId: string, cached: MockIconCache = new Set()): MrProject | null {
   const r = RESOLVABLE[modId];
-  return r ? project(r) : null;
+  return r ? project(r, cached) : null;
 }
 
 /** `modrinth_project_versions`, newest first. */
@@ -289,7 +363,7 @@ export function mockProjectVersions(id: string, loaders: string[], gameVersions:
   const loader = loaders[0];
   if (!r || !mc || !loader) return [];
   const v = r.versions[mc];
-  return v ? [version(r, v, 'release', loader, mc, `${r.slug}-${loader}-${mc}-${v}.jar`, 214_000)] : [];
+  return v ? [version(r, v, 'release', loader, mc, `${r.slug}-${loader}-${mc}-${v}.jar`, 214_000, published(200 + (hash(`${r.slug}:${v}`) % 60), `${r.slug}:${v}`))] : [];
 }
 
 /** `rateLimited`, as the Rust client reports a 429. */

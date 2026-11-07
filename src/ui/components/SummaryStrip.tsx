@@ -15,6 +15,12 @@ import { cx } from './cx';
 import { formatAgo, formatInt, plural } from './format';
 import { Pip } from './Severity';
 
+/** One piece of the notice; `optional` pieces show only when the strip has room. */
+export interface NoticePiece {
+  text: string;
+  optional?: boolean;
+}
+
 export interface SummaryStripProps {
   mcVersion: string | null;
   loader: LoaderInfo | null;
@@ -27,8 +33,11 @@ export interface SummaryStripProps {
   scanning?: { done: number; total: number } | null;
   /** Modrinth unreachable: static checks only. */
   offline?: boolean;
-  /** Replaces the offline notice text (e.g. the rate-limit countdown). */
-  offlineNotice?: string;
+  /**
+   * Replaces the offline notice text. A string drops what follows ` — ` on a narrow strip; parts
+   * drop their `optional` pieces instead (the rate-limit countdown is never optional).
+   */
+  offlineNotice?: string | readonly NoticePiece[];
   /** Modrinth is switched off in settings: a `Modrinth off` segment, no notice. */
   modrinthOff?: boolean;
   className?: string;
@@ -93,24 +102,41 @@ export function SummaryStrip({
         ))}
       </p>
       {offline && !modrinthOff ? (
-        // The pack's own counts matter more: a narrow strip shows only the head ("Modrinth
-        // unreachable"); the part after the dash appears when there is room, and in the title.
-        <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status" title={offlineNotice}>
+        // The pack's own counts matter more: a narrow strip shows only the essential pieces
+        // ("Modrinth unreachable", "Modrinth · retrying in 42 s"); the optional ones appear when
+        // there is room, and the whole line is always in the title.
+        <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status" title={noticeTitle(offlineNotice)}>
           <Pip tone="info" />
-          <NoticeText text={offlineNotice} />
+          <NoticeText pieces={noticePieces(offlineNotice)} />
         </p>
       ) : null}
     </div>
   );
 }
 
-function NoticeText({ text }: { text: string }) {
-  const cut = text.indexOf(' — ');
-  if (cut < 0) return <span className="whitespace-nowrap">{text}</span>;
+function noticeTitle(n: string | readonly NoticePiece[]): string {
+  return typeof n === 'string' ? n : n.map((p) => p.text).join('');
+}
+
+/** A string notice: what follows ` — ` is optional. */
+function noticePieces(n: string | readonly NoticePiece[]): readonly NoticePiece[] {
+  if (typeof n !== 'string') return n;
+  const cut = n.indexOf(' — ');
+  return cut < 0 ? [{ text: n }] : [{ text: n.slice(0, cut) }, { text: n.slice(cut), optional: true }];
+}
+
+function NoticeText({ pieces }: { pieces: readonly NoticePiece[] }) {
   return (
     <span className="whitespace-nowrap">
-      {text.slice(0, cut)}
-      <span className="hidden @min-[860px]:inline">{text.slice(cut)}</span>
+      {pieces.map((p, i) =>
+        p.optional ? (
+          <span key={i} className="hidden @min-[860px]:inline">
+            {p.text}
+          </span>
+        ) : (
+          <Fragment key={i}>{p.text}</Fragment>
+        ),
+      )}
     </span>
   );
 }

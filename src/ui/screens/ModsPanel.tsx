@@ -42,13 +42,14 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
   const a = useActions();
 
   const ctx = viewContext(mr, s.result);
+  const icons = mr?.icons;
   const rows = useMemo(
     () =>
       deriveModRows(
         { ...emptyScan(), stubs: s.stubs ?? [], result: s.result, findings: s.findings ?? [], status: s.status },
-        modrinthRowView({ jarMatch }, ctx, iconConverter(backendKind)),
+        modrinthRowView({ jarMatch }, ctx, iconConverter(backendKind), icons),
       ),
-    [s.stubs, s.result, s.findings, s.status, ctx, backendKind],
+    [s.stubs, s.result, s.findings, s.status, ctx, backendKind, icons],
   );
   const looking = mr?.status === 'loading';
   const disabled = rows.filter((r) => !r.enabled).length;
@@ -60,9 +61,17 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
       meta={rows.length ? `${formatInt(rows.length)} jars · ${formatInt(disabled)} disabled` : undefined}
       actions={
         modrinthOn && s.status === 'done' ? (
-          <Button size={24} icon={<ArrowClockwise size={16} />} disabled={looking} onClick={() => void a.refreshModrinth(instanceId)}>
-            {looking ? 'Looking up on Modrinth…' : 'Refresh Modrinth'}
-          </Button>
+          // Never disabled: a click while a lookup runs starts it over (bypassing every cache).
+          <span className="flex items-center gap-2">
+            {looking ? (
+              <span role="status" className="t-small whitespace-nowrap text-fg-faint">
+                looking up…
+              </span>
+            ) : null}
+            <Button size={24} icon={<ArrowClockwise size={16} />} onClick={() => void a.refreshModrinth(instanceId)}>
+              Refresh Modrinth
+            </Button>
+          </span>
         ) : undefined
       }
       flush

@@ -28,12 +28,17 @@
  * modrinth_identify → modrinth_find_updates (+ the beta-only fallback) → modrinth_projects →
  * buildModrinthContext → the checks again with the context → missingModIds →
  * modrinth_resolve_mod_id + modrinth_project_versions + chooseVersion → enrichFindings (static
- * and crash findings). The static findings are on screen before it starts and stay there: each
- * step may fail on its own and only degrades (unknown states, a summary-strip notice). Results
- * are token-guarded per instance and dropped when the scan they belong to was replaced. The
- * context is cached per instance under its query key, so switching instances never re-queries;
- * a rescan with the same jars and filters reuses it. `rateLimited` schedules one automatic
- * retry after `retryAfterS`.
+ * and crash findings), with modrinth_icons as a separate second pass (icons never hold results
+ * back and never re-run the checks). The static findings are on screen before it starts and stay
+ * there: each step may fail on its own and only degrades (unknown states, a summary-strip
+ * notice; only network conditions say "unreachable"). Results are token-guarded per instance;
+ * a same-key rescan mid-lookup hands its result to the running lookup, so no lookup is ever left
+ * "loading". The outcome is cached per instance under its query key, so switching instances
+ * never re-queries, even when it was degraded; a clean one also answers a same-jar rescan.
+ * Refresh (allowed while loading), settings changes, overrides, rescans of a degraded lookup and
+ * the one automatic rate-limit retry (after `retryAfterS`) look up again. Modrinth settings
+ * writes are serialised and lookups wait for them, so no lookup runs against a Rust
+ * `modrinthEnabled` the UI no longer intends.
  *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
@@ -90,7 +95,14 @@ import {
   type InstanceCrashes,
 } from './crashState';
 import { call, type Backend, type Unlisten } from './ipc';
-import { emptyModrinth, queryKey, type InstanceModrinth, type ModrinthCoreApi } from './modrinthState';
+import {
+  emptyModrinth,
+  isNetworkError,
+  queryKey,
+  type InstanceModrinth,
+  type ModrinthCoreApi,
+  type ModrinthNotice,
+} from './modrinthState';
 import { deniedNotifier, type Notifier } from './notify';
 import { emptyScan, type InstanceScan } from './scanState';
 
@@ -114,6 +126,21 @@ export interface OpenOrder {
 export interface CoreApi {
   resolvePack: (instance: Instance, scan: NonNullable<InstanceScan['result']>, override?: PackOverride | null) => PackContext;
   runChecks: (input: CheckInput) => Finding[];
+}
+
+/** Why a Modrinth lookup was asked for; decides whether a degraded cached answer is reused. */
+type MrReason = 'scan' | 'select' | 'settings' | 'override' | 'refresh' | 'retry';
+
+/** One Modrinth lookup in flight (see `mrInflight`). */
+interface MrRun {
+  token: number;
+  key: string;
+  /** The intended `Settings.modrinthEnabled` the run was started for. */
+  enabled: boolean;
+  epoch: number;
+  /** The scan result the context will answer; a same-key rescan replaces it. */
+  result: ScanResult;
+  promise: Promise<void>;
 }
 
 /** Rules-core crash entry points (injectable for tests). */
@@ -303,8 +330,28 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const indexes = new WeakMap<ScanResult, JarIndex>();
   /** Latest Modrinth lookup per instance; older lookups' results are dropped. */
   const mrTokens = new Map<string, number>();
-  /** Query key of the lookup in flight per instance (a repeat request joins it). */
-  const mrInflight = new Map<string, string>();
+  /**
+   * The lookup in flight per instance. A repeat request with the same query key, intended
+   * `modrinthEnabled` and settings epoch joins it, and adopts a newer scan result with the same
+   * jars (a rescan mid-lookup), so the run that finishes is always the one the screen waits on.
+   */
+  const mrInflight = new Map<string, MrRun>();
+  /**
+   * Modrinth settings writes are serialised: each waits for the previous one, so Rust ends in the
+   * state of the last click. Lookups wait until none is pending, so a lookup never runs against a
+   * Rust `modrinthEnabled` that disagrees with the UI's intent.
+   */
+  let mrWrites: Promise<void> = Promise.resolve();
+  let mrWritesPending = 0;
+  /** Sequence number of the latest Modrinth settings write (only its answer is applied). */
+  let mrWriteSeq = 0;
+  /**
+   * Bumped whenever the intended `modrinthEnabled` changes (a toggle, or a failed write
+   * reverting it). A lookup started under an older epoch is never joined and restarts itself.
+   */
+  let mrEpoch = 0;
+  /** The Modrinth settings Rust last confirmed (a failed latest write reverts the UI to them). */
+  let mrConfirmed: { modrinthEnabled: boolean; includeBeta: boolean } | null = null;
   /** Missing mod ids already looked up for the instance's current context. */
   const mrAttempted = new Map<string, Set<string>>();
   /** Instances whose one automatic rate-limit retry is used up. */
@@ -537,7 +584,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const ms = Math.max(1, error.retryAfterS ?? 30) * 1000;
       patchMr(id, (m) => ({ ...m, notice: { kind: 'rateLimited', retryAt: now() + ms }, error }));
       setTimer(() => {
-        if (mrTokens.get(id) === token) void enrich(id, { retry: true });
+        if (mrTokens.get(id) === token) void enrich(id, { reason: 'retry' });
       }, ms);
     };
 
@@ -570,19 +617,25 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const includeBeta = get().settings.includeBeta;
       let limited: AppError | null = null;
       let degraded: AppError | null = null;
+      const unresolved: Record<string, AppError> = {};
+      // Rate limit → the one automatic retry; network → the quiet "some lookups failed" notice;
+      // anything else (`invalid`, `internal`…) skips just this dependency, noted on its finding.
+      const fail = (modId: string, e: AppError) => {
+        if (e.kind === 'rateLimited') limited ??= e;
+        else if (isNetworkError(e)) degraded ??= e;
+        else unresolved[modId] = e;
+      };
       const one = async (modId: string): Promise<DependencyResolution | null> => {
         const p = await call(cmd.modrinthResolveModId(modId, loaders, gameVersions));
         if (p.status === 'error') {
-          if (p.error.kind === 'rateLimited') limited ??= p.error;
-          else degraded ??= p.error;
+          fail(modId, p.error);
           return null;
         }
         if (!p.data) return null;
         const project = p.data;
         const v = await call(cmd.modrinthProjectVersions(project.id, loaders, gameVersions, mr.updateVersionTypes(true)));
         if (v.status === 'error') {
-          if (v.error.kind === 'rateLimited') limited ??= v.error;
-          else degraded ??= v.error;
+          fail(modId, v.error);
           return null;
         }
         try {
@@ -595,11 +648,13 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const found = (await Promise.all(ids.map(one))).filter((r): r is DependencyResolution => r !== null);
       if (mrTokens.get(id) !== token || get().modrinth[id]?.key !== key) return;
       const failed: AppError | null = degraded;
-      if (found.length || failed) {
+      const skipped = Object.keys(unresolved).length > 0;
+      if (found.length || failed || skipped) {
         patchMr(id, (cur) => ({
           ...cur,
           resolutions: { ...cur.resolutions, ...Object.fromEntries(found.map((r) => [r.modId, r])) },
-          notice: failed && !cur.notice ? { kind: 'offline' } : cur.notice,
+          unresolved: skipped ? { ...cur.unresolved, ...unresolved } : cur.unresolved,
+          notice: failed && !cur.notice ? { kind: 'partial' } : cur.notice,
           error: cur.error ?? failed,
         }));
       }
@@ -607,24 +662,48 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (limited) scheduleRetry(id, token, limited);
     };
 
+    /** Step 7: icons, a second pass after the context is on screen (never re-runs the checks). */
+    const loadIcons = async (id: string, token: number, projectIds: readonly string[]): Promise<void> => {
+      if (!projectIds.length) return;
+      const r = await call(() => cmd.modrinthIcons([...projectIds]));
+      if (mrTokens.get(id) !== token || r.status === 'error') return;
+      const found = Object.entries(r.data ?? {}).filter(([, p]) => typeof p === 'string' && p.length > 0);
+      if (!found.length) return;
+      patchMr(id, (m) => ({ ...m, icons: { ...m.icons, ...Object.fromEntries(found) } }));
+    };
+
     /**
-     * The Modrinth flow for one scanned instance (see the module docs). `refresh` bypasses Rust's
-     * disk cache and this store's cache; `retry` is the automatic rate-limit retry.
+     * The Modrinth flow for one scanned instance (see the module docs). `reason` says who asks:
+     * `refresh` bypasses Rust's disk cache and this store's cache; `retry` is the automatic
+     * rate-limit retry. `enabled` is the intended `Settings.modrinthEnabled` (default: the UI's).
+     *
+     * Every call ends in a terminal state (`done`, `error`, `off`) or hands over to a newer run:
+     * - Off: any run is cancelled, status `off`.
+     * - A finished lookup with the same query key answers again without a request when it was
+     *   clean, or when it was degraded and the instance is only being opened (`select`):
+     *   switching instances never re-queries. Refresh, a settings change, an override, a rescan
+     *   and the rate-limit timer look a degraded one up again.
+     * - A run in flight with the same key, intent and settings epoch is joined, and adopts the
+     *   newer scan result (a rescan with unchanged jars mid-lookup). Refresh always starts anew.
+     * - A new run supersedes the previous one (token). It first waits for pending Modrinth
+     *   settings writes; if the intent changed meanwhile (epoch) it restarts under the new one.
      */
-    const enrich = async (id: string, opts: { refresh?: boolean; retry?: boolean } = {}): Promise<void> => {
+    const enrich = (id: string, opts: { reason?: MrReason; enabled?: boolean } = {}): Promise<void> => {
+      const reason = opts.reason ?? 'scan';
       const sc = get().scans[id];
-      if (!sc || sc.status !== 'done' || !sc.result || !sc.pack) return;
+      if (!sc || sc.status !== 'done' || !sc.result || !sc.pack) return Promise.resolve();
       const result = sc.result;
       const pack = sc.pack;
-      const { modrinthEnabled, includeBeta } = get().settings;
+      const enabled = opts.enabled ?? get().settings.modrinthEnabled;
+      const { includeBeta } = get().settings;
       const prev = get().modrinth[id] ?? emptyModrinth();
 
-      if (!modrinthEnabled) {
+      if (!enabled) {
         bump(mrTokens, id);
         mrInflight.delete(id);
-        patchMr(id, () => ({ ...emptyModrinth(), status: 'off' }));
+        if (prev.status !== 'off') patchMr(id, () => ({ ...emptyModrinth(), status: 'off' }));
         if (prev.ctx) recheck(id);
-        return;
+        return Promise.resolve();
       }
 
       let q: ModrinthQueries;
@@ -633,84 +712,136 @@ export function createAppStore(deps: StoreDeps): AppStore {
       } catch (e) {
         bump(mrTokens, id);
         mrInflight.delete(id);
-        patchMr(id, () => ({ ...emptyModrinth(), status: 'error', notice: { kind: 'offline' }, error: internalError('lookup', e) }));
+        patchMr(id, () => ({ ...emptyModrinth(), status: 'error', notice: { kind: 'failed' }, error: internalError('lookup', e) }));
         if (prev.ctx) recheck(id);
-        return;
+        return Promise.resolve();
       }
       const key = queryKey(q.identify, q.updates, includeBeta);
-      if (!opts.refresh) {
-        // Cached: the same jars and filters were looked up already (tab switch, identical rescan).
-        if (prev.status === 'done' && prev.key === key && !prev.notice) {
-          if (prev.scanRef !== result) patchMr(id, (m) => ({ ...m, scanRef: result }));
-          return;
+      if (reason !== 'refresh' && reason !== 'retry') {
+        const running = mrInflight.get(id);
+        if (running && running.key === key && running.enabled === enabled && running.epoch === mrEpoch && mrTokens.get(id) === running.token) {
+          running.result = result;
+          return running.promise;
         }
-        if (prev.status === 'loading' && mrInflight.get(id) === key) return;
+        const finished = !running && (prev.status === 'done' || prev.status === 'error') && prev.lookupKey === key;
+        const degraded = prev.status === 'error' || prev.notice !== null;
+        if (finished && (!degraded || reason === 'select')) {
+          if (prev.status === 'done' && prev.scanRef !== result) patchMr(id, (m) => ({ ...m, scanRef: result }));
+          return Promise.resolve();
+        }
       }
-      if (!opts.retry) mrRetried.delete(id);
+      if (reason !== 'retry') mrRetried.delete(id);
       const token = bump(mrTokens, id);
-      mrInflight.set(id, key);
       mrAttempted.set(id, new Set());
       patchMr(id, (m) => ({ ...m, status: 'loading', key: null, scanRef: null }));
-      const stale = () => mrTokens.get(id) !== token || get().scans[id]?.result !== result;
-      const refresh = !!opts.refresh;
-      let degraded = false;
+      const run: MrRun = { token, key, enabled, epoch: mrEpoch, result, promise: Promise.resolve() };
+      mrInflight.set(id, run);
+      run.promise = lookup(id, run, q, includeBeta, reason);
+      return run.promise;
+    };
+
+    /** One lookup run (`enrich` decides when one starts). */
+    const lookup = async (id: string, run: MrRun, q: ModrinthQueries, includeBeta: boolean, reason: MrReason): Promise<void> => {
+      const { token } = run;
+      const refresh = reason === 'refresh';
+      const finish = () => {
+        if (mrInflight.get(id) === run) mrInflight.delete(id);
+      };
+      /**
+       * After every await: null to go on; else the promise to return. A newer run owns the
+       * instance (stale: it will reach a terminal state), or the intended `modrinthEnabled`
+       * changed (restart under it; when no run can start, leave `idle`, never `loading`).
+       */
+      const halt = (): Promise<void> | null => {
+        if (mrTokens.get(id) !== token) return Promise.resolve();
+        if (run.epoch === mrEpoch) return null;
+        finish();
+        return (async () => {
+          // Restart once Rust has the new intent; the write's own handler may restart us first.
+          while (mrWritesPending > 0) await mrWrites;
+          if (mrTokens.get(id) !== token) return;
+          await enrich(id, { reason });
+          if (mrTokens.get(id) === token) {
+            bump(mrTokens, id);
+            patchMr(id, (m) => (m.status === 'loading' ? { ...emptyModrinth(), icons: m.icons } : m));
+          }
+        })();
+      };
+      const fail = (notice: ModrinthNotice | null, error: AppError) => {
+        finish();
+        const hadCtx = !!get().modrinth[id]?.ctx;
+        // Unknown, never "missing": no context at all, the checks run static only.
+        patchMr(id, (m) => ({ ...emptyModrinth(), icons: m.icons, status: 'error', notice, error, lookupKey: run.key }));
+        if (hadCtx) recheck(id);
+      };
+
+      // Rust must be in the state the UI intends before anything is sent.
+      while (mrWritesPending > 0) await mrWrites;
+      const h0 = halt();
+      if (h0) return h0;
+
+      let partial = false;
       let firstError: AppError | null = null;
       let limited: AppError | null = null;
       const noteLookup = (l: { failed: string[]; offline: boolean }) => {
-        if (l.offline || l.failed.length) degraded = true;
+        if (l.offline || l.failed.length) partial = true;
       };
       const noteError = (e: AppError) => {
         if (e.kind === 'rateLimited') limited ??= e;
-        else degraded = true;
+        else partial = true;
         firstError ??= e;
-      };
-      const finish = () => {
-        if (mrInflight.get(id) === key) mrInflight.delete(id);
       };
 
       // 1. Identify every top-level jar by hash.
       let identify: HashLookup = { found: {}, failed: [], offline: false };
       if (q.identify.length) {
         const r = await call(cmd.modrinthIdentify(q.identify, refresh));
-        if (stale()) return;
+        const h = halt();
+        if (h) return h;
         if (r.status === 'error') {
-          finish();
-          // Unknown, never "missing": no context at all, the checks run static only.
-          patchMr(id, () => ({
-            ...emptyModrinth(),
-            status: 'error',
-            notice: r.error.kind === 'rateLimited' ? null : { kind: 'offline' },
-            error: r.error,
-          }));
-          if (prev.ctx) recheck(id);
+          // Only a network condition is "unreachable"; any other error is a failed lookup.
+          fail(r.error.kind === 'rateLimited' ? null : isNetworkError(r.error) ? { kind: 'offline' } : { kind: 'failed' }, r.error);
           if (r.error.kind === 'rateLimited') scheduleRetry(id, token, r.error);
           return;
         }
         identify = r.data;
         noteLookup(identify);
       }
+      // Unreachable: served offline, or every batch failed (Rust reports network failures so).
+      const failedIds = new Set(identify.failed.map((h) => h.toLowerCase()));
+      const unreachable = identify.offline || (q.identify.length > 0 && q.identify.every((h) => failedIds.has(h.toLowerCase())));
 
       // 2. Updates for the identified jars (only with known filters), then the beta-only fallback.
       const hashes = Object.keys(identify.found).sort();
       let updates: HashLookup | null = null;
       let betaFallback: HashLookup | null = null;
-      if (q.updates && hashes.length && !identify.offline) {
+      if (q.updates && hashes.length && !unreachable) {
         const { loaders, gameVersions } = q.updates;
         const r = await call(cmd.modrinthFindUpdates(hashes, loaders, gameVersions, mr.updateVersionTypes(includeBeta), refresh));
-        if (stale()) return;
+        const h = halt();
+        if (h) return h;
         if (r.status === 'error') noteError(r.error);
         else {
           updates = r.data;
           noteLookup(updates);
-          const found = updates.found;
-          const failed = new Set(updates.failed);
-          // No compatible release: ask again with betas (CONTRACTS invariant 8).
-          const noRelease = includeBeta || updates.offline ? [] : hashes.filter((h) => !found[h] && !failed.has(h));
+          // No compatible release, or only one older than the jar (the user runs a newer
+          // pre-release): ask again with betas (CONTRACTS invariant 8).
+          let noRelease: string[] = [];
+          try {
+            noRelease = mr.betaFallbackHashes(identify, updates, includeBeta);
+          } catch (e) {
+            firstError ??= internalError('lookup', e);
+          }
           if (noRelease.length) {
             const b = await call(cmd.modrinthFindUpdates(noRelease, loaders, gameVersions, mr.updateVersionTypes(true), refresh));
-            if (stale()) return;
-            if (b.status === 'error') noteError(b.error);
-            else {
+            const hb = halt();
+            if (hb) return hb;
+            if (b.status === 'error') {
+              noteError(b.error);
+              // Those jars are unknown, never "no compatible version" / "up to date": the
+              // fallback answered nothing for them, so report every one of them as failed.
+              betaFallback = { found: {}, failed: [...noRelease], offline: false };
+            } else {
               betaFallback = b.data;
               noteLookup(betaFallback);
             }
@@ -718,7 +849,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         }
       }
 
-      // 3. Projects: titles, sides, icons.
+      // 3. Projects: titles and sides (icons come in a second pass, step 7).
       let projects: ProjectLookup | null = null;
       let projectIds: string[] = [];
       try {
@@ -728,7 +859,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       }
       if (projectIds.length && !limited) {
         const r = await call(cmd.modrinthProjects(projectIds, refresh));
-        if (stale()) return;
+        const h = halt();
+        if (h) return h;
         if (r.status === 'error') noteError(r.error);
         else {
           projects = r.data;
@@ -741,22 +873,24 @@ export function createAppStore(deps: StoreDeps): AppStore {
       try {
         ctx = mr.buildModrinthContext({ identify, updates, betaFallback, projects });
       } catch (e) {
-        finish();
-        patchMr(id, () => ({ ...emptyModrinth(), status: 'error', notice: { kind: 'offline' }, error: internalError('lookup', e) }));
-        if (prev.ctx) recheck(id);
+        fail({ kind: 'failed' }, internalError('lookup', e));
         return;
       }
       finish();
-      patchMr(id, () => ({
+      const notice: ModrinthNotice | null = limited ? null : unreachable ? { kind: 'offline' } : partial ? { kind: 'partial' } : null;
+      patchMr(id, (m) => ({
         status: 'done',
         ctx,
-        key,
-        scanRef: result,
+        key: run.key,
+        // A same-key rescan during the lookup handed its result over (`enrich`).
+        scanRef: run.result,
         filters: q.updates,
-        updatesChecked: updates !== null && !updates.offline,
         resolutions: {},
-        notice: limited ? null : degraded ? { kind: 'offline' } : null,
+        unresolved: {},
+        icons: m.icons,
+        notice,
         error: firstError,
+        lookupKey: run.key,
       }));
       recheck(id);
       if (limited) {
@@ -764,38 +898,57 @@ export function createAppStore(deps: StoreDeps): AppStore {
         return;
       }
 
-      // 5–6. Missing dependencies → installDependency fixes.
-      await resolveMissing(id);
+      // 5–6. Missing dependencies → installDependency fixes; 7. icons, alongside (never when
+      // Modrinth was unreachable: no icon request then, CONTRACTS invariant 10).
+      const icons = unreachable || !projects || projects.offline ? null : loadIcons(id, token, Object.keys(ctx.projects).sort());
+      await Promise.all([resolveMissing(id), icons]);
+    };
+
+    /** Serialised `set_settings` for the Modrinth settings (see `mrWrites`). */
+    const writeModrinthSettings = (patch: { modrinthEnabled?: boolean; includeBeta?: boolean }) => {
+      mrWritesPending++;
+      const p = mrWrites.then(() => call(() => cmd.setSettings(settingsPatch(patch))));
+      mrWrites = p.then(
+        () => {
+          mrWritesPending--;
+        },
+        () => {
+          mrWritesPending--;
+        },
+      );
+      return p;
     };
 
     /**
-     * Store `modrinthEnabled` / `includeBeta`, then re-run the lookup. Waits for Rust: with
-     * Modrinth just switched on, a lookup sent earlier would still be answered cache-only. The
-     * open instance re-queries now; switching Modrinth off applies to every scanned instance at
-     * once (no network); other instances pick a change up when they are opened.
+     * Store `modrinthEnabled` / `includeBeta`, then re-run the lookup. The UI shows the intent at
+     * once; writes are serialised and only the last click's answer is applied (a failed one
+     * reverts to what Rust last confirmed). Lookups wait for the writes, so they never run
+     * against a Rust state the UI no longer intends. The open instance re-queries; switching
+     * Modrinth off applies to every scanned instance at once (no network); other instances pick
+     * a change up when they are opened.
      */
     const updateModrinthSettings = async (patch: { modrinthEnabled?: boolean; includeBeta?: boolean }) => {
       const before = get().settings;
+      if (mrWritesPending === 0) mrConfirmed = { modrinthEnabled: before.modrinthEnabled, includeBeta: before.includeBeta };
+      if (patch.modrinthEnabled !== undefined && patch.modrinthEnabled !== before.modrinthEnabled) mrEpoch++;
       set({ settings: { ...before, ...patch } });
-      const r = await call(cmd.setSettings(settingsPatch(patch)));
-      if (r.status === 'error') {
-        set((st) => ({
-          settingsError: r.error,
-          settings: {
-            ...st.settings,
-            ...('modrinthEnabled' in patch ? { modrinthEnabled: before.modrinthEnabled } : {}),
-            ...('includeBeta' in patch ? { includeBeta: before.includeBeta } : {}),
-          },
-        }));
-        return;
-      }
-      set((st) => ({ settingsError: null, settings: { ...st.settings, modrinthEnabled: r.data.modrinthEnabled, includeBeta: r.data.includeBeta } }));
+      const seq = ++mrWriteSeq;
+      const r = await writeModrinthSettings(patch);
+      if (r.status === 'ok') mrConfirmed = { modrinthEnabled: r.data.modrinthEnabled, includeBeta: r.data.includeBeta };
+      // A newer click is on its way to Rust: only the last answer is applied.
+      if (seq !== mrWriteSeq) return;
+      const next = r.status === 'ok' ? r.data : (mrConfirmed ?? before);
+      if (next.modrinthEnabled !== get().settings.modrinthEnabled) mrEpoch++;
+      set((st) => ({
+        settingsError: r.status === 'ok' ? null : r.error,
+        settings: { ...st.settings, modrinthEnabled: next.modrinthEnabled, includeBeta: next.includeBeta },
+      }));
       const sel = get().selectedInstanceId;
       const off = !get().settings.modrinthEnabled;
       await Promise.all(
         Object.keys(get().scans)
           .filter((id) => id === sel || off)
-          .map((id) => enrich(id)),
+          .map((id) => enrich(id, { reason: 'settings' })),
       );
     };
 
@@ -1002,7 +1155,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         const sc = get().scans[id];
         if (!sc || sc.status === 'idle') void get().scan(id);
         // A settings change since its last lookup applies now; otherwise the cache answers.
-        else if (sc.status === 'done') void enrich(id);
+        else if (sc.status === 'done') void enrich(id, { reason: 'select' });
         // Opening an instance with an announced crash shows that crash.
         const alert = get().crashAlerts[id];
         if (alert) {
@@ -1049,7 +1202,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         keepSelection(id);
         applyInitialSelect(id);
         // The static findings are on screen; Modrinth enrichment follows and never blocks them.
-        void enrich(id);
+        void enrich(id, { reason: 'scan' });
         runQueued(id);
       },
 
@@ -1101,14 +1254,15 @@ export function createAppStore(deps: StoreDeps): AppStore {
           set({ overrideError: r.error });
           return;
         }
-        set({ settings: r.data, overrideError: null });
+        // The Modrinth settings are owned by their own serialised writes (the UI's intent).
+        set((st) => ({ settings: { ...r.data, modrinthEnabled: st.settings.modrinthEnabled, includeBeta: st.settings.includeBeta }, overrideError: null }));
         if (get().scans[instanceId]?.result) {
           const checked = check(instanceId);
           patchScan(instanceId, (s) => ({ ...s, ...checked, finishedAt: s.status === 'done' ? now() : s.finishedAt }));
           reanalyze(instanceId);
           keepSelection(instanceId);
           // A new MC version or loader changes the update filters.
-          void enrich(instanceId);
+          void enrich(instanceId, { reason: 'override' });
         }
       },
 
@@ -1319,7 +1473,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       async refreshModrinth(id) {
-        await enrich(id, { refresh: true });
+        await enrich(id, { reason: 'refresh' });
       },
 
       async setModrinthEnabled(on) {

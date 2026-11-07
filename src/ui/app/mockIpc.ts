@@ -20,7 +20,8 @@
  *
  * Modrinth (M5): realistic answers over the mock jar sets (mockModrinth.ts). With
  * `modrinthEnabled` false every lookup is cache-only and the cache is empty (`offline: true`),
- * as in Rust.
+ * as in Rust. Icons arrive only through `modrinth_icons` (after `iconMs`), which fills an icon
+ * cache; `modrinth_projects` attaches cached icons only.
  *
  * Logs (M4): `list_log_sources` / `read_log_digest` serve real-format texts from fixtures/logs
  * (mockLogs.ts); the digest is the whole file, as `digestFromText` builds it.
@@ -58,6 +59,7 @@ import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from 
 import {
   MOCK_RATE_LIMIT_S,
   mockFindUpdates,
+  mockIcons,
   mockIdentify,
   mockOffline,
   mockProjects,
@@ -74,6 +76,8 @@ export interface MockOptions {
   scanMs: number;
   /** Round-trip delay of every command. */
   latencyMs: number;
+  /** How long `modrinth_icons` takes to "download" icons (default: `latencyMs`). */
+  iconMs?: number;
   gridSort?: GridSort;
   /** `crash` scenario: override every instance's delay between arming and its crash. */
   crashDelayMs?: number;
@@ -90,6 +94,7 @@ export function mockOptionsFromSearch(search: string): MockOptions {
     theme: t === 'dark' || t === 'light' ? t : 'system',
     scanMs: 1500,
     latencyMs: 40,
+    iconMs: 700,
   };
 }
 
@@ -151,6 +156,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   let picks = 0;
   let scans = 0;
   let identifies = 0;
+  /** Project ids whose icon `modrinth_icons` has cached (as Rust's icon cache dir). */
+  const iconCache = new Set<string>();
   /** No network: Modrinth switched off (cache-only, empty cache) or unreachable. */
   const mrOffline = () => !settings.modrinthEnabled || opts.scenario === 'offline';
   const added: Instance[] = [];
@@ -365,18 +372,24 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     modrinthProjects: async (ids: string[]): Promise<Result<ProjectLookup>> => {
       await lag();
       if (mrOffline()) return ok({ found: {}, failed: [...ids], offline: true });
-      return ok(mockProjects(ids));
+      return ok(mockProjects(ids, iconCache));
     },
     modrinthProjectVersions: async (projectId: string, loaders: string[], gameVersions: string[]): Promise<Result<MrVersion[]>> => {
       await lag();
       if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so versions could not be listed.');
       return ok(mockProjectVersions(projectId, loaders, gameVersions));
     },
-    modrinthIcons: async () => notYet('Modrinth icons'),
+    modrinthIcons: async (projectIds: string[]): Promise<Result<Record<string, string>>> => {
+      await sleep(opts.iconMs ?? opts.latencyMs);
+      // Off or unreachable: no download, only what is cached already.
+      const icons = mockIcons(projectIds);
+      if (!mrOffline()) for (const id of Object.keys(icons)) iconCache.add(id);
+      return ok(Object.fromEntries(Object.entries(icons).filter(([id]) => iconCache.has(id))));
+    },
     modrinthResolveModId: async (modId: string): Promise<Result<MrProject | null>> => {
       await lag();
       if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so the mod could not be looked up.');
-      return ok(mockResolveModId(modId));
+      return ok(mockResolveModId(modId, iconCache));
     },
     planWorkOrder: async () => {
       await lag();
