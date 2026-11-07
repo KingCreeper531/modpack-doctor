@@ -1192,3 +1192,26 @@ async fn search_sends_query_facets_limit_and_validates() {
     assert_eq!(h.requests().await.len(), 2);
     h.assert_ua().await;
 }
+
+#[tokio::test]
+async fn switching_modrinth_off_stops_a_running_icon_pass() {
+    let h = Harness::new().await;
+    mount_projects_for_any_id(&h).await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex(r"^/data/[A-Za-z0-9]{8}/icon_96\.webp$"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(PNG.to_vec(), "image/png"))
+        .mount(&h.server)
+        .await;
+    let ids: Vec<String> = (0..12).map(|i| format!("Proj{i:04}")).collect();
+    let icons = TempDir::new().unwrap();
+    // "On" for the first icon only, then the user switches Modrinth off.
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::clone(&checks);
+    let keep_going: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0);
+    let r = h.client(true).fetch_icons_while(&ids, icons.path(), keep_going).await;
+    let sent = icon_requests(&h.requests().await);
+    // At most the one fetch that was allowed: the first "off" check also aborts any fetch of the
+    // pass that has not been sent yet (they share the abort flag).
+    assert!(sent <= 1, "{sent} icon requests after switching off");
+    assert_eq!(r.len(), sent);
+}

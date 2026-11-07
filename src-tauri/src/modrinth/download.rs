@@ -204,7 +204,10 @@ impl ModrinthClient {
         let client = self.inner.http.clone();
         let timeout = self.inner.icon_timeout;
         let build = move || client.get(url.clone()).timeout(timeout);
-        let resp = match http::send(&build, None, None, &self.inner.policy, abort).await {
+        // Icons are best effort: no retries, so a hanging CDN stops the pass after one timeout
+        // instead of the API's long timeout schedule (minutes per icon).
+        let policy = http::RetryPolicy { max_retries: 0, max_connect_retries: 0, ..self.inner.policy.clone() };
+        let resp = match http::send(&build, None, None, &policy, abort).await {
             Ok((r, _)) => r,
             Err(e) => {
                 let unreachable = matches!(e, ReqError::Connect(_));
@@ -245,6 +248,18 @@ impl ModrinthClient {
     /// project lookup came back offline or failed; after the first connection-level failure the
     /// remaining fetches are skipped. Never fails: an icon problem just leaves a project out.
     pub async fn fetch_icons(&self, project_ids: &[String], icon_dir: &Path) -> BTreeMap<String, String> {
+        self.fetch_icons_while(project_ids, icon_dir, Arc::new(|| true)).await
+    }
+
+    /// `fetch_icons`, checking `keep_going` before each icon: once it returns false (Modrinth was
+    /// switched off in settings) no further icon is requested. `modrinth_icons` passes the live
+    /// setting, so "off" means no network even for a pass that is already running.
+    pub async fn fetch_icons_while(
+        &self,
+        project_ids: &[String],
+        icon_dir: &Path,
+        keep_going: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> BTreeMap<String, String> {
         let ids = super::dedup_keep_order(project_ids.iter().filter(|id| validate::is_base62_id(id)).cloned().collect());
         if self.inner.online && !ids.is_empty() {
             if let Ok((lookup, urls)) = self.projects_with_icon_urls(&ids, false).await {
@@ -255,7 +270,7 @@ impl ModrinthClient {
                         .filter(|(key, p)| **key == p.id)
                         .filter_map(|(_, p)| urls.get(&p.id).map(|u| (p.id.clone(), u.clone())))
                         .collect();
-                    self.fetch_icon_set(todo, icon_dir).await;
+                    self.fetch_icon_set(todo, icon_dir, keep_going).await;
                 }
             }
         }
@@ -270,14 +285,18 @@ impl ModrinthClient {
 
     /// Fetch `(project id, icon URL)` pairs with bounded concurrency; the first connection-level
     /// failure stops every fetch that has not started yet.
-    async fn fetch_icon_set(&self, todo: Vec<(String, String)>, icon_dir: &Path) {
+    async fn fetch_icon_set(&self, todo: Vec<(String, String)>, icon_dir: &Path, keep_going: Arc<dyn Fn() -> bool + Send + Sync>) {
         let sem = Arc::new(Semaphore::new(ICON_CONCURRENCY));
         let abort = Arc::new(AtomicBool::new(false));
         let mut set = JoinSet::new();
         for (id, url) in todo {
             let (me, dir, sem, abort) = (self.clone(), icon_dir.to_path_buf(), Arc::clone(&sem), Arc::clone(&abort));
+            let keep_going = Arc::clone(&keep_going);
             set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return };
+                if !keep_going() {
+                    abort.store(true, Ordering::SeqCst);
+                }
                 if abort.load(Ordering::SeqCst) {
                     return;
                 }

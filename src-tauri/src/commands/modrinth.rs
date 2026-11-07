@@ -113,7 +113,10 @@ pub(crate) async fn icons_with(st: &AppState, project_ids: Vec<String>) -> Resul
         }
     }
     let svc = service(st)?;
-    Ok(client(st)?.fetch_icons(&project_ids, svc.icon_dir()).await)
+    // Checked before every icon: switching Modrinth off stops a pass that is already running.
+    let settings = std::sync::Arc::clone(&st.settings);
+    let keep_going = std::sync::Arc::new(move || settings.get().modrinth_enabled);
+    Ok(client(st)?.fetch_icons_while(&project_ids, svc.icon_dir(), keep_going).await)
 }
 
 pub(crate) async fn project_versions_with(
