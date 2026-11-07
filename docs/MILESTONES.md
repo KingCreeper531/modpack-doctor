@@ -240,3 +240,38 @@ result.
   that instance; FAT/macOS volumes without hard links fail moves safely instead of falling back.
 - **Note:** M7's core (Q) and Rust (P) work was built in parallel at the owner's request and is
   already merged when `m6` is tagged; the M7 UI lands after.
+
+## M7 — Finishing features
+
+- **Built in parallel with the M6 safety review** (owner request). Contracts first: invariants 15
+  (`.mrpack`), 16 (reports), 17 (interaction), finding code W-MRPACK-DOWNLOAD, frozen
+  `src/core/report` API.
+- **Agents:**
+  - P (Rust): `.mrpack` open via dialog or drag-drop, session-only, read-only exact-file guard
+    rule, in-memory scan of the index and override jars with zip-slip / zip-bomb limits; report
+    saving through the native dialog.
+  - Q (core): declared-file checks via Modrinth data (wrong loader, MC range, missing dependency,
+    not on Modrinth), W-MRPACK-DOWNLOAD allowlist parser (41 trick URLs tested); Markdown/JSON
+    report with home-folder scrubbing; packs carry no fixes.
+  - S (UI): command palette (Ctrl/Cmd+K), J/K/Enter/Esc/Ctrl+R shortcuts that never fire while
+    typing or execute a work order, native context menus (DOM fallback in dev), Open .mrpack +
+    drop overlay + inline drop errors, read-only pack workspace, report export.
+  - Independent reviewer, then P2 (Rust) and T2 (TS) for its findings.
+- **Review findings fixed:** download URLs never silently dropped (sentinels); packs with duplicate
+  zip entries refused and local/central header consistency enforced; read-only rule pinned to the
+  canonical path at open; NTFS alternate streams refused; pack overrides refused (session-only);
+  central directory size checked before parsing; only `overrides/*/mods/` jars scanned; report
+  scrubbing of 8.3 / percent-encoded / UNC / NFD home paths; fewer false missing-dependency errors
+  on packs (QFAPI ≙ Fabric API, loader families, warning severity); F5 / Ctrl+Shift+R swallowed;
+  no-replace report saves; drop summaries; bidi characters stripped from pack names.
+- **Mine:** placeholder check registration, exact home folder from Rust (`home_dir`), app version
+  in reports, Tauri drag events for the drop overlay, pack rows show full names, light-theme pass
+  (8 views × 2 themes, 1280 and 1920) — no token or contrast drift found.
+- **Real-data check:** `smoke_mrpack` on three public packs from Modrinth (Fabulously Optimized,
+  Cobblemon Official 100 MB, Fresh & Smooth): all open and scan with 0 issues — the header
+  consistency check does not trip on real packers' zips.
+- **Gates:** 495 Rust tests, clippy clean; 2203 Vitest tests green on repeated runs; typecheck
+  clean; production bundle has no mock data; `tauri build` `.msi` 8.37 MiB / `.exe` 6.14 MiB.
+  Screenshots in `docs/screenshots/m7/` (untracked).
+- **Note:** the verification of the M7 review fixes is folded into the final M8 review. M8's About
+  / update UI and README (D8) were merged before this tag.
