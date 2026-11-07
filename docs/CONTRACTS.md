@@ -111,8 +111,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    - Undo is per action (`plan_undo(backupId, actionIndexes)`). It runs as a work order
      (`kind: undo`) and verifies hashes before it overwrites anything. Enter confirms only a
      single-rename undo; everything else needs Execute.
-   - Update suggestions: `["release"]` unless `includeBeta`. If no release is compatible,
-     `src/core` retries with `["release","beta"]` and labels any result "beta". Alpha versions are
+   - Update suggestions: `["release"]` unless `includeBeta`. If no release is compatible, or the
+     newest compatible release is older than the identified version (a newer pre-release is
+     installed), `src/core` retries with `["release","beta"]` for those hashes
+     (`betaFallbackHashes`) and labels any result "beta". Alpha versions are
      never suggested. An update must be **published after** the identified version
      (`datePublished`): Modrinth returns the newest *matching* version, which can be older than a
      beta the user runs, and that is never offered (it would be a downgrade). When either date is
