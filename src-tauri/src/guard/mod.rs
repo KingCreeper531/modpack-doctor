@@ -16,6 +16,14 @@
 //! [`PathGuard::check_new`] never accepts anything in it, so nothing there can be created,
 //! renamed onto or written. Discovery sets the list to the CurseForge `Install` folders of the
 //! discovered CurseForge instances (empty when there are none).
+//!
+//! **Read-only files** (exact-file rule; CONTRACTS invariant 15, opened `.mrpack`s). A file
+//! registered with [`PathGuard::set_read_only_files`] is *not* a root and makes nothing around it
+//! reachable. [`PathGuard::check_existing`] additionally accepts a path that resolves (symlinks
+//! followed) to exactly one of those files while it is a regular file: not its folder, not a
+//! sibling, nothing below it. [`PathGuard::check_new`] never accepts it, so it cannot be
+//! created, renamed onto or written, even when it happens to sit inside a registered root.
+//! The list is replaced as a whole (the registry's opened packs, on every change).
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
@@ -29,6 +37,8 @@ pub struct PathGuard {
     roots: RwLock<Vec<(PathBuf, PathBuf)>>,
     /// Canonical folders whose `hs_err_pid<pid>.log` files (directly inside) are readable.
     hs_err_dirs: RwLock<Vec<PathBuf>>,
+    /// Canonical files that are readable, and only readable, by exact path (opened `.mrpack`s).
+    read_only_files: RwLock<Vec<PathBuf>>,
 }
 
 impl PathGuard {
@@ -83,14 +93,43 @@ impl PathGuard {
         self.hs_err_dirs.read().map(|d| d.clone()).unwrap_or_default()
     }
 
-    /// Resolve an existing path and check it is inside a registered root, or is an
-    /// `hs_err_pid<pid>.log` file directly in an hs_err dir (read-only rule, module docs).
+    /// Replace the read-only exact files (see the module docs). Paths that do not resolve to an
+    /// existing regular file are skipped; an empty list switches the rule off.
+    pub fn set_read_only_files(&self, files: &[PathBuf]) {
+        let mut canon: Vec<PathBuf> = Vec::new();
+        for f in files {
+            match canonical(f) {
+                Ok(c) if c.is_file() && !canon.contains(&c) => canon.push(c),
+                Ok(_) => {}
+                Err(e) => eprintln!("path guard: not reading {}: {e}", f.display()),
+            }
+        }
+        if let Ok(mut current) = self.read_only_files.write() {
+            *current = canon;
+        }
+    }
+
+    /// The canonical read-only exact files currently active.
+    pub fn read_only_files(&self) -> Vec<PathBuf> {
+        self.read_only_files.read().map(|f| f.clone()).unwrap_or_default()
+    }
+
+    /// Resolve an existing path and check it is inside a registered root, is an
+    /// `hs_err_pid<pid>.log` file directly in an hs_err dir, or is exactly a read-only file
+    /// (read-only rules, module docs).
     pub fn check_existing(&self, path: &Path) -> Result<PathBuf> {
         let canon = canonical(path)?;
-        if self.ensure_inside(&canon, path).is_ok() || self.hs_err_rule_allows(&canon)? {
+        if self.ensure_inside(&canon, path).is_ok() || self.hs_err_rule_allows(&canon)? || self.read_only_file_allows(&canon)? {
             return Ok(canon);
         }
         Err(Error::OutsideScope { path: path.display().to_string() })
+    }
+
+    /// Whether the canonical path `canon` is exactly one of the read-only files and is still a
+    /// regular file.
+    fn read_only_file_allows(&self, canon: &Path) -> Result<bool> {
+        let files = self.read_only_files.read().map_err(|_| poisoned())?;
+        Ok(files.iter().any(|f| f == canon) && std::fs::metadata(canon).map(|m| m.is_file()).unwrap_or(false))
     }
 
     /// Whether the canonical path `canon` is a regular `hs_err_pid<pid>.log` file directly in
@@ -127,8 +166,19 @@ impl PathGuard {
             Ok(meta) if meta.file_type().is_symlink() => {
                 Err(Error::OutsideScope { path: path.display().to_string() })
             }
+            // A read-only file is never a write target, even inside a root.
+            Ok(_) if self.is_read_only_file(&target)? => Err(Error::OutsideScope { path: path.display().to_string() }),
             _ => Ok(target),
         }
+    }
+
+    /// Whether the existing `target` resolves to one of the read-only files.
+    fn is_read_only_file(&self, target: &Path) -> Result<bool> {
+        let files = self.read_only_files.read().map_err(|_| poisoned())?;
+        if files.is_empty() {
+            return Ok(false);
+        }
+        Ok(canonical(target).is_ok_and(|c| files.contains(&c)))
     }
 
     /// Join a relative, `/`-separated path (as used in the IPC contract) onto a base,
@@ -407,6 +457,64 @@ mod tests {
             Ok(()) => assert!(g.check_existing(&link).is_err(), "symlink escaping the hs_err dir"),
             Err(_) => eprintln!("skipped the file-symlink case: creating symlinks needs a privilege here"),
         }
+    }
+
+    // ── Read-only exact files (opened .mrpack) ───────────────────────────────
+
+    /// A folder with an opened pack and siblings that must stay unreachable.
+    fn read_only_setup() -> (tempfile::TempDir, PathGuard, PathBuf, PathBuf) {
+        let t = tempfile::tempdir().expect("tempdir");
+        let dir = dunce::canonicalize(t.path()).expect("canon").join("Downloads ü");
+        fs::create_dir_all(dir.join("sub")).expect("mkdir");
+        for f in ["pack.mrpack", "other.mrpack", "secret.txt", "sub/pack.mrpack"] {
+            fs::write(dir.join(f), b"x").expect("write");
+        }
+        let g = PathGuard::new();
+        g.set_read_only_files(&[dir.join("pack.mrpack")]);
+        (t, g, dir.clone(), dir.join("pack.mrpack"))
+    }
+
+    #[test]
+    fn read_only_file_is_readable_exactly() {
+        let (_t, g, dir, pack) = read_only_setup();
+        assert_eq!(g.read_only_files(), vec![pack.clone()]);
+        assert_eq!(g.check_existing(&pack).expect("pack"), pack);
+        // The same file through a `..` detour resolves to it and is fine.
+        assert!(g.check_existing(&dir.join("sub").join("..").join("pack.mrpack")).is_ok());
+        for bad in ["other.mrpack", "secret.txt", "sub/pack.mrpack", "sub", "."] {
+            let err = g.check_existing(&dir.join(bad)).expect_err(bad);
+            assert!(matches!(err, Error::OutsideScope { .. }), "{bad}: {err}");
+        }
+        assert!(g.check_existing(&dir).is_err(), "its folder is not readable");
+        assert!(g.check_existing(&pack.join("inner.jar")).is_err(), "nothing below it");
+        assert!(g.roots().is_empty(), "it is not a root");
+    }
+
+    #[test]
+    fn read_only_file_is_never_writable() {
+        let (_t, g, dir, pack) = read_only_setup();
+        for name in ["pack.mrpack", "pack.mrpack.tmp", "new.txt", "other.mrpack"] {
+            assert!(g.check_new(&dir.join(name)).is_err(), "{name}");
+        }
+        // Even inside a registered root, the pack itself is not a write target.
+        g.add_root(&dir).expect("root");
+        assert!(g.check_new(&dir.join("new.txt")).is_ok());
+        assert!(matches!(g.check_new(&pack), Err(Error::OutsideScope { .. })));
+        assert!(g.check_new(&dir.join("other.mrpack")).is_ok(), "only the exact file is protected");
+    }
+
+    #[test]
+    fn read_only_files_are_replaced_and_skip_non_files() {
+        let (_t, g, dir, pack) = read_only_setup();
+        g.set_read_only_files(&[dir.join("sub"), dir.join("missing.mrpack")]);
+        assert!(g.read_only_files().is_empty(), "folders and missing files are skipped");
+        assert!(g.check_existing(&pack).is_err());
+        g.set_read_only_files(&[pack.clone(), pack.clone()]);
+        assert_eq!(g.read_only_files().len(), 1);
+        // A file replaced by a folder of the same name is no longer readable.
+        fs::remove_file(&pack).expect("rm");
+        fs::create_dir_all(&pack).expect("mkdir");
+        assert!(g.check_existing(&pack).is_err());
     }
 
     #[test]

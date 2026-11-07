@@ -11,7 +11,7 @@ use crate::discovery::Discovered;
 use crate::error::{Error, Result};
 use crate::guard::PathGuard;
 use crate::logs::watch::Watchers;
-use crate::model::{DiscoveryReport, Instance};
+use crate::model::{DiscoveryReport, Instance, Launcher};
 use crate::modrinth::ModrinthService;
 use crate::process::Processes;
 use crate::scan::ScanCache;
@@ -41,6 +41,9 @@ pub struct AppState {
     pub modrinth: Option<ModrinthService>,
     /// Planned work orders, the per-instance execution lock and the backups root (M6).
     pub fixes: crate::fix::FixState,
+    /// `.mrpack` files opened this session (CONTRACTS invariant 15), in opening order. Never
+    /// persisted; merged into the registry by every discovery so they survive rediscovery.
+    pub opened_packs: Arc<RwLock<Vec<Instance>>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -82,8 +85,15 @@ impl AppState {
     /// [`apply_discovery`]). Returns the report.
     /// Blocking (probes each instance's `mods/`, `logs/`, `crash-reports/` links).
     pub fn apply_discovery(&self, discovered: Discovered) -> Result<DiscoveryReport> {
+        let mut discovered = discovered;
         // Probe outside the lock; only the swap happens under it.
-        let next = Registry::from_discovered(&discovered, crate::discovery::guard_roots);
+        let mut next = Registry::from_discovered(&discovered, crate::discovery::guard_roots);
+        // Opened packs are session-only and not found by discovery: keep them (and report them).
+        for pack in self.opened_packs() {
+            if next.insert_session(pack.clone(), false) {
+                discovered.report.instances.push(pack);
+            }
+        }
         let pinned = self.pinned();
         let mut reg = self.registry.write().map_err(|_| poisoned("instance registry"))?;
         apply_registry(&self.guard, &mut reg, next, &pinned);
@@ -96,6 +106,41 @@ impl AppState {
             }
         }
         Ok(discovered.report)
+    }
+
+    /// The `.mrpack`s opened this session, in opening order.
+    pub fn opened_packs(&self) -> Vec<Instance> {
+        self.opened_packs.read().map(|p| p.clone()).unwrap_or_default()
+    }
+
+    /// Register an opened `.mrpack` (session only): remembered for rediscovery, put in the
+    /// registry (no PathGuard root) and given the read-only exact-file rule. Opening the same
+    /// pack again refreshes its entry. Callers hold `scope_lock` for writing.
+    pub fn add_opened_pack(&self, pack: Instance) -> Result<()> {
+        let mut packs = self.opened_packs.write().map_err(|_| poisoned("opened packs"))?;
+        match packs.iter_mut().find(|p| p.id == pack.id) {
+            Some(p) => *p = pack.clone(),
+            None => packs.push(pack.clone()),
+        }
+        let mut reg = self.registry.write().map_err(|_| poisoned("instance registry"))?;
+        reg.insert_session(pack, true);
+        self.guard.set_read_only_files(&reg.pack_files());
+        Ok(())
+    }
+
+    /// Forget an opened `.mrpack`: registry entry, read-only rule and session list. NotFound if
+    /// `id` is not an opened pack. Callers hold `scope_lock` for writing.
+    pub fn remove_opened_pack(&self, id: &str) -> Result<()> {
+        let mut packs = self.opened_packs.write().map_err(|_| poisoned("opened packs"))?;
+        let before = packs.len();
+        packs.retain(|p| p.id != id);
+        if packs.len() == before {
+            return Err(unknown_instance(id));
+        }
+        let mut reg = self.registry.write().map_err(|_| poisoned("instance registry"))?;
+        reg.remove(id);
+        self.guard.set_read_only_files(&reg.pack_files());
+        Ok(())
     }
 }
 
@@ -187,6 +232,31 @@ impl Registry {
         reg
     }
 
+    /// Add an instance that discovery does not produce (an opened `.mrpack`): no PathGuard
+    /// roots, `game_dir` = its `game_dir`. An existing entry with the same id is replaced when
+    /// `replace`, else kept. True if the id was not registered before.
+    pub fn insert_session(&mut self, inst: Instance, replace: bool) -> bool {
+        let fresh = !self.by_id.contains_key(&inst.id);
+        if fresh {
+            self.order.push(inst.id.clone());
+        } else if !replace {
+            return false;
+        }
+        let game_dir = PathBuf::from(&inst.game_dir);
+        self.by_id.insert(inst.id.clone(), RegisteredInstance { instance: inst, game_dir, roots: Vec::new() });
+        fresh
+    }
+
+    /// The files of the registered `.mrpack` instances (their `root`), for the read-only rule.
+    pub fn pack_files(&self) -> Vec<PathBuf> {
+        self.order
+            .iter()
+            .filter_map(|id| self.by_id.get(id))
+            .filter(|r| r.instance.launcher == Launcher::Mrpack)
+            .map(|r| PathBuf::from(&r.instance.root))
+            .collect()
+    }
+
     pub fn get(&self, id: &str) -> Option<&RegisteredInstance> {
         self.by_id.get(id)
     }
@@ -231,7 +301,7 @@ pub fn root_changes(old: &[PathBuf], new: &[PathBuf], pinned: &[PathBuf]) -> (Ve
 
 /// Replace `registry` with `next` and sync `guard`: new roots are added first, then roots no
 /// instance needs any more are removed (pinned roots never are), then the read-only hs_err
-/// dirs are replaced. A root that cannot be added (folder vanished since discovery) is logged
+/// dirs and the read-only pack files are replaced. A root that cannot be added (folder vanished since discovery) is logged
 /// and skipped.
 pub fn apply_registry(guard: &PathGuard, registry: &mut Registry, next: Registry, pinned: &[PathBuf]) {
     let (add, remove) = root_changes(&registry.roots, &next.roots, pinned);
@@ -247,6 +317,8 @@ pub fn apply_registry(guard: &PathGuard, registry: &mut Registry, next: Registry
     // Read-only hs_err rule for CurseForge's shared `Install` folder, only while a CurseForge
     // instance is discovered (CONTRACTS invariant 11).
     guard.set_hs_err_dirs(&crate::discovery::curseforge_hs_err_dirs(&registry.instances()));
+    // Read-only exact-file rule for the opened `.mrpack`s (CONTRACTS invariant 15).
+    guard.set_read_only_files(&registry.pack_files());
 }
 
 // ── In-flight scans ──────────────────────────────────────────────────────────
