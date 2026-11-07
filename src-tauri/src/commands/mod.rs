@@ -4,6 +4,7 @@
 //! `Error` → `AppError`. Bodies marked `not_yet` are filled in by later milestones;
 //! signatures do not change without an approved contract proposal.
 
+mod fix;
 mod instances;
 mod logs;
 mod modrinth;
@@ -26,6 +27,7 @@ pub use scanning::{scan_registered, EventSink, ScanSink};
 
 use instances::{blocking, discover_blocking, pick_folder};
 pub use logs::{disable_watch, enable_watch, forget_instance, remove_manual_and_forget};
+pub use fix::*;
 pub use modrinth::*;
 
 type Cmd<T> = Result<T, AppError>;
@@ -204,63 +206,9 @@ pub async fn set_watch(
 // `collect_commands!` needs come along).
 
 // ── Fixes ────────────────────────────────────────────────────────────────────
-
-/// Turn intents into a concrete, stored work order. No filesystem mutation.
-///
-/// Every `versionId` is re-fetched (`GET /v2/version/{id}`) and re-validated; any failure
-/// rejects the whole order with a readable `Invalid` error naming the action:
-/// - `pack` must agree with launcher/mrpack metadata and any stored override.
-/// - `version.loaders` must contain the pack loader (NeoForge 1.20.1 also accepts `forge`,
-///   Quilt also accepts `fabric`); the version must be published after the current one (`Replace`),
-///   and `version.gameVersions` must contain the pack MC version.
-/// - `Replace`: the current jar's sha1 must identify (via `/version_files`) to the same
-///   `projectId` as the new version; jars not on Modrinth cannot be replaced.
-/// - Download candidate: file chosen by CONTRACTS.md invariant 8 (file type, primary, sole).
-/// - After download and SHA-512 check (at execution): the new jar is scanned and must declare
-///   the expected mod id (the replaced jar's id, or `InstallDependency.modId` incl. `provides`),
-///   else the op fails and the order rolls back.
-#[tauri::command]
-#[specta::specta]
-pub async fn plan_work_order(
-    _state: State<'_, AppState>,
-    _instance_id: String,
-    _pack: PackIdentity,
-    _actions: Vec<FixAction>,
-) -> Cmd<WorkOrder> {
-    not_yet("Applying fixes" /* M6 */)
-}
-
-/// Execute a stored order: guard check → snapshot → ops (emits `OpStatus`) → rollback on failure.
-#[tauri::command]
-#[specta::specta]
-pub async fn execute_work_order(_app: AppHandle, _state: State<'_, AppState>, _order_id: String) -> Cmd<WorkOrderResult> {
-    not_yet("Applying fixes" /* M6 */)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn discard_work_order(_state: State<'_, AppState>, _order_id: String) -> Cmd<()> {
-    not_yet("Applying fixes" /* M6 */)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn list_backups(_state: State<'_, AppState>, _instance_id: String) -> Cmd<Vec<BackupEntry>> {
-    not_yet("Backup history" /* M6 */)
-}
-
-/// Plans the reverse of a backup as a work order (shown and confirmed like any other).
-/// `action_indexes`: undo only those actions of the original order; None = all not yet undone.
-/// `backup_id` must match `^[0-9a-f]{16}/[0-9]+$` and exist.
-#[tauri::command]
-#[specta::specta]
-pub async fn plan_undo(
-    _state: State<'_, AppState>,
-    _backup_id: String,
-    _action_indexes: Option<Vec<u32>>,
-) -> Cmd<WorkOrder> {
-    not_yet("Undo" /* M6 */)
-}
+//
+// `plan_work_order`, `execute_work_order`, `discard_work_order`, `list_backups` and `plan_undo`
+// live in `fix.rs` (glob re-export below).
 
 #[tauri::command]
 #[specta::specta]
