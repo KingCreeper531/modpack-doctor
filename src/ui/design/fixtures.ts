@@ -487,5 +487,5 @@ export const ABOUT: AboutInfo = {
   tauri: '2.12.4 · WebView2 131.0.2903.70',
   dataDir: 'C:\\Users\\alex\\AppData\\Roaming\\dev.modpackdoctor',
   cacheDir: 'C:\\Users\\alex\\AppData\\Local\\dev.modpackdoctor\\cache',
-  licence: 'MIT',
+  licence: 'TBD by the owner',
 };
