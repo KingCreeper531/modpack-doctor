@@ -51,6 +51,7 @@ export function handleKey(store: AppStore, e: KeyboardEvent): void {
       // Top-most layer first. An open work order is left to its own panel (§6.4): a running one
       // is never discarded, and nothing here cancels one.
       if (st.paletteOpen) st.setPaletteOpen(false);
+      else if (st.aboutOpen) st.setAboutOpen(false);
       else if (st.menu) st.closeMenu();
       else if (st.order) return;
       else if (st.selection) st.select(null);
