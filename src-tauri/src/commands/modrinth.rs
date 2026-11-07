@@ -6,6 +6,8 @@
 //! the tests drive without a Tauri runtime. Everything runs on the async runtime; the client does
 //! its cache and icon I/O with `tokio::fs`.
 
+use std::collections::BTreeMap;
+
 use tauri::State;
 
 use crate::error::{Error, Result};
@@ -86,8 +88,8 @@ pub(crate) async fn find_updates_with(
     client(st)?.find_updates(&sha1s, &loaders, &game_versions, &version_types, refresh).await
 }
 
-/// Projects plus their cached icons. Icons never fail the lookup: a project whose icon could not
-/// be fetched just has `icon_path: None`. Offline, only icons already on disk are attached.
+/// Projects plus the icons already on disk (any age). Never downloads an icon and never waits for
+/// the CDN: `icons_with` (`modrinth_icons`) is the separate second pass that fetches them.
 pub(crate) async fn projects_with(st: &AppState, ids: Vec<String>, refresh: bool) -> Result<ProjectLookup> {
     check_count("projects", ids.len(), MAX_IDS)?;
     for id in &ids {
@@ -96,8 +98,22 @@ pub(crate) async fn projects_with(st: &AppState, ids: Vec<String>, refresh: bool
     let svc = service(st)?;
     let c = client(st)?;
     let (mut lookup, icon_urls) = c.projects_with_icon_urls(&ids, refresh).await?;
-    c.attach_icons(&mut lookup, &icon_urls, svc.icon_dir()).await;
+    c.attach_cached_icons(&mut lookup, &icon_urls, svc.icon_dir()).await;
     Ok(lookup)
+}
+
+/// Project ids (base62) → absolute paths of their icons now on disk, after fetching missing or
+/// stale ones. Only invalid input or a missing client fail; icon and network problems never do
+/// (the affected projects are just left out). Modrinth off = no request, cached icons only.
+pub(crate) async fn icons_with(st: &AppState, project_ids: Vec<String>) -> Result<BTreeMap<String, String>> {
+    check_count("project icons", project_ids.len(), MAX_IDS)?;
+    for id in &project_ids {
+        if !validate::is_base62_id(id) {
+            return Err(Error::Invalid(format!("\"{}\" is not a Modrinth project id", clip(id))));
+        }
+    }
+    let svc = service(st)?;
+    Ok(client(st)?.fetch_icons(&project_ids, svc.icon_dir()).await)
 }
 
 pub(crate) async fn project_versions_with(
@@ -177,10 +193,10 @@ pub async fn modrinth_projects(state: State<'_, AppState>, ids: Vec<String>, ref
 #[tauri::command]
 #[specta::specta]
 pub async fn modrinth_icons(
-    _state: State<'_, AppState>,
-    _project_ids: Vec<String>,
+    state: State<'_, AppState>,
+    project_ids: Vec<String>,
 ) -> Cmd<std::collections::BTreeMap<String, String>> {
-    Err(Error::Unavailable("Modrinth icons".into()).into())
+    Ok(icons_with(&state, project_ids).await?)
 }
 
 /// `GET /v2/project/{id}/version?loaders=…&game_versions=…` newest first, filtered by

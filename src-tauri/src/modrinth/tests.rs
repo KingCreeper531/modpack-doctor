@@ -1,5 +1,6 @@
 //! End-to-end client tests against wiremock. No real network.
 
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,6 +39,10 @@ impl Harness {
     }
 
     fn client_with(&self, base_url: String, online: bool) -> ModrinthClient {
+        self.client_tuned(base_url, online, |_| {})
+    }
+
+    fn client_tuned(&self, base_url: String, online: bool, tweak: impl FnOnce(&mut Tuning)) -> ModrinthClient {
         let clock = Arc::clone(&self.clock);
         let cfg = ClientConfig {
             base_url,
@@ -46,7 +51,7 @@ impl Harness {
             user_agent: UA.into(),
             online,
         };
-        let tuning = Tuning {
+        let mut tuning = Tuning {
             allow_http: true,
             policy: RetryPolicy {
                 max_retries: 5,
@@ -57,7 +62,9 @@ impl Harness {
             },
             clock: Arc::new(move || clock.load(Ordering::SeqCst)),
             max_download: TEST_MAX_DOWNLOAD,
+            icon_timeout: Duration::from_secs(30),
         };
+        tweak(&mut tuning);
         ModrinthClient::with_tuning(cfg, tuning).unwrap()
     }
 
@@ -756,6 +763,218 @@ async fn attach_icons_fills_icon_paths() {
     let path = r.found["sodium"].icon_path.clone().unwrap();
     assert!(path.ends_with("AANobbMI.webp"), "{path}");
     h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn concurrent_fetches_of_one_icon_all_succeed() {
+    let h = Harness::new().await;
+    Mock::given(method("GET"))
+        .and(path("/data/AANobbMI/icon.png"))
+        // Slow enough that every fetch is in flight before the first one writes.
+        .respond_with(ResponseTemplate::new(200).set_body_raw(PNG.to_vec(), "image/png").set_delay(Duration::from_millis(100)))
+        .mount(&h.server)
+        .await;
+    let c = h.client(true);
+    let icons = TempDir::new().unwrap();
+    let url = format!("{}/data/AANobbMI/icon.png", h.cdn());
+    let mut set = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let (c, url, dir) = (c.clone(), url.clone(), icons.path().to_path_buf());
+        set.spawn(async move { c.fetch_icon("AANobbMI", &url, &dir).await });
+    }
+    let dest = icons.path().join("AANobbMI.png");
+    let mut n = 0;
+    while let Some(r) = set.join_next().await {
+        assert_eq!(r.unwrap().unwrap(), Some(dest.clone()));
+        n += 1;
+    }
+    assert_eq!(n, 8);
+    assert_eq!(h.requests().await.len(), 8, "every fetch went to the CDN at once");
+    assert_eq!(std::fs::read(&dest).unwrap(), PNG);
+    let names: Vec<String> =
+        std::fs::read_dir(icons.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, vec!["AANobbMI.png"], "temp files left behind");
+}
+
+/// `/v2/projects` answering for every requested id, each with a CDN icon.
+async fn mount_projects_for_any_id(h: &Harness) {
+    let cdn = h.cdn();
+    Mock::given(method("GET"))
+        .and(path("/v2/projects"))
+        .respond_with(move |r: &Request| {
+            let ids: Vec<String> =
+                r.url.query_pairs().find(|(k, _)| k == "ids").map(|(_, v)| serde_json::from_str(&v).unwrap()).unwrap();
+            let hits: Vec<Value> = ids.iter().map(|id| project_json(id, &id.to_ascii_lowercase(), &cdn)).collect();
+            ResponseTemplate::new(200).set_body_json(hits)
+        })
+        .mount(&h.server)
+        .await;
+}
+
+fn icon_requests(reqs: &[Request]) -> usize {
+    reqs.iter().filter(|r| r.url.path().starts_with("/data/")).count()
+}
+
+fn age_file(p: &Path, days: u64) {
+    let f = std::fs::File::options().write(true).open(p).unwrap();
+    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(days * 24 * 3600)).unwrap();
+}
+
+#[tokio::test]
+async fn fetch_icons_stops_after_the_cdn_times_out() {
+    let h = Harness::new().await;
+    mount_projects_for_any_id(&h).await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex(r"^/data/[A-Za-z0-9]{8}/icon_96\.webp$"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(PNG.to_vec(), "image/png").set_delay(Duration::from_secs(2)))
+        .mount(&h.server)
+        .await;
+    let ids: Vec<String> = (0..12).map(|n| format!("PROJ{n:04}")).collect();
+    let icons = TempDir::new().unwrap();
+    // A stale icon on disk survives the failed refresh and is still returned.
+    let stale = icons.path().join("PROJ0000.png");
+    std::fs::write(&stale, PNG).unwrap();
+    age_file(&stale, 30);
+
+    let c = h.client_tuned(h.server.uri(), true, |t| {
+        t.icon_timeout = Duration::from_millis(150);
+        t.policy.max_retries = 0;
+    });
+    let t0 = Instant::now();
+    let r = c.fetch_icons(&ids, icons.path()).await;
+    assert!(t0.elapsed() < Duration::from_secs(2), "waited {:?}", t0.elapsed());
+    let expected: BTreeMap<String, String> = [("PROJ0000".to_string(), stale.to_string_lossy().into_owned())].into();
+    assert_eq!(r, expected);
+    // Only the first wave (4 at a time) went out; nothing started after the first timeout.
+    let sent = icon_requests(&h.requests().await);
+    assert!((1..=4).contains(&sent), "{sent} icon requests for 12 projects");
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn fetch_icons_fetches_reuses_and_skips_the_cdn_when_offline() {
+    let h = Harness::new().await;
+    mount_projects_for_any_id(&h).await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex(r"^/data/[A-Za-z0-9]{8}/icon_96\.webp$"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(PNG.to_vec(), "image/png"))
+        .mount(&h.server)
+        .await;
+    let ids: Vec<String> = vec!["AANobbMI".into(), "P7dR8mSH".into(), "AANobbMI".into(), "not an id".into()];
+    let icons = TempDir::new().unwrap();
+    let c = h.client(true);
+    let r = c.fetch_icons(&ids, icons.path()).await;
+    assert_eq!(r.keys().collect::<Vec<_>>(), vec!["AANobbMI", "P7dR8mSH"]);
+    assert_eq!(Path::new(&r["AANobbMI"]), icons.path().join("AANobbMI.png"));
+    let reqs = h.requests().await;
+    assert_eq!((reqs.len(), icon_requests(&reqs)), (3, 2));
+
+    // Fresh icons and cached projects: no request at all.
+    assert_eq!(c.fetch_icons(&ids, icons.path()).await, r);
+    assert_eq!(h.requests().await.len(), 3);
+
+    // A stale icon is fetched again (the project record is still cached).
+    age_file(&icons.path().join("P7dR8mSH.png"), 8);
+    assert_eq!(c.fetch_icons(&ids, icons.path()).await, r);
+    let reqs = h.requests().await;
+    assert_eq!((reqs.len(), icon_requests(&reqs)), (4, 3));
+
+    // The API is unreachable: the project lookup comes back offline, so the CDN is not asked
+    // either (even for the stale icon), and what is on disk is returned.
+    h.advance(30 * DAY_MS);
+    age_file(&icons.path().join("P7dR8mSH.png"), 8);
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_url = format!("http://{}", dead.local_addr().unwrap());
+    drop(dead);
+    assert_eq!(h.client_with(dead_url, true).fetch_icons(&ids, icons.path()).await, r);
+    // Offline client: no request, cached icons only.
+    assert_eq!(h.client(false).fetch_icons(&ids, icons.path()).await, r);
+    assert_eq!(h.requests().await.len(), 4);
+    h.assert_ua().await;
+}
+
+#[tokio::test]
+async fn attach_cached_icons_never_fetches() {
+    let h = Harness::new().await;
+    mount_projects_for_any_id(&h).await;
+    let c = h.client(true);
+    let icons = TempDir::new().unwrap();
+    let old = icons.path().join("AANobbMI.webp");
+    std::fs::write(&old, b"RIFF\x10\0\0\0WEBPVP8 ").unwrap();
+    age_file(&old, 365);
+    let (mut r, urls) = c.projects_with_icon_urls(&["AANobbMI".into(), "P7dR8mSH".into()], false).await.unwrap();
+    c.attach_cached_icons(&mut r, &urls, icons.path()).await;
+    assert_eq!(r.found["AANobbMI"].icon_path.as_deref().map(Path::new), Some(old.as_path()));
+    assert_eq!(r.found["P7dR8mSH"].icon_path, None);
+    assert_eq!(icon_requests(&h.requests().await), 0);
+}
+
+// ---------- datePublished / cache schema ----------
+
+#[test]
+fn date_published_is_parsed_and_optional() {
+    let cdn = api::CdnCheck { host: "cdn.modrinth.com".into(), allow_http: false };
+    let mut v = version_json("OihdIimA", "AANobbMI", &sha(5), "https://cdn.modrinth.com");
+    v["date_published"] = json!("2024-05-06T07:08:09.123456Z");
+    let m = api::version_from_json(v.clone(), &cdn).unwrap();
+    assert_eq!(m.date_published.as_deref(), Some("2024-05-06T07:08:09.123456Z"));
+    assert_eq!(serde_json::to_value(&m).unwrap()["datePublished"], json!("2024-05-06T07:08:09.123456Z"));
+
+    v["date_published"] = Value::Null;
+    assert_eq!(api::version_from_json(v.clone(), &cdn).unwrap().date_published, None);
+    v.as_object_mut().unwrap().remove("date_published");
+    let m = api::version_from_json(v, &cdn).unwrap();
+    assert_eq!(m.date_published, None);
+    // Left out on the wire when absent (`datePublished?: string`).
+    assert!(serde_json::to_value(&m).unwrap().get("datePublished").is_none());
+}
+
+#[tokio::test]
+async fn schema_1_cache_entries_are_refetched() {
+    let h = Harness::new().await;
+    let cdn = h.cdn();
+    let body = version_json("OihdIimA", "AANobbMI", &sha(5), &cdn);
+    Mock::given(method("GET"))
+        .and(path("/v2/version/OihdIimA"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body.clone()))
+        .expect(1)
+        .mount(&h.server)
+        .await;
+    mount_identify(&h).await;
+    let c = h.client(true);
+    let now = c.inner.now();
+
+    // What an M5-beta build wrote: schema 1, fresh, no `datePublished`.
+    let mut old = serde_json::to_value(api::version_from_json(body, &c.inner.cdn).unwrap()).unwrap();
+    old.as_object_mut().unwrap().remove("datePublished");
+    let write_v1 = |ns: &str, key: &str| {
+        let file = c.inner.cache.path(ns, key);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let entry = json!({"v": 1, "key": key, "fetched_at_ms": now, "value": old});
+        std::fs::write(&file, serde_json::to_vec(&entry).unwrap()).unwrap();
+        file
+    };
+    let version_file = write_v1(NS_VERSIONS, "OihdIimA");
+    let hash_file = write_v1(NS_IDENTIFY, &sha(2));
+
+    let v = c.version("OihdIimA").await.unwrap();
+    assert_eq!(v.date_published.as_deref(), Some("2024-01-01T00:00:00Z"));
+    let r = c.identify(&[sha(2)], false).await.unwrap();
+    assert_eq!(r.found[&sha(2)].date_published.as_deref(), Some("2024-01-01T00:00:00Z"));
+    assert_eq!(h.requests().await.len(), 2);
+    for file in [version_file, hash_file] {
+        let entry: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(entry["v"], json!(2), "{} not rewritten", file.display());
+        assert!(entry["value"]["datePublished"].is_string());
+    }
+    // Rewritten entries are served from the cache again.
+    c.version("OihdIimA").await.unwrap();
+    c.identify(&[sha(2)], false).await.unwrap();
+    assert_eq!(h.requests().await.len(), 2);
+    // Offline, a schema-1 entry is as good as absent: unknown, never a stale MrVersion.
+    write_v1(NS_IDENTIFY, &sha(4));
+    let off = h.client(false).identify(&[sha(4)], false).await.unwrap();
+    assert!(off.found.is_empty() && off.failed == vec![sha(4)]);
 }
 
 #[tokio::test]

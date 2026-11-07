@@ -113,6 +113,8 @@ pub(crate) struct Tuning {
     pub clock: Clock,
     /// Hard cap for `download_verified` (bytes).
     pub max_download: u64,
+    /// Per-request timeout of an icon fetch.
+    pub icon_timeout: Duration,
 }
 
 impl Default for Tuning {
@@ -122,6 +124,7 @@ impl Default for Tuning {
             policy: RetryPolicy::default(),
             clock: Arc::new(epoch_ms),
             max_download: download::MAX_DOWNLOAD,
+            icon_timeout: download::ICON_TIMEOUT,
         }
     }
 }
@@ -144,6 +147,7 @@ pub(crate) struct Inner {
     policy: RetryPolicy,
     clock: Clock,
     max_download: u64,
+    icon_timeout: Duration,
 }
 
 impl Inner {
@@ -266,6 +270,7 @@ impl ModrinthClient {
                 policy: t.policy,
                 clock: t.clock,
                 max_download: t.max_download,
+                icon_timeout: t.icon_timeout,
             }),
         })
     }
@@ -320,7 +325,8 @@ impl ModrinthClient {
         Ok(self.projects_with_icon_urls(ids_or_slugs, refresh).await?.0)
     }
 
-    /// Like `projects`, plus project id → CDN icon URL for `fetch_icon` / `attach_icons`.
+    /// Like `projects`, plus project id → CDN icon URL for `fetch_icon` / `attach_icons` /
+    /// `fetch_icons`.
     pub async fn projects_with_icon_urls(
         &self,
         ids_or_slugs: &[String],
