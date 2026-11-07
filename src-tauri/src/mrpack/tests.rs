@@ -8,7 +8,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use super::*;
-use crate::model::{JarStatus, LoaderInfo, LoaderKind};
+use crate::model::{JarStatus, LoaderInfo, LoaderKind, UnverifiedDownload};
 use crate::test_support::JarBuilder;
 
 // ── Builders ─────────────────────────────────────────────────────────────────
@@ -834,10 +834,198 @@ fn only_jars_directly_in_override_mods_are_scanned() {
     for ignored in ["overrides/mods/sub/nested.jar", "overrides/config/lib.jar", "client-overrides/loose.jar"] {
         let hits = issue_for(&res, ignored);
         assert_eq!(hits.len(), 1, "{ignored}: {:?}", res.issues);
-        assert!(hits[0].message.contains("not directly in a mods/ folder, so loaders ignore it"), "{}", hits[0].message);
+        assert!(hits[0].message.contains("not directly in the mods/ folder of the pack's overrides"), "{}", hits[0].message);
     }
     assert_eq!(res.issues.len(), 3, "nothing about non-jars or jars outside the override folders: {:?}", res.issues);
     assert_eq!(describe_pack(&pack).mod_count, 3);
+}
+
+#[test]
+fn override_mods_folder_matches_in_any_letter_case() {
+    let t = tmp();
+    let pack = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .file("overrides/MODS/x.jar", &fabric_jar("x"))
+        .file("client-overrides/Mods/y.jar", &fabric_jar("y"))
+        .file("server-overrides/mOdS/sub/z.jar", &fabric_jar("z"))
+        .file("overrides/modsx/w.jar", &fabric_jar("w"))
+        .write(t.path(), "p.mrpack");
+    let res = scan(&pack);
+    let ids: Vec<&str> = res.jars.iter().filter(|j| j.depth == 0).map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["client-overrides/Mods/y.jar", "overrides/MODS/x.jar"], "{:?}", res.issues);
+    for ignored in ["server-overrides/mOdS/sub/z.jar", "overrides/modsx/w.jar"] {
+        assert_eq!(issue_for(&res, ignored).len(), 1, "{ignored}: {:?}", res.issues);
+    }
+    assert_eq!(describe_pack(&pack).mod_count, 2);
+
+    for (rest, ok) in [
+        ("mods/a.jar", true),
+        ("MODS/a.jar", true),
+        ("mods/", false),
+        ("mods", false),
+        ("mods/a/b.jar", false),
+        ("modsa.jar", false),
+    ] {
+        assert_eq!(archive::directly_in_mods(rest), ok, "{rest}");
+    }
+}
+
+#[test]
+fn override_precedence_ignores_the_case_of_mods() {
+    let t = tmp();
+    let pack = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .file("overrides/mods/same.jar", &fabric_jar("same"))
+        .file("client-overrides/MODS/same.jar", &fabric_jar("same"))
+        .write(t.path(), "p.mrpack");
+    let res = scan(&pack);
+    let notes = issue_for(&res, "overrides/mods/same.jar");
+    assert_eq!(notes.len(), 1, "{:?}", res.issues);
+    assert!(notes[0].message.contains("client-overrides/MODS/same.jar replaces this file"), "{}", notes[0].message);
+}
+
+// ── Download links of skipped and shadowed index entries ─────────────────────
+
+fn unverified(json: &str) -> (Vec<(String, String)>, Vec<ScanIssue>) {
+    let (idx, issues) = index_issues(json.as_bytes());
+    let pairs = idx.expect("index").unverified.into_iter().map(|u| (u.entry, u.url)).collect();
+    (pairs, issues)
+}
+
+fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+    list.iter().map(|(e, u)| (e.to_string(), u.to_string())).collect()
+}
+
+#[test]
+fn skipped_entries_keep_their_download_links() {
+    let evil = |n: u32| format!("https://evil.example/{n}.jar");
+    let files = [
+        file_json("mods/ok.jar"),
+        // Bad hash: a launcher that does not verify still downloads it.
+        format!(r#"{{"path":"mods/bad-hash.jar","hashes":{{"sha1":"abc"}},"downloads":["{}"]}}"#, evil(1)),
+        // Unsafe path, folder path.
+        format!(r#"{{"path":"../escape.jar","downloads":["{}","https://cdn.modrinth.com/data/a/x.jar"]}}"#, evil(2)),
+        format!(r#"{{"path":"mods/","downloads":["{}"]}}"#, evil(3)),
+        // No path, a path that is not text.
+        format!(r#"{{"downloads":["{}"]}}"#, evil(4)),
+        format!(r#"{{"path":42,"downloads":["{}"]}}"#, evil(5)),
+        // Not an object: nothing to keep.
+        format!(r#"["{}"]"#, evil(6)),
+        // Skipped without links: nothing.
+        r#"{"path":"mods/nolinks.jar"}"#.to_string(),
+    ];
+    let (got, issues) = unverified(&index_json(r#"{"minecraft":"1.20.1"}"#, &files));
+    assert_eq!(
+        got,
+        pairs(&[
+            ("mods/bad-hash.jar", "https://evil.example/1.jar"),
+            ("../escape.jar", "https://evil.example/2.jar"),
+            ("../escape.jar", "https://cdn.modrinth.com/data/a/x.jar"),
+            ("mods/", "https://evil.example/3.jar"),
+            ("files[4]", "https://evil.example/4.jar"),
+            ("files[5]", "https://evil.example/5.jar"),
+        ])
+    );
+    assert_eq!(issues.iter().filter(|i| i.message.starts_with("Skipped files[")).count(), 7, "{issues:#?}");
+}
+
+#[test]
+fn skipped_entries_use_the_same_sentinels() {
+    let long = format!("https://evil.example/{}", "a".repeat(5000));
+    let files = [
+        format!(r#"{{"path":"mods/a.jar","downloads":["{long}", 7]}}"#),
+        r#"{"path":"mods/b.jar","downloads":"https://evil.example/b.jar"}"#.to_string(),
+    ];
+    let (got, issues) = unverified(&index_json(r#"{"minecraft":"1.20.1"}"#, &files));
+    assert_eq!(
+        got,
+        pairs(&[("mods/a.jar", index::TOO_LONG), ("mods/a.jar", index::NOT_A_STRING), ("mods/b.jar", index::NOT_A_LIST)])
+    );
+    assert!(issues.iter().any(|i| i.message.contains("(skipped)") && i.message.contains("longer than 4096 bytes")), "{issues:#?}");
+    assert!(issues.iter().any(|i| i.message.contains("(skipped)") && i.message.contains("not a list")), "{issues:#?}");
+
+    let mut urls: Vec<String> = (0..70).map(|i| format!("\"https://cdn.modrinth.com/{i}.jar\"")).collect();
+    urls.push("\"https://evil.example/x.jar\"".into());
+    let file = format!(r#"{{"path":"mods/c.jar","downloads":[{}]}}"#, urls.join(","));
+    let (got, _) = unverified(&index_json(r#"{"minecraft":"1.20.1"}"#, &[file]));
+    assert_eq!(got.len(), index::MAX_DOWNLOADS);
+    assert_eq!(got.last().map(|(_, u)| u.as_str()), Some(index::MORE_URLS));
+}
+
+#[test]
+fn skipped_entry_names_are_cleaned_and_capped() {
+    let long = "a".repeat(300);
+    let files = [
+        // JSON escapes: U+202E (right-to-left override), BEL, U+200B (zero-width space), NUL.
+        format!(r#"{{"path":"mods/{}gnp.jar{}","downloads":["https://evil.example/1.jar"]}}"#, "\\u202e", "\\u0007"),
+        format!(r#"{{"path":"mods/{long}/","downloads":["https://evil.example/2.jar"]}}"#),
+        format!(r#"{{"path":"{}{}","downloads":["https://evil.example/3.jar"]}}"#, "\\u200b", "\\u0000"),
+    ];
+    let (got, _) = unverified(&index_json(r#"{"minecraft":"1.20.1"}"#, &files));
+    assert_eq!(got[0].0, "mods/gnp.jar");
+    assert_eq!(got[1].0.chars().count(), 256);
+    assert!(got[1].0.starts_with("mods/aaa"));
+    assert_eq!(got[2].0, "files[2]", "nothing visible is left of the path");
+}
+
+#[test]
+fn shadowed_entries_keep_their_download_links() {
+    // The reviewer's example: an earlier entry downloads from anywhere, a later one with the same
+    // path is clean. A launcher downloads both (the first is then overwritten).
+    let first = file_json("mods/a.jar").replace("https://example.com/a.jar", "https://evil.example/first.jar");
+    let second = file_json("mods/a.jar").replace(SHA1, "ffffffffffffffffffffffffffffffffffffffff");
+    let third = file_json("mods/a.jar").replace(SHA1, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+    let files = [first, file_json("mods/b.jar"), second, third];
+    let (idx, _) = index_issues(index_json(r#"{"minecraft":"1.20.1"}"#, &files).as_bytes());
+    let idx = idx.expect("index");
+    assert_eq!(
+        idx.files.iter().map(|f| (f.path.as_str(), f.sha1.as_str())).collect::<Vec<_>>(),
+        vec![("mods/b.jar", SHA1), ("mods/a.jar", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")]
+    );
+    let got: Vec<(String, String)> = idx.unverified.into_iter().map(|u| (u.entry, u.url)).collect();
+    assert_eq!(
+        got,
+        pairs(&[
+            ("mods/a.jar", "https://cdn.modrinth.com/data/AANobbMI/versions/x/a.jar"),
+            ("mods/a.jar", "https://evil.example/first.jar"),
+            ("mods/a.jar", "https://cdn.modrinth.com/data/AANobbMI/versions/x/a.jar"),
+            ("mods/a.jar", "https://example.com/a.jar"),
+        ])
+    );
+    // Paths differing only in letter case are both declared, so nothing is unverified.
+    let (got, _) = unverified(&index_json(r#"{"minecraft":"1.20.1"}"#, &[file_json("mods/c.jar"), file_json("mods/C.jar")]));
+    assert!(got.is_empty());
+}
+
+#[test]
+fn an_overlong_files_list_still_reports_its_download_links() {
+    let mut files: Vec<String> = (0..MAX_INDEX_FILES).map(|_| "{}".to_string()).collect();
+    files.push(file_json("mods/last.jar"));
+    let (idx, issues) = index_issues(index_json(r#"{"minecraft":"1.20.1"}"#, &files).as_bytes());
+    let idx = idx.expect("index");
+    assert!(idx.files.is_empty());
+    let got: Vec<(&str, &str)> = idx.unverified.iter().map(|u| (u.entry.as_str(), u.url.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("mods/last.jar", "https://cdn.modrinth.com/data/AANobbMI/versions/x/a.jar"),
+            ("mods/last.jar", "https://example.com/a.jar"),
+        ]
+    );
+    assert!(issues[0].message.contains("only their download links"), "{issues:?}");
+}
+
+#[test]
+fn scan_reports_unverified_downloads() {
+    let t = tmp();
+    let files = [file_json("mods/ok.jar"), r#"{"path":"mods/x.jar","downloads":["https://evil.example/x.jar"]}"#.to_string()];
+    let pack = Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &files)).write(t.path(), "p.mrpack");
+    let res = scan(&pack);
+    assert_eq!(res.declared.len(), 1);
+    assert_eq!(
+        res.unverified_downloads,
+        vec![UnverifiedDownload { entry: "mods/x.jar".into(), url: "https://evil.example/x.jar".into() }]
+    );
 }
 
 // ── Names, streams, resolved names ───────────────────────────────────────────

@@ -140,9 +140,15 @@ describe('two index entries with one path', () => {
     expect(declaredFiles(packInput([last, first], mrPack('fabric')))).toEqual([first]);
   });
 
-  it('the checks look at the last entry only', () => {
-    expect(mrpackDownloadCheck.run(packInput([first, last], mrPack('fabric')))).toEqual([]);
-    expect(mrpackDownloadCheck.run(packInput([last, first], mrPack('fabric')))).toHaveLength(1);
+  it('the checks look at the last entry only, but the shadowed entry\'s links are still checked', () => {
+    const shadowed = mrpackDownloadCheck.run(packInput([first, last], mrPack('fabric')));
+    // A launcher still downloads the first entry before the last overwrites it.
+    expect(shadowed.map((f) => [f.culprits[0]?.jarId, f.title])).toEqual([
+      ['mods/dup.jar', "Unchecked index entry dup.jar downloads from evil.example outside Modrinth's allowed hosts"],
+    ]);
+    expect(mrpackDownloadCheck.run(packInput([last, first], mrPack('fabric'))).map((f) => f.title)).toEqual([
+      "dup.jar downloads from evil.example outside Modrinth's allowed hosts",
+    ]);
     const mr = identified([
       [first, { projectId: 'FIRSTPRJ', loaders: ['forge'] }],
       [last, { projectId: 'LASTPRJ1', loaders: ['fabric'] }],

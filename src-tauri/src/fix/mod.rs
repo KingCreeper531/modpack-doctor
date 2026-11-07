@@ -36,6 +36,7 @@ mod tests;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -117,6 +118,9 @@ struct FixInner {
     orders: Mutex<HashMap<String, StoredOrder>>,
     /// Instance id → the backup id (`<instanceId>/<ms>`) its executing order writes, once known.
     executing: Mutex<HashMap<String, Option<String>>>,
+    /// An update is being installed (CONTRACTS invariant 18): no order may start. Only changed
+    /// while `executing` is locked, so it is atomic with [`FixState::claim`].
+    updating: AtomicBool,
     /// Held by a recovery pass, and briefly by an order binding its snapshot (see [`recover`]).
     recovery: Mutex<()>,
     backups_root: Mutex<Option<PathBuf>>,
@@ -137,6 +141,7 @@ impl Default for FixState {
             inner: Arc::new(FixInner {
                 orders: Mutex::new(HashMap::new()),
                 executing: Mutex::new(HashMap::new()),
+                updating: AtomicBool::new(false),
                 recovery: Mutex::new(()),
                 backups_root: Mutex::new(None),
                 last_ms: Mutex::new(0),
@@ -168,6 +173,25 @@ impl Drop for ExecTicket {
         lock(&self.inner.executing).remove(&self.instance_id);
     }
 }
+
+/// Held while an update is downloaded and installed; no work order can start meanwhile. Released
+/// on drop (any error); after a successful install the app restarts (or, on Windows, the
+/// process exits) while it is still held.
+#[derive(Debug)]
+pub struct UpdateTicket {
+    inner: Arc<FixInner>,
+}
+
+impl Drop for UpdateTicket {
+    fn drop(&mut self) {
+        let _ex = lock(&self.inner.executing);
+        self.inner.updating.store(false, Ordering::SeqCst);
+    }
+}
+
+/// The Conflict `claim` returns while an update is being installed.
+pub(crate) const UPDATING_MESSAGE: &str =
+    "An update is being installed, and Modpack Doctor restarts when it is done. Apply the fixes after the restart.";
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
@@ -252,6 +276,9 @@ impl FixState {
     /// instance's name).
     pub fn claim(&self, instance_id: &str, label: &str) -> Result<ExecTicket> {
         let mut ex = lock(&self.inner.executing);
+        if self.inner.updating.load(Ordering::SeqCst) {
+            return Err(Error::Conflict(UPDATING_MESSAGE.into()));
+        }
         if ex.contains_key(instance_id) {
             return Err(Error::Conflict(format!(
                 "Fixes for \"{label}\" are already being applied. Wait for them to finish, then try again."
@@ -259,6 +286,33 @@ impl FixState {
         }
         ex.insert(instance_id.to_string(), None);
         Ok(ExecTicket { inner: Arc::clone(&self.inner), instance_id: instance_id.to_string() })
+    }
+
+    /// Enter the "update installing" state, atomically with "no work order executes and no
+    /// recovery pass runs": while the ticket lives, [`FixState::claim`] fails. Err (a readable
+    /// Conflict) when an order executes, a recovery pass runs, or another update is being
+    /// installed.
+    pub fn begin_update(&self) -> Result<UpdateTicket> {
+        let ex = lock(&self.inner.executing);
+        if self.inner.updating.load(Ordering::SeqCst) {
+            return Err(Error::Conflict(
+                "An update is already being installed. Wait for it to finish; Modpack Doctor restarts when it is done.".into(),
+            ));
+        }
+        let recovering = matches!(self.inner.recovery.try_lock(), Err(std::sync::TryLockError::WouldBlock));
+        if !ex.is_empty() || recovering {
+            return Err(Error::Conflict(
+                "Modpack Doctor is applying fixes to a mods folder right now, and installing an update restarts the app.                  Wait until the fixes are finished, then install the update."
+                    .into(),
+            ));
+        }
+        self.inner.updating.store(true, Ordering::SeqCst);
+        Ok(UpdateTicket { inner: Arc::clone(&self.inner) })
+    }
+
+    /// True while an update is being installed.
+    pub fn is_updating(&self) -> bool {
+        self.inner.updating.load(Ordering::SeqCst)
     }
 
     pub fn is_executing(&self, instance_id: &str) -> bool {

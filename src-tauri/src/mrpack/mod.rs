@@ -7,8 +7,8 @@
 //! - [`describe_pack`] builds the `Instance` (`launcher: mrpack`, `root` = `gameDir` = the pack's
 //!   canonical path, id from that path, MC version and loader from the index `dependencies`).
 //! - [`scan_pack`] reads `modrinth.index.json` into `ScanResult.declared` and scans every `.jar`
-//!   directly in `overrides/mods/`, `client-overrides/mods/` and `server-overrides/mods/` in
-//!   memory (loaders load nothing else). Other jars in the override folders are listed as
+//!   directly in `overrides/mods/`, `client-overrides/mods/` and `server-overrides/mods/` (`mods`
+//!   in any letter case: one folder on Windows) in memory (loaders load nothing else). Other jars in the override folders are listed as
 //!   `ScanIssue`s, not scanned. Jar ids and paths are the paths inside the zip.
 //!
 //! Zip safety ([`archive`]): before the zip library parses anything, the end-of-central-directory
@@ -30,7 +30,9 @@
 //! Index ([`index`]): download links are never dropped silently; a link that cannot be kept
 //! verbatim becomes a sentinel string that is not a URL (see [`index::TOO_LONG`] and friends), so
 //! `src/core` flags it as outside the allowlist. A `files[].path` listed twice keeps the last
-//! entry (what installers end up writing), with a `ScanIssue`.
+//! entry (what installers end up writing), with a `ScanIssue`. The links of entries that were
+//! skipped (bad hash, unsafe or folder path, …) or shadowed by a later entry with the same path go
+//! to `ScanResult.unverified_downloads`: a launcher may still install them, so they are checked too.
 //!
 //! Override precedence (the Modrinth installer copies `overrides/` first, then `client-overrides/`
 //! or `server-overrides/` over it): a jar present in both `overrides/` and a side folder is
@@ -82,8 +84,6 @@ pub const MAX_ENTRY_ISSUES: usize = 100;
 pub const INDEX_NAME: &str = "modrinth.index.json";
 /// Override folders, in the order the Modrinth installer applies them.
 pub const OVERRIDE_DIRS: [&str; 3] = ["overrides/", "client-overrides/", "server-overrides/"];
-/// The folders whose jars are scanned: `mods/` directly inside each override folder.
-pub const OVERRIDE_MOD_DIRS: [&str; 3] = ["overrides/mods/", "client-overrides/mods/", "server-overrides/mods/"];
 const EXTENSION: &str = ".mrpack";
 
 pub(crate) fn issue(subject: &str, message: String) -> ScanIssue {
@@ -320,6 +320,7 @@ pub fn scan_pack(
     let mut budget = Budget::new();
     if let Some(index) = read_index(&mut zip, &listing, &mut budget, &mut res.issues) {
         res.declared = index.files;
+        res.unverified_downloads = index.unverified;
     }
 
     // Override jars: refuse oversized / bomb-like entries before announcing the stubs.
@@ -374,10 +375,12 @@ fn precedence_notes(stubs: &[JarStub]) -> Vec<ScanIssue> {
     let mut out = Vec::new();
     for s in stubs {
         let Some(rest) = s.path.strip_prefix("overrides/") else { continue };
+        // Letter case aside (`mods/` and `MODS/` are one folder on Windows).
+        let rest = rest.to_lowercase();
         for (dir, side) in [("client-overrides/", "client"), ("server-overrides/", "server")] {
-            let over = format!("{dir}{rest}");
-            if stubs.iter().any(|o| o.path == over) {
-                out.push(issue(&s.id, format!("On a {side} install, {over} replaces this file.")));
+            let over = stubs.iter().find(|o| o.path.strip_prefix(dir).is_some_and(|r| r.to_lowercase() == rest));
+            if let Some(over) = over {
+                out.push(issue(&s.id, format!("On a {side} install, {} replaces this file.", display_name(&over.path))));
             }
         }
     }
