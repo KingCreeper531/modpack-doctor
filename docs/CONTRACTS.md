@@ -83,7 +83,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    `#[specta(type = specta_typescript::Number)]`, never `f64` (which exports as `number | null`).
    They are byte sizes and epoch milliseconds, always below 2^53.
 7. **Errors.** Commands return `Result<T, AppError>`. `AppError.message` is a complete sentence a
-   user can act on. No `unwrap()`/`expect()` outside `#[cfg(test)]`.
+   user can act on. `AppError.retryAfterS` is present only for `rateLimited` (seconds to wait). No `unwrap()`/`expect()` outside `#[cfg(test)]`.
 8. **Fixes.**
    - The UI sends `FixAction` intents only. `plan_work_order` returns a stored `WorkOrder`, and
      `execute_work_order(id)` runs only stored orders.
@@ -118,6 +118,15 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     and icons). Every request sends the User-Agent
     `KingCreeper531/modpack-doctor/<version> (github.com/KingCreeper531/modpack-doctor)`.
     Every static check works with no network.
+    - (M5) One shared `ModrinthClient` lives in `AppState`. `Settings.modrinthEnabled = false`
+      makes every Modrinth command cache-only (`offline: true`, no request); the change applies
+      to the next command without a restart. Batched lookups never fail for network reasons
+      (`failed` / `offline`); the UI shows `Modrinth unreachable — static checks only` then.
+    - Icons are cached by Rust under `$APPCACHE/icons/` and shown with `convertFileSrc`; the
+      webview never requests a remote URL.
+    - Enrichment is pure TS in `src/core/modrinth` (frozen API in its `index.ts`): queries,
+      `ModrinthContext`, beta-only fallback, per-jar match, the invariant-8 download file, and
+      `replace` / `installDependency` fixes. `Finding.missingModIds` carries missing ids.
 11. **Crash detection vs classification.** `src/core/crash/anchors.ts` (`CRASH_ANCHORS`) is
     the single, **tiered** anchor list. Each pattern marks every anchor `fatal` or
     `contextual` (`CrashAnchor` = `WatchAnchor`). The full list goes to `set_watch` with tiers,
@@ -199,6 +208,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `modrinth_find_updates` | `sha1s, loaders, gameVersions, versionTypes, refresh` | `HashLookup` | | M5 |
 | `modrinth_projects` | `ids, refresh` | `ProjectLookup` | | M5 |
 | `modrinth_project_versions` | `projectId, loaders, gameVersions, versionTypes` | `MrVersion[]` | | M5 |
+| `modrinth_resolve_mod_id` | `modId, loaders, gameVersions` | `MrProject | null` | | M5 |
 | `plan_work_order` | `instanceId, pack: PackIdentity, actions: FixAction[]` | `WorkOrder` | | M6 |
 | `execute_work_order` | `orderId` | `WorkOrderResult` | `OpStatus` | M6 |
 | `discard_work_order` | `orderId` | `null` | | M6 |

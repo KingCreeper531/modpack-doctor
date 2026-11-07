@@ -322,6 +322,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     modrinthFindUpdates: async () => notYet('Modrinth update suggestions'),
     modrinthProjects: async () => notYet('Modrinth project details'),
     modrinthProjectVersions: async () => notYet('Modrinth version lookups'),
+    modrinthResolveModId: async () => notYet('Modrinth lookups'),
     planWorkOrder: async () => {
       await lag();
       return notYet('Applying fixes');

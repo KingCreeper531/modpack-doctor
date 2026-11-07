@@ -62,6 +62,12 @@ export const commands = {
 	 */
 	modrinthProjectVersions: (projectId: string, loaders: string[], gameVersions: string[], versionTypes: string[]) => typedError<MrVersion[], AppError>(__TAURI_INVOKE("modrinth_project_versions", { projectId, loaders, gameVersions, versionTypes })),
 	/**
+	 *  Maps a loader mod id (`cloth_config`) to its Modrinth project: alias table and validated slug
+	 *  guesses, then `/v2/search` (`modrinth::resolve`). `None` = not on Modrinth or a
+	 *  pseudo-dependency (`minecraft`, `java`, loaders). Used by src/core for `InstallDependency`.
+	 */
+	modrinthResolveModId: (modId: string, loaders: string[], gameVersions: string[]) => typedError<MrProject | null, AppError>(__TAURI_INVOKE("modrinth_resolve_mod_id", { modId, loaders, gameVersions })),
+	/**
 	 *  Turn intents into a concrete, stored work order. No filesystem mutation.
 	 * 
 	 *  Every `versionId` is re-fetched (`GET /v2/version/{id}`) and re-validated; any failure
@@ -134,6 +140,8 @@ export type AppError = {
 	message: string,
 	/**  The file or folder concerned, when there is one. */
 	path: string | null,
+	/**  `rateLimited` only: seconds until Modrinth accepts requests again. Omitted otherwise. */
+	retryAfterS?: number | null,
 };
 
 /**  One executed work order. Undo works per action (`plan_undo(backupId, actionIndexes)`). */

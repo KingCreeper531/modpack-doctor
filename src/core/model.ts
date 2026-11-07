@@ -105,6 +105,11 @@ export interface Finding {
   evidence: Evidence[];
   /** Ordered: first = recommended. May be empty. */
   fixes: FixAction[];
+  /**
+   * Mod ids that are required but absent (E-MISSING-DEP, C-MISSING-MANDATORY), so
+   * `src/core/modrinth` can offer `installDependency` without parsing text. Absent elsewhere.
+   */
+  missingModIds?: string[];
 }
 
 /** Effective pack identity (check 1). */

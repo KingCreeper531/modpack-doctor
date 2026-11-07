@@ -85,6 +85,10 @@ pub struct AppError {
     pub message: String,
     /// The file or folder concerned, when there is one.
     pub path: Option<String>,
+    /// `rateLimited` only: seconds until Modrinth accepts requests again. Omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub retry_after_s: Option<u32>,
 }
 
 impl From<Error> for AppError {
@@ -106,7 +110,11 @@ impl From<Error> for AppError {
             Error::Internal(_) => (ErrorKind::Internal, None),
             Error::Unavailable(_) => (ErrorKind::Unavailable, None),
         };
-        AppError { kind, message, path }
+        let retry_after_s = match &e {
+            Error::RateLimited { retry_after_s } => Some(*retry_after_s),
+            _ => None,
+        };
+        AppError { kind, message, path, retry_after_s }
     }
 }
 

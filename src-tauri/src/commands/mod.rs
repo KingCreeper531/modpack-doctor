@@ -243,6 +243,20 @@ pub async fn modrinth_project_versions(
     not_yet("Modrinth version lookups" /* M5 */)
 }
 
+/// Maps a loader mod id (`cloth_config`) to its Modrinth project: alias table and validated slug
+/// guesses, then `/v2/search` (`modrinth::resolve`). `None` = not on Modrinth or a
+/// pseudo-dependency (`minecraft`, `java`, loaders). Used by src/core for `InstallDependency`.
+#[tauri::command]
+#[specta::specta]
+pub async fn modrinth_resolve_mod_id(
+    _state: State<'_, AppState>,
+    _mod_id: String,
+    _loaders: Vec<String>,
+    _game_versions: Vec<String>,
+) -> Cmd<Option<MrProject>> {
+    not_yet("Modrinth lookups" /* M5 */)
+}
+
 // ── Fixes ────────────────────────────────────────────────────────────────────
 
 /// Turn intents into a concrete, stored work order. No filesystem mutation.
