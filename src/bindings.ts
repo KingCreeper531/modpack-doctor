@@ -85,6 +85,10 @@ export const commands = {
 	 *    and `version.gameVersions` must contain the pack MC version.
 	 *  - `Replace`: the current jar's sha1 must identify (via `/version_files`) to the same
 	 *    `projectId` as the new version; jars not on Modrinth cannot be replaced.
+	 *  - `InstallDependency`: `modId` must be a required dependency of an enabled top-level jar
+	 *    (live scan of `mods/`), not built in or already provided, and the version's project must
+	 *    be the one `resolve_mod_id` finds for it.
+	 *  - Versions are fetched fresh (no cache, no stale copy); a network failure fails the plan.
 	 *  - Download candidate: file chosen by CONTRACTS.md invariant 8 (file type, primary, sole).
 	 *  - After download and SHA-512 check (at execution): the new jar is scanned and must declare
 	 *    the expected mod id (the replaced jar's id, or `InstallDependency.modId` incl. `provides`),
