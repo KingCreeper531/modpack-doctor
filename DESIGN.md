@@ -216,6 +216,13 @@ Nothing is larger than 18px. There are no hero headings.
 - **Keyboard:** Esc cancels. Enter executes **only** when `kind = undo` and the order is a single
   `rename` op (e.g. undoing a disable). The Execute label then shows a `↵` hint in `t-mono`.
   Every other order, including any download or move, needs a click or Tab + Space on Execute.
+- **History:** backups live in a HISTORY tab of the findings panel (next to FINDINGS / CRASHES),
+  newest first, one row per action with its ops in mono and an `undone` mark or **Undo**;
+  per-action Undo and "Undo all remaining" open the same work order panel (`kind = undo`). Undo
+  refusals (file changed since) render inline under the action.
+- **Game running:** checked when the order opens; a warning line above the checklist. Execute
+  stays enabled because Rust re-checks and refuses, and that refusal renders inline with the order
+  kept for a retry.
 
 ### 6.5 Controls
 - **Button:** 24px or 32px tall, `r-2`, 1px `line-strong` border, `panel` background. Hover → `raised`.
