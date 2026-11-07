@@ -6,6 +6,8 @@
  * static checks only`, or the rate-limit countdown) in `fg-dim` with an `info` pip. When the user
  * switched Modrinth off, a quiet `Modrinth off` segment in `fg-faint` instead: a choice, not a
  * degraded state, so it gets no pip.
+ * An interrupted work order (a backup listed `incomplete`) adds `interrupted work order — recover
+ * in History` with an `err` pip: one line, never a toast; a click opens the History tab.
  */
 import { Fragment, type ReactNode } from 'react';
 
@@ -40,6 +42,8 @@ export interface SummaryStripProps {
   offlineNotice?: string | readonly NoticePiece[];
   /** Modrinth is switched off in settings: a `Modrinth off` segment, no notice. */
   modrinthOff?: boolean;
+  /** Backups of this instance left `incomplete`; the notice opens History. */
+  interrupted?: { count: number; onOpen: () => void } | null;
   className?: string;
 }
 
@@ -54,6 +58,7 @@ export function SummaryStrip({
   offline = false,
   offlineNotice = 'Modrinth unreachable — static checks only',
   modrinthOff = false,
+  interrupted = null,
   className,
 }: SummaryStripProps) {
   const segments: Array<{ key: string; node: ReactNode }> = [
@@ -109,6 +114,22 @@ export function SummaryStrip({
           <Pip tone="info" />
           <NoticeText pieces={noticePieces(offlineNotice)} />
         </p>
+      ) : null}
+      {interrupted && interrupted.count > 0 ? (
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-2 text-fg hover:underline"
+          title="A work order was interrupted: some files are in its backup. Open History to recover them."
+          onClick={interrupted.onOpen}
+        >
+          <Pip tone="error" />
+          <NoticeText
+            pieces={[
+              { text: interrupted.count === 1 ? 'interrupted work order' : `${formatInt(interrupted.count)} interrupted work orders` },
+              { text: ' — recover in History', optional: true },
+            ]}
+          />
+        </button>
       ) : null}
     </div>
   );

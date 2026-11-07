@@ -5,7 +5,8 @@
  *
  * Keyboard: Esc cancels (or closes a finished order). Enter executes only for an undo of exactly
  * one rename (`enterExecutes`), and Execute then shows a `↵` hint. Everything else needs a click
- * or Tab + Space on Execute. With `autoFocus`, focus moves into the panel when it opens and
+ * or Tab + Space on Execute. Only fresh presses inside the panel count (`panelKeyAction`): an
+ * auto-repeated Enter (held on a History Undo, which opens this panel) never executes. With `autoFocus`, focus moves into the panel when it opens and
  * whenever the focused control goes away (Execute disables while running, Close replaces it), so
  * the keyboard rules apply without a click.
  *
@@ -13,6 +14,10 @@
  * enabled: Rust checks again and refuses), the execute refusal (`gameRunning` reads "Close
  * Minecraft first: …"; an expired order offers Plan again), and once finished the outcome line
  * (done, or the failed op's message and whether the completed ops were rolled back).
+ *
+ * A download row shows host + size in its main line and the full CDN URL as a detail line
+ * (CONTRACTS invariant 14). A message on a completed op (a rollback step that failed) shows under
+ * it; the plain `rolled back` mark is the status column's job.
  */
 import './motion.css';
 
@@ -25,7 +30,7 @@ import { ErrorRow } from './ErrorRow';
 import { opNumber, plural } from './format';
 import { Panel } from './Panel';
 import { RAIL_BG } from './Severity';
-import { describeOp, enterExecutes, orderOutcome, refusalText } from './workOrderModel';
+import { describeOp, enterExecutes, orderOutcome, panelKeyAction, refusalText } from './workOrderModel';
 
 export type WorkOrderPhase = 'review' | 'running' | 'finished';
 
@@ -128,12 +133,25 @@ export function WorkOrderPanel({
       aria-label={`Work order ${order.id}: ${order.title}`}
       tabIndex={-1}
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && phase !== 'running') {
+        const target = e.target;
+        const act = panelKeyAction(
+          {
+            key: e.key,
+            repeat: e.repeat,
+            inside: target instanceof Node && e.currentTarget.contains(target),
+            onButton: target instanceof HTMLButtonElement,
+          },
+          { phase, enter },
+        );
+        if (act === 'cancel') {
           e.preventDefault();
           onCancel();
-        } else if (e.key === 'Enter' && enter && phase === 'review' && !(e.target instanceof HTMLButtonElement)) {
+        } else if (act === 'execute') {
           e.preventDefault();
           onExecute();
+        } else if (e.key === 'Enter' && e.repeat) {
+          // A held Enter must not click a focused button either (e.g. Execute of an undo).
+          e.preventDefault();
         }
       }}
     >
@@ -182,7 +200,15 @@ export function WorkOrderPanel({
                     </>
                   ) : null}
                   {line.detail ? <span className="block text-fg-faint">{line.detail}</span> : null}
+                  {line.url ? (
+                    <span className="block truncate text-fg-faint" title={line.url} data-role="source-url">
+                      {line.url}
+                    </span>
+                  ) : null}
                   {state === 'failed' && status?.message ? <span className="block text-err-text">{status.message}</span> : null}
+                  {state === 'done' && status?.message && status.message !== 'rolled back' ? (
+                    <span className="block text-err-text">{status.message}</span>
+                  ) : null}
                 </span>
                 <StatusCell state={state} reversed={finished && rolledBack && state === 'done'} />
               </li>

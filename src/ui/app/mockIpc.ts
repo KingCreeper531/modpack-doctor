@@ -22,6 +22,8 @@
  *   - `fixfail`: the 2nd op of every work order fails (the only op of a one-op order); the
  *     completed ops are rolled back and the result says `rolledBack: true`.
  *   - `expired`: the first `execute_work_order` answers `notFound` (the order expired).
+ *   - `interrupted`: the 2nd op of every fix order with two or more ops fails and reversing the
+ *     1st fails too, so the snapshot stays `incomplete` (History offers Recover).
  * - `?order=running` (with the `order` screenshot hook, devHooks.ts): the 2nd op of an executed
  *   order starts running and never finishes.
  *
@@ -94,7 +96,8 @@ export type MockScenario =
   | 'crash'
   | 'gamerunning'
   | 'fixfail'
-  | 'expired';
+  | 'expired'
+  | 'interrupted';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -126,6 +129,7 @@ const SCENARIOS: readonly MockScenario[] = [
   'gamerunning',
   'fixfail',
   'expired',
+  'interrupted',
 ];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
@@ -227,6 +231,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       failSecondOp: opts.scenario === 'fixfail',
       expireFirst: opts.scenario === 'expired',
       gameRunning: opts.scenario === 'gamerunning',
+      interrupt: opts.scenario === 'interrupted',
       holdOpAt: opts.holdOpAt ?? null,
     },
     {

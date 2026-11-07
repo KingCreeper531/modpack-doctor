@@ -1,6 +1,8 @@
 /**
  * Screenshot hooks for the browser preview (dev builds with the mock backend only; App.tsx calls
  * this behind `import.meta.env.DEV`, so production bundles drop it):
+ * - `?instance=<id>`: that instance is opened first (e.g. `c04d9e2b61a8f735`, Create: Above and
+ *   Beyond, whose seeded backup is `incomplete`: the summary notice and Recover in HISTORY).
  * - `?tab=history`: the selected instance opens on its HISTORY legend.
  * - `?order=replace`: once the first instance's Modrinth fixes are in, the first `replace` fix
  *   (Lithostitched in All the Mods 9) is planned: the work order opens for review.
@@ -26,7 +28,8 @@ export function applyDevHooks(store: AppStore, search: string): void {
   const p = new URLSearchParams(search);
   const order = p.get('order');
   const tab = p.get('tab');
-  if (!order && tab !== 'history') return;
+  const instance = p.get('instance');
+  if (!order && tab !== 'history' && !instance) return;
   const waitFor = (pred: (s: AppState) => boolean) =>
     new Promise<void>((resolve) => {
       if (pred(store.getState())) return resolve();
@@ -38,6 +41,11 @@ export function applyDevHooks(store: AppStore, search: string): void {
     });
 
   void (async () => {
+    if (instance) {
+      await waitFor((s) => !!s.discovery?.instances.some((i) => i.id === instance));
+      store.getState().selectInstance(instance);
+      await waitFor((s) => s.selectedInstanceId === instance);
+    }
     await waitFor((s) => !!s.selectedInstanceId && s.scans[s.selectedInstanceId]?.status === 'done');
     const st = store.getState();
     const id = st.selectedInstanceId!;

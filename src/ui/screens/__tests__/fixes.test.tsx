@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../app/App';
 import { finding, mockStore, until } from '../../app/__tests__/helpers';
 import { MOCK_INSTANCES } from '../../app/mockData';
+import { SEEDED_INTERRUPTED_INSTANCE } from '../../app/mockFix';
+import type { MockOptions } from '../../app/mockIpc';
 
 afterEach(cleanup);
 
@@ -200,5 +202,117 @@ describe('History tab', () => {
     });
     expect(screen.getByText(/No work order has run for this instance yet/)).toBeTruthy();
     expect(screen.getByText('0 backups')).toBeTruthy();
+  });
+});
+
+describe('backup status: rolled back, interrupted and Recover', () => {
+  const CABIN = MOCK_INSTANCES.find((i) => i.id === SEEDED_INTERRUPTED_INSTANCE)!;
+
+  async function renderCabin(opts: Partial<MockOptions> = {}) {
+    const m = mockStore(opts);
+    render(<App store={m.store} />);
+    await act(async () => {
+      await m.store.getState().init();
+      await until(() => m.store.getState().scans[ATM.id]?.status === 'done');
+    });
+    await act(async () => {
+      m.store.getState().selectInstance(CABIN.id);
+      await until(() => m.store.getState().scans[CABIN.id]?.status === 'done' && m.store.getState().history[CABIN.id]?.status === 'done');
+    });
+    return m;
+  }
+
+  it('an interrupted backup is announced in the summary strip (err pip, no toast); the notice opens History', async () => {
+    const m = await renderCabin();
+    const notice = screen.getByRole('button', { name: /interrupted work order/ });
+    expect(notice.getAttribute('title')).toMatch(/some files are in its backup/);
+    expect(notice.querySelector('.bg-err')).toBeTruthy();
+    // The History tab carries the same mark.
+    expect(within(screen.getByRole('tab', { name: /History/ })).getByRole('img', { name: 'interrupted work order' })).toBeTruthy();
+    fireEvent.click(notice);
+    expect(m.store.getState().findingsTab[CABIN.id]).toBe('history');
+    expect(screen.getByRole('list', { name: 'Backup history' })).toBeTruthy();
+    // Another instance without one shows no notice.
+    await act(async () => {
+      m.store.getState().selectInstance(ATM.id);
+      await until(() => m.store.getState().history[ATM.id]?.status === 'done');
+    });
+    expect(screen.queryByRole('button', { name: /interrupted work order/ })).toBeNull();
+  });
+
+  it('History: an incomplete backup is an err-rail row with Recover and no per-action Undo', async () => {
+    const m = await renderCabin();
+    m.store.getState().setFindingsTab(CABIN.id, 'history');
+    const entry = await screen.findByRole('listitem', { name: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} Remove create/ });
+    const row = within(entry).getByRole('group', { name: 'Interrupted work order' });
+    expect(row.textContent).toContain('Interrupted — some files are in the backup');
+    expect(row.querySelector('.bg-err')).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Recover' })).toBeTruthy();
+    expect(within(entry).queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('Recover plans the recovery into the same panel (undo, title from Rust); executing it leaves the backup complete', async () => {
+    const m = await renderCabin();
+    m.store.getState().setFindingsTab(CABIN.id, 'history');
+    const entry = await screen.findByRole('listitem', { name: /Remove create/ });
+    const plan = vi.spyOn(m.backend.commands, 'planUndo');
+    await act(async () => {
+      fireEvent.click(within(entry).getByRole('button', { name: 'Recover' }));
+      await until(() => m.store.getState().order !== null);
+    });
+    expect(plan).toHaveBeenCalledWith(m.store.getState().history[CABIN.id]!.entries[0]!.id, null);
+    const o = m.store.getState().order!;
+    expect(o.order.kind).toBe('undo');
+    expect(panel().getAttribute('aria-label')).toBe(`Work order ${o.order.id}: ${o.order.title}`);
+    expect(within(panel()).getByText(o.order.title)).toBeTruthy();
+    expect(within(panel()).getByText('undo · 1 op')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(panel()).getByRole('button', { name: 'Execute' }));
+      await until(() => m.store.getState().order?.phase === 'finished' && m.store.getState().history[CABIN.id]?.status === 'done');
+    });
+    expect(m.store.getState().history[CABIN.id]!.entries[0]!.status).toBe('complete');
+    const after = within(screen.getByRole('list', { name: 'Backup history' })).getAllByRole('listitem', { name: /^\d{4}-/ })[0]!;
+    expect(within(after).queryByRole('button', { name: 'Recover' })).toBeNull();
+    expect(within(after).getByText('all undone')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /interrupted work order/ })).toBeNull();
+  });
+
+  it('a refused recovery plan renders inline under the interrupted row', async () => {
+    const m = await renderCabin();
+    m.store.getState().setFindingsTab(CABIN.id, 'history');
+    const entry = await screen.findByRole('listitem', { name: /Remove create/ });
+    vi.spyOn(m.backend.commands, 'planUndo').mockResolvedValueOnce({
+      status: 'error',
+      error: { kind: 'conflict', message: 'Recovery was not planned: mods/x.jar changed since.', path: 'mods/x.jar' },
+    });
+    await act(async () => {
+      fireEvent.click(within(entry).getByRole('button', { name: 'Recover' }));
+      await until(() => Object.keys(m.store.getState().undoErrors).length > 0);
+    });
+    expect(m.store.getState().order).toBeNull();
+    const alert = within(entry).getByRole('alert');
+    expect(alert.getAttribute('data-kind')).toBe('conflict');
+    expect(alert.textContent).toContain('Recovery was not planned');
+  });
+
+  it('a rolled-back backup reads "rolled back — files unchanged" and offers no Undo', async () => {
+    const m = mockStore({ scenario: 'fixfail' });
+    render(<App store={m.store} />);
+    await act(async () => {
+      await m.store.getState().init();
+      await until(() => m.store.getState().scans[ATM.id]?.status === 'done');
+    });
+    await act(async () => {
+      await m.store.getState().fix('d', { kind: 'disable', jarId: CREATE });
+      await m.store.getState().executeOrder();
+      await until(() => m.store.getState().history[ATM.id]?.status === 'done' && m.store.getState().history[ATM.id]!.entries.length === 5);
+      await m.store.getState().cancelOrder();
+    });
+    const list = await openHistory(m);
+    const first = within(list).getAllByRole('listitem', { name: /^\d{4}-/ })[0]!;
+    expect(m.store.getState().history[ATM.id]!.entries[0]!.status).toBe('rolledBack');
+    expect(within(first).getByText('rolled back — files unchanged')).toBeTruthy();
+    expect(within(first).queryByRole('button', { name: /Undo/ })).toBeNull();
+    expect(within(first).queryByText('undone')).toBeNull();
   });
 });
