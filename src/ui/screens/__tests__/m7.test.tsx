@@ -300,7 +300,7 @@ describe('.mrpack', () => {
     const grid = screen.getByRole('grid', { name: 'Mods' });
     expect(within(grid).queryAllByRole('button', { pressed: true })).toHaveLength(0);
     expect(within(grid).queryAllByRole('button', { pressed: false })).toHaveLength(0);
-    expect(within(grid).getByText('mods/explorer-waypoints-0.4.jar')).toBeTruthy();
+    expect(within(grid).getByTitle('mods/explorer-waypoints-0.4.jar')).toBeTruthy();
     expect(within(grid).getByText('Sodium')).toBeTruthy();
     expect(within(grid).getByText('Env C/S')).toBeTruthy();
     expect(within(grid).getAllByText('req/no').length).toBeGreaterThan(0);

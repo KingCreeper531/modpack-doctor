@@ -260,12 +260,15 @@ export function ModTable({
                           {f.expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
                         </button>
                       ) : null}
-                      <span className={cx('truncate', r.enabled ? 'text-fg' : 'text-fg-dim')}>{r.name}</span>
-                      {r.declared && r.path ? (
-                        <span className="shrink-[2] truncate t-mono text-fg-faint" title={r.path}>
-                          {r.path}
-                        </span>
-                      ) : r.modId ? (
+                      {/* A declared (.mrpack index) row shows only its name: the index path is in the
+                          title and the inspector, so the name never truncates to a few letters. */}
+                      <span
+                        className={cx('truncate', r.enabled ? 'text-fg' : 'text-fg-dim')}
+                        title={r.declared && r.path ? r.path : undefined}
+                      >
+                        {r.name}
+                      </span>
+                      {r.declared && r.path ? null : r.modId ? (
                         <span className="shrink-[2] truncate t-mono text-fg-faint">{r.modId}</span>
                       ) : null}
                       {f.hasChildren && !f.expanded ? (
