@@ -19,8 +19,9 @@
 //! Paths are compared canonically (symlinks resolved when the path exists, lexically otherwise),
 //! with `/` and `\` treated alike, case-insensitively on Windows and macOS.
 //!
-//! [`game_status`] adds, on Windows only, a second signal: one jar in `mods/` that cannot be
-//! opened exclusively (the running game holds every mod jar open).
+//! [`game_status`] adds, on Windows only and only when no process matched, a secondary signal:
+//! another process holding the first jar in `mods/` open (the running game holds every mod jar
+//! open), found by a probe that can never disturb the game ([`locked_mod_jar`]).
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -269,25 +270,34 @@ fn lexical(p: &Path) -> PathBuf {
 // ── Running-game status ──────────────────────────────────────────────────────
 
 /// Whether the instance with game dir `game_dir` is running: a matching Java process, or (on
-/// Windows) a locked mod jar. Blocking; cheap (one process listing, at most one file open).
+/// Windows, only when no process matched) a mod jar another process holds open. Blocking;
+/// cheap (one process listing, at most one attribute-only file open).
 pub fn game_status(game_dir: &Path, source: &dyn ProcessSource, guard: &PathGuard) -> GameStatus {
     let matches = instance_matches(game_dir, source);
     let pids: Vec<u32> = matches.iter().map(|m| m.pid).collect();
     let mut reasons: Vec<String> = matches.into_iter().map(|m| m.reason).collect();
-    if let Some(locked) = locked_mod_jar(game_dir, guard) {
-        reasons.push(locked);
+    // Secondary signal for a game whose command line / working dir could not be read.
+    if reasons.is_empty() {
+        if let Some(locked) = locked_mod_jar(game_dir, guard) {
+            reasons.push(locked);
+        }
     }
     GameStatus { running: !reasons.is_empty(), pids, reason: (!reasons.is_empty()).then(|| reasons.join("; ")) }
 }
 
-/// Windows: `Some(reason)` when the first `mods/*.jar` (by name) cannot be opened exclusively
-/// because another program has it open. Always `None` elsewhere.
+/// Windows: `Some(reason)` when another process has the first `mods/*.jar` (by name) open.
+/// Always `None` elsewhere.
+///
+/// The probe can never disturb the game: it opens the jar for `FILE_READ_ATTRIBUTES` only with
+/// full sharing (an access that takes no part in share-mode checks, so it neither fails against
+/// nor blocks any other open, not even an exclusive one) and asks the kernel which processes
+/// hold the file (`NtQueryInformationFile`, `FileProcessIdsUsingFileInformation`). Our own
+/// process is ignored. A probe that requests `DELETE` (or read/write) access instead would make
+/// a JVM opening the jar at that moment fail: `ZipFile` opens jars through `RandomAccessFile`
+/// with `FILE_SHARE_READ | FILE_SHARE_WRITE` only (OpenJDK `io_util_md.c`), so it refuses any
+/// existing handle with delete access (verified in `process::tests`).
 #[cfg(windows)]
 pub fn locked_mod_jar(game_dir: &Path, guard: &PathGuard) -> Option<String> {
-    use std::os::windows::fs::OpenOptionsExt;
-    const ERROR_SHARING_VIOLATION: i32 = 32;
-    const ERROR_LOCK_VIOLATION: i32 = 33;
-
     let mods = game_dir.join("mods");
     let mut jars: Vec<String> = std::fs::read_dir(&mods)
         .ok()?
@@ -299,17 +309,105 @@ pub fn locked_mod_jar(game_dir: &Path, guard: &PathGuard) -> Option<String> {
     jars.sort();
     let name = jars.into_iter().next()?;
     let path = guard.check_existing(&mods.join(&name)).ok()?;
-    match std::fs::OpenOptions::new().read(true).share_mode(0).open(&path) {
-        Err(e) if matches!(e.raw_os_error(), Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)) => {
-            Some(format!("mods/{name} is in use by another program"))
-        }
-        _ => None,
+    let others = win_probe::other_holders(&path)?;
+    if others.is_empty() {
+        return None;
     }
+    let list: Vec<String> = others.iter().map(u32::to_string).collect();
+    let noun = if others.len() == 1 { "pid" } else { "pids" };
+    Some(format!("mods/{name} is open in another program ({noun} {})", list.join(", ")))
 }
 
 #[cfg(not(windows))]
 pub fn locked_mod_jar(_game_dir: &Path, _guard: &PathGuard) -> Option<String> {
     None
+}
+
+/// The non-disruptive "who holds this file" probe behind [`locked_mod_jar`].
+#[cfg(windows)]
+pub(crate) mod win_probe {
+    use std::ffi::c_void;
+    use std::fs::{File, OpenOptions};
+    use std::io;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+
+    /// The only access requested. It is not subject to share-mode checks.
+    const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+    /// `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`.
+    const FILE_SHARE_ALL: u32 = 0x1 | 0x2 | 0x4;
+    /// `FILE_INFORMATION_CLASS::FileProcessIdsUsingFileInformation`.
+    const FILE_PROCESS_IDS_USING_FILE_INFORMATION: u32 = 47;
+    /// Process ids read at most (a jar held by more processes than this is reported partially).
+    const MAX_IDS: usize = 256;
+
+    #[repr(C)]
+    struct IoStatusBlock {
+        /// `union { NTSTATUS Status; PVOID Pointer; }`
+        status: usize,
+        information: usize,
+    }
+
+    /// `FILE_PROCESS_IDS_USING_FILE_INFORMATION` with room for [`MAX_IDS`] ids.
+    #[repr(C)]
+    struct ProcessIds {
+        count: u32,
+        ids: [usize; MAX_IDS],
+    }
+
+    #[link(name = "ntdll", kind = "raw-dylib")]
+    extern "system" {
+        fn NtQueryInformationFile(
+            file: *mut c_void,
+            io_status: *mut IoStatusBlock,
+            info: *mut c_void,
+            length: u32,
+            class: u32,
+        ) -> i32;
+    }
+
+    /// Open `path` for attributes only, with full sharing: never fails because of, and never
+    /// causes, a sharing violation.
+    pub fn open_probe(path: &Path) -> io::Result<File> {
+        OpenOptions::new().access_mode(FILE_READ_ATTRIBUTES).share_mode(FILE_SHARE_ALL).open(path)
+    }
+
+    /// Ids of the processes that have the file open (this one included, through `file`).
+    /// `None` when the file system cannot say (the query failed).
+    pub fn holders(file: &File) -> Option<Vec<u32>> {
+        let mut io_status = IoStatusBlock { status: 0, information: 0 };
+        let mut info = ProcessIds { count: 0, ids: [0; MAX_IDS] };
+        let length = u32::try_from(std::mem::size_of::<ProcessIds>()).ok()?;
+        // SAFETY: `file` is an open handle for the duration of the call; `io_status` and `info`
+        // are live, writable, correctly laid out (`repr(C)`) and `length` is `info`'s size.
+        let status = unsafe {
+            NtQueryInformationFile(
+                file.as_raw_handle(),
+                &mut io_status,
+                (&mut info as *mut ProcessIds).cast(),
+                length,
+                FILE_PROCESS_IDS_USING_FILE_INFORMATION,
+            )
+        };
+        // NT_SUCCESS / informational only; warnings (e.g. a truncated list) and errors are not
+        // trusted.
+        if status < 0 {
+            return None;
+        }
+        let n = usize::try_from(info.count).unwrap_or(MAX_IDS).min(MAX_IDS);
+        Some(info.ids[..n].iter().filter_map(|&p| u32::try_from(p).ok()).collect())
+    }
+
+    /// Processes other than this one that have `path` open; `None` if that cannot be determined.
+    pub fn other_holders(path: &Path) -> Option<Vec<u32>> {
+        let file = open_probe(path).ok()?;
+        let me = std::process::id();
+        let mut others: Vec<u32> = holders(&file)?.into_iter().filter(|p| *p != me).collect();
+        others.sort_unstable();
+        others.dedup();
+        Some(others)
+    }
 }
 
 // ── Test double ──────────────────────────────────────────────────────────────

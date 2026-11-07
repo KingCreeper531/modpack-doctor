@@ -316,3 +316,193 @@ fn watch_picks_up_hs_err_in_the_working_dir_on_exit_and_it_is_readable() {
     // Another instance never sees it.
     assert!(list_sources_blocking(&fx.st, &fx.mc.id).expect("list").iter().all(|s| !s.id.starts_with('@')));
 }
+
+// ── hs_err in CurseForge's shared Install folder ─────────────────────────────
+
+struct CurseFx {
+    t: tempfile::TempDir,
+    st: AppState,
+    fake: Arc<FakeProcesses>,
+    install: PathBuf,
+    a: Instance,
+    b: Instance,
+    prism: Instance,
+}
+
+/// `<base>/curseforge/minecraft/{Install, Instances/Pack A, Instances/Pack B}` with the files the
+/// real `Install` holds, plus an unrelated Prism instance. Discovers the CurseForge instances
+/// and the Prism one.
+fn curseforge_fixture() -> CurseFx {
+    let t = tempfile::tempdir().expect("tempdir");
+    let base = dunce::canonicalize(t.path()).expect("canon");
+    let mc = base.join("curseforge").join("minecraft");
+    let install = mc.join("Install");
+    let a_dir = mc.join("Instances").join("Pack A");
+    let b_dir = mc.join("Instances").join("Pack B");
+    let prism_dir = base.join("Prism Pack");
+    for d in [&a_dir, &b_dir, &prism_dir] {
+        fs::create_dir_all(d.join("logs")).expect("mkdir");
+        fs::write(d.join("logs/latest.log"), "[main/INFO]: hello\n").expect("log");
+    }
+    fs::create_dir_all(install.join("sub")).expect("install");
+    for f in ["launcher_log.txt", "launcher_profiles.json", "launcher_msa_credentials.bin", "crash.txt"] {
+        fs::write(install.join(f), "secret").expect("install file");
+    }
+    let fake = Arc::new(FakeProcesses::default());
+    let config = WatchConfig {
+        poll_interval: Duration::from_millis(50),
+        debounce: Duration::from_millis(20),
+        rescan_interval: Duration::from_millis(300),
+        timings: EpisodeTimings {
+            settle_ms: 200,
+            max_coalesce_ms: 1_000,
+            context_window_ms: 2_000,
+            quiet_ms: 5_000,
+            exit_grace_ms: 1_000,
+        },
+        track_processes: true,
+    };
+    let st = AppState {
+        processes: Processes(fake.clone()),
+        watchers: Arc::new(Watchers::with_config(config)),
+        ..AppState::default()
+    };
+    let a = instance(Launcher::Curseforge, &a_dir);
+    let b = instance(Launcher::Curseforge, &b_dir);
+    let prism = instance(Launcher::Prism, &prism_dir);
+    let fx = CurseFx { t, st, fake, install, a, b, prism };
+    discover(&fx.st, vec![fx.a.clone(), fx.b.clone(), fx.prism.clone()]);
+    fx
+}
+
+fn discover(st: &AppState, instances: Vec<Instance>) {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for i in &instances {
+        roots.extend(discovery::guard_roots(Path::new(&i.root), Path::new(&i.game_dir)));
+    }
+    st.apply_discovery(Discovered { report: DiscoveryReport { instances, probes: Vec::new() }, roots }).expect("apply");
+}
+
+fn ids_of(st: &AppState, id: &str) -> Vec<String> {
+    list_sources_blocking(st, id).expect("list").into_iter().map(|s| s.id).collect()
+}
+
+#[test]
+fn curseforge_install_hs_err_is_listed_and_readable_for_the_instance_it_names() {
+    let fx = curseforge_fixture();
+    assert_eq!(fx.st.guard.hs_err_dirs(), vec![fx.install.clone()]);
+    assert!(!fx.st.guard.roots().contains(&fx.install), "Install is not a root");
+    fs::write(fx.install.join("hs_err_pid900.log"), hs_err_naming(&fx.a.game_dir)).expect("hs_err a");
+    let gone = fx.install.parent().expect("mc").join("Instances").join("Deleted Pack");
+    fs::write(fx.install.join("hs_err_pid901.log"), hs_err_naming(&gone.display().to_string())).expect("hs_err gone");
+    fs::write(fx.install.join("hs_err_pid902.log"), "# no command line\n").expect("hs_err none");
+
+    assert_eq!(ids_of(&fx.st, &fx.a.id), vec!["@cwd/hs_err_pid900.log", "logs/latest.log"]);
+    let d = read_digest_blocking(&fx.st, &fx.a.id, "@cwd/hs_err_pid900.log", &[], None).expect("digest");
+    assert_eq!(d.source.id, "@cwd/hs_err_pid900.log");
+    assert_eq!(d.source.kind, crate::model::LogKind::HsErr);
+    // Files naming another or no known instance are ignored everywhere.
+    for id in [&fx.b.id, &fx.prism.id] {
+        assert!(ids_of(&fx.st, id).iter().all(|i| !i.starts_with('@')), "{:?}", ids_of(&fx.st, id));
+    }
+    for unlisted in ["@cwd/hs_err_pid901.log", "@cwd/hs_err_pid902.log"] {
+        let err = read_digest_blocking(&fx.st, &fx.a.id, unlisted, &[], None).expect_err(unlisted);
+        assert!(matches!(err, Error::NotFound { .. }), "{unlisted}: {err}");
+    }
+    assert!(read_digest_blocking(&fx.st, &fx.b.id, "@cwd/hs_err_pid900.log", &[], None).is_err());
+    // Forged ids pointing at the launcher's other files are refused.
+    for bad in ["@cwd/launcher_log.txt", "@cwd/../Install/launcher_profiles.json", "@cwd/sub/hs_err_pid1.log"] {
+        let err = read_digest_blocking(&fx.st, &fx.a.id, bad, &[], None).expect_err(bad);
+        assert!(matches!(err, Error::OutsideScope { .. }), "{bad}: {err}");
+    }
+}
+
+#[test]
+fn curseforge_install_stays_closed_to_everything_but_hs_err_files() {
+    let fx = curseforge_fixture();
+    fs::write(fx.install.join("hs_err_pid1.log"), "x").expect("hs_err");
+    fs::write(fx.install.join("hs_err_pid1.log.bak"), "x").expect("bak");
+    fs::write(fx.install.join("sub").join("hs_err_pid1.log"), "x").expect("sub");
+    let g = &fx.st.guard;
+    assert!(g.check_existing(&fx.install.join("hs_err_pid1.log")).is_ok());
+    for bad in ["launcher_log.txt", "launcher_profiles.json", "launcher_msa_credentials.bin", "crash.txt", "hs_err_pid1.log.bak"] {
+        assert!(matches!(g.check_existing(&fx.install.join(bad)), Err(Error::OutsideScope { .. })), "{bad}");
+    }
+    assert!(g.check_existing(&fx.install.join("sub").join("hs_err_pid1.log")).is_err());
+    assert!(g.check_existing(&fx.install).is_err());
+    for new in ["hs_err_pid1.log", "hs_err_pid2.log", "launcher_log.txt"] {
+        assert!(g.check_new(&fx.install.join(new)).is_err(), "{new} is writable");
+    }
+    // A link inside an instance root that leads into Install reaches only the hs_err files.
+    let link = PathBuf::from(&fx.a.game_dir).join("install-link");
+    let made = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&fx.install)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if cfg!(windows) && made {
+        assert!(g.check_existing(&link.join("launcher_log.txt")).is_err());
+        assert!(g.check_existing(&link.join("hs_err_pid1.log")).is_ok());
+    }
+    // A link in Install that leads elsewhere is refused.
+    let outside = fx.t.path().join("outside");
+    fs::create_dir_all(&outside).expect("outside");
+    fs::write(outside.join("hs_err_pid3.log"), "x").expect("outside file");
+    let made = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(fx.install.join("escape"))
+        .arg(&outside)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if cfg!(windows) && made {
+        assert!(g.check_existing(&fx.install.join("escape").join("hs_err_pid3.log")).is_err());
+    }
+}
+
+#[test]
+fn curseforge_rule_exists_only_while_a_curseforge_instance_is_discovered() {
+    let fx = curseforge_fixture();
+    fs::write(fx.install.join("hs_err_pid900.log"), hs_err_naming(&fx.a.game_dir)).expect("hs_err");
+    assert!(ids_of(&fx.st, &fx.a.id).contains(&"@cwd/hs_err_pid900.log".to_string()));
+    // Rediscovery without CurseForge instances drops the rule.
+    discover(&fx.st, vec![fx.prism.clone()]);
+    assert!(fx.st.guard.hs_err_dirs().is_empty());
+    assert!(fx.st.guard.check_existing(&fx.install.join("hs_err_pid900.log")).is_err());
+    // And brings it back with them.
+    discover(&fx.st, vec![fx.b.clone(), fx.prism.clone()]);
+    assert_eq!(fx.st.guard.hs_err_dirs(), vec![fx.install.clone()]);
+    // A Manual instance in the same folder does not count.
+    let manual = instance(Launcher::Manual, Path::new(&fx.a.game_dir));
+    discover(&fx.st, vec![manual.clone()]);
+    assert!(fx.st.guard.hs_err_dirs().is_empty());
+    assert!(ids_of(&fx.st, &manual.id).iter().all(|i| !i.starts_with('@')));
+}
+
+#[test]
+fn watch_picks_up_a_curseforge_hs_err_in_install_on_exit() {
+    let fx = curseforge_fixture();
+    let (s, rx) = sink();
+    enable_watch(&fx.st, &fx.a.id, anchors(), s).expect("enable");
+    // Recorded working dir = Install (the case the rule exists for).
+    fx.fake.set(vec![ProcInfo {
+        pid: 6543,
+        name: "javaw.exe".into(),
+        cmd: vec!["javaw.exe".into(), "--gameDir".into(), fx.a.game_dir.clone()],
+        cwd: Some(fx.install.clone()),
+    }]);
+    std::thread::sleep(Duration::from_millis(300));
+    fs::write(fx.install.join("hs_err_pid6543.log"), "#\n# A fatal error has been detected\n").expect("hs_err");
+    fx.fake.set(Vec::new());
+    let e = rx.recv_timeout(Duration::from_secs(15)).expect("event");
+    assert_eq!(e.instance_id, fx.a.id);
+    assert_eq!(e.source.id, "@cwd/hs_err_pid6543.log");
+    assert_eq!(e.source.kind, crate::model::LogKind::HsErr);
+    assert!(e.source.size > 0);
+    let d = read_digest_blocking(&fx.st, &fx.a.id, "@cwd/hs_err_pid6543.log", &[], None).expect("digest");
+    assert_eq!(d.total_lines, 2);
+    assert!(ids_of(&fx.st, &fx.b.id).iter().all(|i| !i.starts_with('@')));
+    fx.st.watchers.stop_all();
+}

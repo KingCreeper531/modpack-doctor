@@ -7,6 +7,15 @@
 //! Discovery therefore registers, besides the instance root, the canonical targets of the
 //! instance's `mods/`, `logs/` and `crash-reports/` (one level, no recursion) as roots.
 //! Anything else that resolves outside every root is `OutsideScope`.
+//!
+//! **hs_err dirs** (narrow read-only rule; CONTRACTS invariant 11, CurseForge hs_err). A folder
+//! registered with [`PathGuard::set_hs_err_dirs`] is *not* a root. [`PathGuard::check_existing`]
+//! additionally accepts a path that resolves (symlinks followed) to a regular file named exactly
+//! `hs_err_pid<pid>.log` (decimal pid, no leading zero) directly inside such a folder, and
+//! nothing else: not the folder itself, no other file name, nothing in a subfolder.
+//! [`PathGuard::check_new`] never accepts anything in it, so nothing there can be created,
+//! renamed onto or written. Discovery sets the list to the CurseForge `Install` folders of the
+//! discovered CurseForge instances (empty when there are none).
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
@@ -18,6 +27,8 @@ pub struct PathGuard {
     /// (canonical root, root as originally given) — the latter lets a root be removed after
     /// its folder was deleted.
     roots: RwLock<Vec<(PathBuf, PathBuf)>>,
+    /// Canonical folders whose `hs_err_pid<pid>.log` files (directly inside) are readable.
+    hs_err_dirs: RwLock<Vec<PathBuf>>,
 }
 
 impl PathGuard {
@@ -51,11 +62,50 @@ impl PathGuard {
             .unwrap_or_default()
     }
 
-    /// Resolve an existing path and check it is inside a registered root.
+    /// Replace the read-only hs_err dirs (see the module docs). Folders that do not exist (or
+    /// cannot be resolved) are skipped; an empty list switches the rule off.
+    pub fn set_hs_err_dirs(&self, dirs: &[PathBuf]) {
+        let mut canon: Vec<PathBuf> = Vec::new();
+        for d in dirs {
+            match canonical(d) {
+                Ok(c) if c.is_dir() && !canon.contains(&c) => canon.push(c),
+                Ok(_) => {}
+                Err(e) => eprintln!("path guard: not reading hs_err files in {}: {e}", d.display()),
+            }
+        }
+        if let Ok(mut current) = self.hs_err_dirs.write() {
+            *current = canon;
+        }
+    }
+
+    /// The canonical read-only hs_err dirs currently active.
+    pub fn hs_err_dirs(&self) -> Vec<PathBuf> {
+        self.hs_err_dirs.read().map(|d| d.clone()).unwrap_or_default()
+    }
+
+    /// Resolve an existing path and check it is inside a registered root, or is an
+    /// `hs_err_pid<pid>.log` file directly in an hs_err dir (read-only rule, module docs).
     pub fn check_existing(&self, path: &Path) -> Result<PathBuf> {
         let canon = canonical(path)?;
-        self.ensure_inside(&canon, path)?;
-        Ok(canon)
+        if self.ensure_inside(&canon, path).is_ok() || self.hs_err_rule_allows(&canon)? {
+            return Ok(canon);
+        }
+        Err(Error::OutsideScope { path: path.display().to_string() })
+    }
+
+    /// Whether the canonical path `canon` is a regular `hs_err_pid<pid>.log` file directly in
+    /// an hs_err dir.
+    fn hs_err_rule_allows(&self, canon: &Path) -> Result<bool> {
+        let dirs = self.hs_err_dirs.read().map_err(|_| poisoned())?;
+        if dirs.is_empty() {
+            return Ok(false);
+        }
+        let (Some(parent), Some(name)) = (canon.parent(), canon.file_name().and_then(|n| n.to_str())) else {
+            return Ok(false);
+        };
+        Ok(is_hs_err_file_name(name)
+            && dirs.iter().any(|d| d == parent)
+            && std::fs::metadata(canon).map(|m| m.is_file()).unwrap_or(false))
     }
 
     /// Resolve a path that may not exist yet (rename/restore/download target): its parent must
@@ -131,6 +181,17 @@ fn validate_component(part: &str, whole: &str) -> Result<()> {
         return Err(bad());
     }
     Ok(())
+}
+
+/// Exactly `hs_err_pid<pid>.log` as HotSpot writes it: a decimal pid without leading zero.
+fn is_hs_err_file_name(name: &str) -> bool {
+    let Some(digits) = name.strip_prefix("hs_err_pid").and_then(|r| r.strip_suffix(".log")) else {
+        return false;
+    };
+    !digits.is_empty()
+        && digits.len() <= 10
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'))
 }
 
 fn canonical(path: &Path) -> Result<PathBuf> {
@@ -248,6 +309,104 @@ mod tests {
         fs::create_dir_all(&outside).expect("mkdir");
         link_dir(&outside, &root.join("mods").join("dest"));
         assert!(g.check_new(&root.join("mods").join("dest")).is_err());
+    }
+
+    // ── Read-only hs_err dirs ────────────────────────────────────────────────
+
+    /// A guard with one instance root and a CurseForge-like `Install` folder full of files that
+    /// must stay unreadable, plus one hs_err file.
+    fn hs_err_setup() -> (tempfile::TempDir, PathGuard, PathBuf, PathBuf) {
+        let (t, g, root) = setup();
+        let install = dunce::canonicalize(t.path()).expect("canon").join("minecraft").join("Install");
+        fs::create_dir_all(install.join("sub")).expect("mkdir");
+        for f in [
+            "hs_err_pid1234.log",
+            "launcher_log.txt",
+            "launcher_msa_credentials.bin",
+            "launcher_profiles.json",
+            "hs_err_pid1.log.bak",
+            "hs_err_pid01.log",
+            "hs_err_pid.log",
+            "HS_ERR_PID7.LOG",
+            "crash.txt",
+            "sub/hs_err_pid1.log",
+        ] {
+            fs::write(install.join(f), b"x").expect("write");
+        }
+        fs::create_dir_all(install.join("hs_err_pid9.log")).expect("dir named like a log");
+        g.set_hs_err_dirs(std::slice::from_ref(&install));
+        (t, g, root, install)
+    }
+
+    #[test]
+    fn hs_err_dir_allows_reading_only_hs_err_files_directly_inside() {
+        let (_t, g, _root, install) = hs_err_setup();
+        assert_eq!(g.hs_err_dirs(), vec![install.clone()]);
+        assert_eq!(g.check_existing(&install.join("hs_err_pid1234.log")).expect("hs_err"), install.join("hs_err_pid1234.log"));
+        for bad in [
+            "launcher_log.txt",
+            "launcher_msa_credentials.bin",
+            "launcher_profiles.json",
+            "hs_err_pid1.log.bak",
+            "hs_err_pid01.log",
+            "hs_err_pid.log",
+            "HS_ERR_PID7.LOG",
+            "crash.txt",
+            "sub/hs_err_pid1.log",
+            "sub",
+            "hs_err_pid9.log",
+            ".",
+        ] {
+            let err = g.check_existing(&install.join(bad)).expect_err(bad);
+            assert!(matches!(err, Error::OutsideScope { .. }), "{bad}: {err}");
+        }
+        assert!(g.check_existing(&install).is_err(), "the folder itself is not readable");
+        assert!(g.check_existing(&install.join("sub").join("..").join("launcher_log.txt")).is_err());
+        // It is not a root.
+        assert!(!g.roots().contains(&install));
+    }
+
+    #[test]
+    fn hs_err_dir_is_never_writable() {
+        let (_t, g, _root, install) = hs_err_setup();
+        for name in ["hs_err_pid1234.log", "hs_err_pid5.log", "x.jar", "launcher_log.txt"] {
+            assert!(g.check_new(&install.join(name)).is_err(), "{name}");
+        }
+        assert!(g.check_new(&install.join("sub").join("hs_err_pid5.log")).is_err());
+    }
+
+    #[test]
+    fn hs_err_rule_is_switched_off_by_an_empty_list() {
+        let (_t, g, _root, install) = hs_err_setup();
+        g.set_hs_err_dirs(&[]);
+        assert!(g.hs_err_dirs().is_empty());
+        assert!(g.check_existing(&install.join("hs_err_pid1234.log")).is_err());
+        // Missing folders are skipped.
+        g.set_hs_err_dirs(&[install.join("missing")]);
+        assert!(g.hs_err_dirs().is_empty());
+    }
+
+    #[test]
+    fn hs_err_rule_refuses_links_escaping_the_dir() {
+        let (t, g, _root, install) = hs_err_setup();
+        let outside = t.path().join("outside");
+        fs::create_dir_all(&outside).expect("mkdir");
+        fs::write(outside.join("secret.txt"), b"s").expect("write");
+        fs::write(outside.join("hs_err_pid42.log"), b"s").expect("write");
+        // A junction (no privilege needed) inside the dir: its files are in a subfolder.
+        link_dir(&outside, &install.join("linked"));
+        assert!(g.check_existing(&install.join("linked").join("hs_err_pid42.log")).is_err());
+        // A file symlink named like an hs_err file that points elsewhere (needs a privilege on
+        // Windows; skipped when it cannot be created).
+        let link = install.join("hs_err_pid77.log");
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(outside.join("secret.txt"), &link);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(outside.join("secret.txt"), &link);
+        match made {
+            Ok(()) => assert!(g.check_existing(&link).is_err(), "symlink escaping the hs_err dir"),
+            Err(_) => eprintln!("skipped the file-symlink case: creating symlinks needs a privilege here"),
+        }
     }
 
     #[test]

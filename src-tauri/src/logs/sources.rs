@@ -13,13 +13,15 @@
 //! working dirs ([`CwdHints`]):
 //! - a working dir recorded by watch mode for a Java process of this instance, and then only the
 //!   file for that process's pid;
-//! - for vanilla instances, the launcher's `.minecraft` (when it is itself a discovered
-//!   instance), and then only files whose `Command Line:` summary names this game dir with
-//!   `--gameDir`.
+//! - a shared launcher working dir, and then only files whose `Command Line:` summary names
+//!   this game dir with `--gameDir` (files naming no known instance are listed for none):
+//!   for vanilla instances the launcher's `.minecraft` (when it is itself a discovered
+//!   instance), for CurseForge instances the shared `Install` folder (a PathGuard hs_err dir,
+//!   not a root: only `hs_err_pid<pid>.log` files directly in it are readable).
 //!
-//! Every file (in the game dir or not) must resolve, symlinks followed, inside a PathGuard root,
-//! so a working dir outside every root is never listed and a symlink escaping the roots is
-//! refused.
+//! Every file (in the game dir or not) must pass `PathGuard::check_existing` (symlinks
+//! followed: inside a root, or an hs_err file directly in an hs_err dir), so a working dir
+//! outside every root is never listed and a symlink escaping the roots is refused.
 //!
 //! The list is newest first (ties by id); entries that cannot be read (stat fails, not a
 //! regular file, non-UTF-8 or unsafe names) are skipped.
@@ -89,7 +91,8 @@ pub fn parse_cwd_id(id: &str) -> Option<u32> {
 pub struct CwdHints {
     /// (pid, working dir) of Java processes of this instance, as watch mode saw them.
     pub pids: Vec<(u32, PathBuf)>,
-    /// Launcher working dirs (vanilla `.minecraft`) shared by several instances.
+    /// Launcher working dirs shared by several instances (vanilla `.minecraft`, CurseForge
+    /// `Install`); their hs_err files are attributed by `--gameDir`.
     pub launcher_dirs: Vec<PathBuf>,
 }
 
@@ -554,6 +557,48 @@ mod tests {
         let hints = CwdHints { pids: vec![(90, mc.clone())], launcher_dirs: vec![mc] };
         let list = list_log_sources_with(&guard, &game, &hints).expect("list");
         assert!(!list.iter().any(|s| s.id == "@cwd/hs_err_pid90.log"), "{list:?}");
+    }
+
+    /// CurseForge: `Install` is an hs_err dir (not a root), each instance folder a root.
+    fn curseforge() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf, PathGuard) {
+        let t = tempfile::tempdir().expect("tempdir");
+        let base = dunce::canonicalize(t.path()).expect("canon").join("curseforge").join("minecraft");
+        let install = base.join("Install");
+        let a = base.join("Instances").join("Pack A");
+        let b = base.join("Instances").join("Pack B");
+        write_at(&a.join("logs/latest.log"), "x\n", 50);
+        write_at(&b.join("logs/latest.log"), "x\n", 50);
+        write_at(&install.join("launcher_log.txt"), &hs_err_body(&a), 1);
+        write_at(&install.join("hs_err_pid500.log"), &hs_err_body(&a), 5);
+        write_at(&install.join("hs_err_pid501.log"), &hs_err_body(&base.join("Instances").join("Gone")), 4);
+        write_at(&install.join("hs_err_pid502.log.bak"), &hs_err_body(&a), 3);
+        write_at(&install.join("sub/hs_err_pid503.log"), &hs_err_body(&a), 3);
+        let guard = PathGuard::new();
+        guard.add_root(&a).expect("root a");
+        guard.add_root(&b).expect("root b");
+        guard.set_hs_err_dirs(std::slice::from_ref(&install));
+        (t, install, a, b, guard)
+    }
+
+    #[test]
+    fn curseforge_install_hs_err_is_attributed_by_game_dir() {
+        let (_t, install, a, b, guard) = curseforge();
+        let hints = CwdHints { pids: Vec::new(), launcher_dirs: vec![install.clone()] };
+        let ids = |game: &Path| -> Vec<String> {
+            list_log_sources_with(&guard, game, &hints).expect("list").into_iter().map(|s| s.id).collect()
+        };
+        assert_eq!(ids(&a), vec!["@cwd/hs_err_pid500.log", "logs/latest.log"]);
+        assert_eq!(ids(&b), vec!["logs/latest.log"], "names Pack A, not Pack B");
+        let d = read_source_digest_with(&guard, &a, &hints, "@cwd/hs_err_pid500.log", &[], None).expect("digest");
+        assert!(d.total_lines > 3);
+        // Naming no known instance, a .bak copy, or in a subfolder: listed for nobody.
+        for unlisted in ["@cwd/hs_err_pid501.log", "@cwd/hs_err_pid502.log", "@cwd/hs_err_pid503.log"] {
+            let err = read_source_digest_with(&guard, &a, &hints, unlisted, &[], None).expect_err(unlisted);
+            assert!(matches!(err, Error::NotFound { .. }), "{unlisted}: {err}");
+        }
+        // Without the rule nothing in Install is readable, even with the hint.
+        guard.set_hs_err_dirs(&[]);
+        assert_eq!(ids(&a), vec!["logs/latest.log"]);
     }
 
     #[test]

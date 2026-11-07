@@ -17,22 +17,27 @@ use super::instances::remove_manual_blocking;
 const VANILLA_PROFILE_FILES: &[&str] = &["launcher_profiles.json", "launcher_profiles_microsoft_store.json"];
 
 /// Where this instance's JVM may have written hs_err files outside its game dir
-/// (`logs::sources` module docs): the working dirs watch mode recorded for its processes, and,
-/// for a vanilla instance, the launcher's `.minecraft` when that is itself a discovered vanilla
-/// instance (and so a PathGuard root).
+/// (`logs::sources` module docs): the working dirs watch mode recorded for its processes, and
+/// shared launcher working dirs whose files are attributed by `--gameDir`:
+/// - for a vanilla instance, the launcher's `.minecraft` when that is itself a discovered vanilla
+///   instance (and so a PathGuard root);
+/// - for a CurseForge instance, the PathGuard's read-only hs_err dirs (CurseForge's `Install`
+///   folders, active only while a CurseForge instance is discovered).
 pub fn cwd_hints(st: &AppState, inst: &RegisteredInstance) -> CwdHints {
     let pids = st.watchers.recorded_cwds(&inst.instance.id);
-    let launcher_dirs = if inst.instance.launcher == Launcher::Vanilla {
-        let instances = st.registry.read().map(|r| r.instances()).unwrap_or_default();
-        instances
-            .into_iter()
-            .filter(|i| i.launcher == Launcher::Vanilla)
-            .map(|i| PathBuf::from(i.game_dir))
-            .filter(|d| !process::same_dir(d, &inst.game_dir))
-            .filter(|d| VANILLA_PROFILE_FILES.iter().any(|f| d.join(f).is_file()))
-            .collect()
-    } else {
-        Vec::new()
+    let launcher_dirs = match inst.instance.launcher {
+        Launcher::Vanilla => {
+            let instances = st.registry.read().map(|r| r.instances()).unwrap_or_default();
+            instances
+                .into_iter()
+                .filter(|i| i.launcher == Launcher::Vanilla)
+                .map(|i| PathBuf::from(i.game_dir))
+                .filter(|d| !process::same_dir(d, &inst.game_dir))
+                .filter(|d| VANILLA_PROFILE_FILES.iter().any(|f| d.join(f).is_file()))
+                .collect()
+        }
+        Launcher::Curseforge => st.guard.hs_err_dirs(),
+        _ => Vec::new(),
     };
     CwdHints { pids, launcher_dirs }
 }
