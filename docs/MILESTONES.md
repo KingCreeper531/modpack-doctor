@@ -151,5 +151,7 @@ result.
 
   Screenshots at 960×600, 1280×800 and 1920×1080 in both themes (`docs/screenshots/m4/`,
   untracked), plus a capture of the release build on your instances.
+- **Decided for M6 (2026-11-07):** CurseForge hs_err via a narrow PathGuard rule, not a new
+  root (CONTRACTS invariant 11).
 - **Deferred to M6:** `game_running`'s exclusive-open jar probe could disturb a game that is
   starting; revisit when the guard is used.

@@ -150,8 +150,17 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       main class, bad JVM arguments) writes only to stderr and may live less than one poll, so it
       usually emits nothing. hs_err files in a working dir outside every PathGuard root (the
       CurseForge launcher's `Install` dir, or a vanilla `.minecraft` that no profile uses) are
-      not read; registering launcher folders as roots would widen the scope and needs an owner
-      decision.
+      not read.
+    - **CurseForge hs_err (owner decision 2026-11-07, implement in M6):**
+      - First verify where CurseForge's JVM working dir really is (likely the shared
+        `minecraft/Install` folder); record the evidence in `docs/research/launchers.md`.
+      - Do **not** register that folder as a general root. Add a narrow PathGuard rule instead:
+        read-only, non-recursive, only files matching `hs_err_pid*.log` directly in that folder,
+        active only while at least one CurseForge instance is discovered.
+      - Attribute each file to an instance by parsing `--gameDir` from its `Command Line:`
+        section; files that match no known instance are ignored.
+      - Tests: a matching hs_err is picked up; a non-matching one is ignored; any other file type
+        or any subfolder in that directory is still rejected by the PathGuard.
     - Required tests: in M2 (TS), the tier marking itself. In M4, the Rust episode state machine
       with an injected clock and process source:
       - a healthy `latest.log` full of logged exceptions (contextual hits, game keeps running or
