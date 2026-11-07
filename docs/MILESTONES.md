@@ -155,3 +155,48 @@ result.
   root (CONTRACTS invariant 11).
 - **Deferred to M6:** `game_running`'s exclusive-open jar probe could disturb a game that is
   starting; revisit when the guard is used.
+
+## M5 — Modrinth in the UI
+
+- **Before agents:** recorded the owner's CurseForge hs_err decision for M6 (CONTRACTS 11).
+  Froze M5 contracts: `modrinth_resolve_mod_id`, `AppError.retryAfterS`, `Finding.missingModIds`,
+  and the `src/core/modrinth` API.
+- **Agents:**
+  - R (Rust, `commands/modrinth.rs`, `modrinth/service.rs`): the Modrinth commands over one shared
+    service (online client + cache-only twin, so the on/off setting applies without restart).
+    Live-verified E's alias table (6/6 correct, two read-only requests).
+  - C (core, `src/core/modrinth/**`): queries, `ModrinthContext`, beta-only fallback, per-jar
+    match, the invariant-8 download file, `replace` / `installDependency` fixes; `missingModIds`
+    on E-MISSING-DEP and C-MISSING-MANDATORY.
+  - U (UI): lookup flow after each scan, Modrinth column + icons, summary notices, inspector
+    Modrinth section with the modrinth.com link, fix labels, rail settings, mock scenarios
+    (`offline`, `ratelimit`, `modrinthoff`).
+  - Independent reviewer, then R2 / C2 / U2 for its findings; the reviewer re-checked them.
+- **Found by me in the visual / real-app loop:**
+  - About a third of real icons were missing: the CDN serves some WebP icons as `image/png`.
+    The format is now decided by magic bytes (SVG/HTML still refused).
+  - The offline notice crowded the pack's counts out of the summary strip.
+  - Existing `enable` fixes now come before `installDependency` (don't download a mod you have).
+- **Review findings fixed:**
+  - Downgrades: Modrinth returns the newest *matching* version, which can be older than a beta
+    you run (confirmed live with Sodium). `MrVersion.datePublished` was added; updates must be
+    strictly newer, and the beta fallback also covers "release older than the installed beta".
+  - A rescan during a lookup could leave Modrinth stuck "looking up…" with Refresh disabled.
+  - All results waited on icon downloads: icons are now a separate `modrinth_icons` pass that
+    never runs when Modrinth is off or unreachable, stops when switched off mid-pass, and gives
+    up after one timeout.
+  - Inspector "up to date" only when known (`updateStatus`: update / up to date / no compatible
+    version / unknown); "unreachable" only for network problems; rate-limit countdown visible
+    at 1280×800; fast off→on toggle race; colliding icon temp files.
+  - Contract decisions: Quilt accepts `fabric` versions (M6 planner too); "sole file" fails when
+    no file is primary and any was dropped.
+- **Real-data check:** `smoke_modrinth` + `real-modrinth-smoke.test.ts` on 23 real instances with
+  live Modrinth data: **0 suspect updates** (wrong loader, wrong MC version, alpha, or not newer).
+  Packs from Modrinth identify fully; CurseForge packs show expected "not on Modrinth" jars.
+- **Gates:** 331 Rust tests, clippy `-D warnings` clean (incl. examples); 1846 Vitest tests green
+  on repeated runs; both typechecks clean; production bundle has no mock data; `tauri build`
+  produces `.msi` (7.89 MiB) and `.exe` (5.81 MiB) — larger now that the HTTP client is linked in.
+  Screenshots in `docs/screenshots/m5/` (untracked), plus a real-app capture with live icons.
+- **Not done / known:** fixes still can't run (M6). An icon request already in flight when
+  Modrinth is switched off finishes. Icon file names are case-sensitive base62 ids (collisions on
+  case-insensitive disks are theoretical). The 524 KB JS chunk warning remains.
