@@ -52,7 +52,8 @@ function DropRejectedRow() {
   if (!d) return null;
   return (
     <ErrorRow
-      error={{ kind: 'invalid', message: `Not opened: ${d.reason}`, path: d.name }}
+      // Rust's reason completes the sentence "<name> was not added: <reason>".
+      error={{ kind: 'invalid', message: `${d.name} was not added: ${d.reason}`, path: null }}
       action={
         <Button size={24} onClick={a.dismissDropRejected}>
           Dismiss

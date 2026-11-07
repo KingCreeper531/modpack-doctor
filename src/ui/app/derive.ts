@@ -209,18 +209,21 @@ export function javaRelease(major: number): number {
 
 const ENV_SHORT: Readonly<Record<string, string>> = { required: 'req', optional: 'opt', unsupported: 'no' };
 
-/** `c req · s no` (and the words for a tooltip) from a declared file's `env`; null when absent. */
+/**
+ * `req/no` — client/server, as the pack table's `Env C/S` column reads — and the words for a
+ * tooltip, from a declared file's `env`; null when the index states none.
+ */
 export function envLabel(client: string | null, server: string | null): { short: string; words: string } | null {
   if (client === null && server === null) return null;
   const s = (v: string | null) => (v === null ? '?' : (ENV_SHORT[v] ?? v));
   const w = (v: string | null) => v ?? 'not stated';
-  return { short: `c ${s(client)} · s ${s(server)}`, words: `client: ${w(client)}, server: ${w(server)}` };
+  return { short: `${s(client)}/${s(server)}`, words: `client: ${w(client)}, server: ${w(server)}` };
 }
 
 /** Where an override jar of a pack runs, from its folder in the zip. */
 export function overrideEnv(path: string): { short: string; words: string } {
-  if (path.startsWith('client-overrides/')) return { short: 'client only', words: 'client-overrides/ (client only)' };
-  if (path.startsWith('server-overrides/')) return { short: 'server only', words: 'server-overrides/ (server only)' };
+  if (path.startsWith('client-overrides/')) return { short: 'client', words: 'client-overrides/ (client installs only)' };
+  if (path.startsWith('server-overrides/')) return { short: 'server', words: 'server-overrides/ (server installs only)' };
   return { short: 'both', words: 'overrides/ (client and server)' };
 }
 

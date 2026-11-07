@@ -25,7 +25,7 @@
  * on the server instance.
  */
 import type { HashLookup, JarRecord, MrFile, MrProject, MrVersion, ProjectLookup, SideSupport } from '../../bindings';
-import { MOCK_DECLARED, MOCK_INSTANCES, mockJars } from './mockData';
+import { MOCK_INSTANCES, mockDeclaredFiles, mockJars } from './mockData';
 
 interface ProjectSpec {
   slug: string;
@@ -240,7 +240,7 @@ function lookup(sha1s: string[], answer: (e: Entry) => MrVersion | null): HashLo
 
 /** A file a mock `.mrpack` index declares, as Modrinth identifies its hash (or null). */
 function declaredVersion(sha1: string): MrVersion | null {
-  for (const files of Object.values(MOCK_DECLARED)) {
+  for (const files of Object.values(mockDeclaredFiles())) {
     for (const d of files) {
       if (d.file.sha1.toLowerCase() !== sha1.toLowerCase() || !d.project) continue;
       const p = d.project;
@@ -401,7 +401,7 @@ function specById(): Map<string, ProjectSpec> {
   specs = new Map();
   for (const e of entries().values()) specs.set(projectId(e.spec.slug), e.spec);
   for (const r of Object.values(RESOLVABLE)) specs.set(projectId(r.slug), r);
-  for (const files of Object.values(MOCK_DECLARED)) {
+  for (const files of Object.values(mockDeclaredFiles())) {
     for (const d of files) {
       const p = d.project;
       if (p && !specs.has(projectId(p.slug))) specs.set(projectId(p.slug), { slug: p.slug, title: p.title, ...(p.env ? { env: p.env } : {}) });

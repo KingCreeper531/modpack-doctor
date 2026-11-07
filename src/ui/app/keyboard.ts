@@ -64,7 +64,8 @@ export function enterIsFree(t: EventTarget | null): boolean {
   const el = asElement(t);
   if (!el) return true;
   if (el.tagName === 'BODY' || el.tagName === 'HTML') return true;
-  if (el.closest?.('[data-work-order]')) return false;
+  // The work order panel (components/WorkOrderPanel.tsx, `aria-label="Work order …"`) owns Enter.
+  if (el.closest?.('[data-work-order],section[aria-label^="Work order"]')) return false;
   return !el.matches?.(INTERACTIVE);
 }
 

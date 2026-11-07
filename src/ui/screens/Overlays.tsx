@@ -22,8 +22,8 @@ function restoreFocus(el: Element | null) {
 
 /** Applies one key press to the store (exported for tests). */
 export function handleKey(store: AppStore, e: KeyboardEvent): void {
-  if (suppressesDefault(e)) e.preventDefault();
   const sc = shortcutOf(e);
+  if (suppressesDefault(e)) e.preventDefault();
   if (!sc) return;
   const st = store.getState();
   switch (sc) {

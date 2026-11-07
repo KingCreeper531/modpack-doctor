@@ -78,7 +78,8 @@ export function modMenu(m: ModMenuInput, act: ModMenuActions): MenuEntry[] {
     });
     entries.push(separator('sep-plan'));
   }
-  if (!m.declared) entries.push({ id: 'inspect', label: 'Show in inspector', run: () => act.inspect(m.id) });
+  // A declared file shows in the inspector as its pack index entry.
+  entries.push({ id: 'inspect', label: 'Show in inspector', run: () => act.inspect(m.id) });
   entries.push({ id: 'copy-name', label: 'Copy file name', run: () => act.copy(m.fileName) });
   if (m.modrinthUrl) {
     const url = m.modrinthUrl;

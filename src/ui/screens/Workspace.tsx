@@ -47,7 +47,9 @@ function Summary({ instance }: { instance: Instance }) {
   const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
   const interrupted = useApp((st) => interruptedCount(st.history[instance.id]?.entries));
   const a = useActions();
-  const modCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : s.stubCount || instance.modCount;
+  // A pack counts the jars in its zip plus the .jar files its index declares (like Rust's modCount).
+  const declaredJars = s.result?.declared?.filter((d) => d.path.toLowerCase().endsWith('.jar')).length ?? 0;
+  const modCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length + declaredJars : s.stubCount || instance.modCount;
   return (
     <SummaryStrip
       mcVersion={s.pack?.mcVersion ?? instance.mcVersion}

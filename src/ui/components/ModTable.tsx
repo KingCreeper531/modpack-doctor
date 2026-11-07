@@ -67,7 +67,7 @@ const COLUMNS = [
  * An opened `.mrpack` is read-only (CONTRACTS invariant 15): no enable toggles; the last column
  * says where each file runs instead (the index's `env`, or the override folder).
  */
-const PACK_COLUMNS = [...COLUMNS.slice(0, 7), { key: 'env', label: 'Env', srLabel: 'Environment', width: '112px', sortable: true }] as const;
+const PACK_COLUMNS = [...COLUMNS.slice(0, 7), { key: 'env', label: 'Env C/S', srLabel: 'Environment, client/server', width: '80px', sortable: true }] as const;
 
 export function worstSeverity(f: ModRow['findings']): Severity | null {
   return f.error ? 'error' : f.warning ? 'warning' : f.info ? 'info' : null;

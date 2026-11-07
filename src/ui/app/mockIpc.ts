@@ -29,7 +29,7 @@
  *
  * `.mrpack` (M7): `pick_mrpack` "opens" `MOCK_PICKED_PACK` (Explorer Kit 2.1); scanning a pack
  * reports the jars inside its zip (`overrides/…`) plus the files its index declares
- * (`ScanResult.declared`, mockData.ts `MOCK_DECLARED`), which `modrinth_identify` knows by hash.
+ * (`ScanResult.declared`, mockData.ts `mockDeclaredFiles`), which `modrinth_identify` knows by hash.
  * `save_report` "saves" to a fake Documents path (no file is written) and answers `null`
  * (cancelled) for every other call with `?scenario=reportcancel`.
  * - `?order=running` (with the `order` screenshot hook, devHooks.ts): the 2nd op of an executed
@@ -240,7 +240,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   };
   if (opts.scenario === 'drop') {
     // As if a .zip had been dropped on the window a moment after start.
-    setTimeout(() => ev.dropRejected.emit({ name: 'Explorer Kit 2.1.zip', reason: 'only .mrpack files can be opened (this is a .zip)' }), 600);
+    setTimeout(() => ev.dropRejected.emit({ name: 'Explorer Kit 2.1.zip', reason: 'only Modrinth modpacks (.mrpack files) and instance folders can be added.' }), 600);
   }
 
   const lag = () => sleep(opts.latencyMs);

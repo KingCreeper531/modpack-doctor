@@ -605,7 +605,7 @@ function cobblemon(): JarSpec[] {
 /**
  * What `pick_mrpack` answers in the browser preview (no native dialog exists there): a small
  * Fabric 1.20.1 pack. Two jars ship in the zip (`overrides/`, `client-overrides/`); the index
- * declares six more by hash (`MOCK_DECLARED`).
+ * declares six more by hash (`mockDeclaredFiles`).
  */
 export const MOCK_PICKED_PACK: Instance = {
   id: 'a7c3e91f05d24b68',
@@ -662,38 +662,45 @@ const cdn = (pid: string, file: string) => `https://cdn.modrinth.com/data/${pid}
  * (I-NOT-ON-MODRINTH) and one built for another Minecraft version (ImmediatelyFast for 1.21.1 →
  * E-MC-RANGE).
  */
-export const MOCK_DECLARED: Readonly<Record<string, readonly MockDeclared[]>> = {
-  [MOCK_PICKED_PACK.id]: [
-    {
-      file: declared('mods/fabric-api-0.92.2+1.20.1.jar', 'required', 'required', cdn('P7dR8mSH', 'fabric-api-0.92.2+1.20.1.jar'), 2140),
-      project: { slug: 'fabric-api', title: 'Fabric API', versionNumber: '0.92.2+1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'] },
-    },
-    {
-      file: declared('mods/sodium-fabric-0.5.11+mc1.20.1.jar', 'required', 'unsupported', cdn('AANobbMI', 'sodium-fabric-0.5.11+mc1.20.1.jar'), 1012),
-      project: { slug: 'sodium', title: 'Sodium', versionNumber: '0.5.11+mc1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
-    },
-    {
-      file: declared('mods/lithium-fabric-mc1.20.1-0.11.2.jar', 'optional', 'required', cdn('gvQqBUqZ', 'lithium-fabric-mc1.20.1-0.11.2.jar'), 688),
-      project: { slug: 'lithium', title: 'Lithium', versionNumber: 'mc1.20.1-0.11.2', loaders: ['fabric'], gameVersions: ['1.20.1'] },
-    },
-    {
-      file: declared('mods/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 'required', 'unsupported', 'https://mediafilez.forgecdn.net/files/5395/104/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 1480),
-      project: { slug: 'xaeros-minimap', title: "Xaero's Minimap", versionNumber: '24.2.0', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
-    },
-    {
-      file: declared('mods/explorer-waypoints-0.4.jar', 'required', 'optional', 'https://github.com/explorer-kit/waypoints/releases/download/v0.4/explorer-waypoints-0.4.jar', 96),
-      project: null,
-    },
-    {
-      file: declared('mods/ImmediatelyFast-Fabric-1.3.4+1.21.1.jar', 'required', 'unsupported', cdn('5ZwdcRci', 'ImmediatelyFast-Fabric-1.3.4+1.21.1.jar'), 520),
-      project: { slug: 'immediatelyfast', title: 'ImmediatelyFast', versionNumber: '1.3.4+1.21.1', loaders: ['fabric'], gameVersions: ['1.21.1'], env: 'client_only' },
-    },
-  ],
-};
+export function mockDeclaredFiles(): Readonly<Record<string, readonly MockDeclared[]>> {
+  // Built on first use: a module-level table of function calls would survive tree-shaking and
+  // carry mock strings into production bundles (mockIpc.ts is imported, never used, there).
+  declaredCache ??= {
+    'a7c3e91f05d24b68': [
+      {
+        file: declared('mods/fabric-api-0.92.2+1.20.1.jar', 'required', 'required', cdn('P7dR8mSH', 'fabric-api-0.92.2+1.20.1.jar'), 2140),
+        project: { slug: 'fabric-api', title: 'Fabric API', versionNumber: '0.92.2+1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'] },
+      },
+      {
+        file: declared('mods/sodium-fabric-0.5.11+mc1.20.1.jar', 'required', 'unsupported', cdn('AANobbMI', 'sodium-fabric-0.5.11+mc1.20.1.jar'), 1012),
+        project: { slug: 'sodium', title: 'Sodium', versionNumber: '0.5.11+mc1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
+      },
+      {
+        file: declared('mods/lithium-fabric-mc1.20.1-0.11.2.jar', 'optional', 'required', cdn('gvQqBUqZ', 'lithium-fabric-mc1.20.1-0.11.2.jar'), 688),
+        project: { slug: 'lithium', title: 'Lithium', versionNumber: 'mc1.20.1-0.11.2', loaders: ['fabric'], gameVersions: ['1.20.1'] },
+      },
+      {
+        file: declared('mods/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 'required', 'unsupported', 'https://mediafilez.forgecdn.net/files/5395/104/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 1480),
+        project: { slug: 'xaeros-minimap', title: "Xaero's Minimap", versionNumber: '24.2.0', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
+      },
+      {
+        file: declared('mods/explorer-waypoints-0.4.jar', 'required', 'optional', 'https://github.com/explorer-kit/waypoints/releases/download/v0.4/explorer-waypoints-0.4.jar', 96),
+        project: null,
+      },
+      {
+        file: declared('mods/ImmediatelyFast-Fabric-1.3.4+1.21.1.jar', 'required', 'unsupported', cdn('5ZwdcRci', 'ImmediatelyFast-Fabric-1.3.4+1.21.1.jar'), 520),
+        project: { slug: 'immediatelyfast', title: 'ImmediatelyFast', versionNumber: '1.3.4+1.21.1', loaders: ['fabric'], gameVersions: ['1.21.1'], env: 'client_only' },
+      },
+    ],
+  };
+  return declaredCache;
+}
+
+let declaredCache: Record<string, readonly MockDeclared[]> | null = null;
 
 /** `ScanResult.declared` of a mock pack (empty for anything else). */
 export function mockDeclared(instanceId: string): DeclaredFile[] {
-  return (MOCK_DECLARED[instanceId] ?? []).map((d) => d.file);
+  return (mockDeclaredFiles()[instanceId] ?? []).map((d) => d.file);
 }
 
 const SETS: Record<string, () => JarSpec[]> = {
@@ -703,7 +710,8 @@ const SETS: Record<string, () => JarSpec[]> = {
   'c04d9e2b61a8f735': cabin,
   '51b7e8d02c94a6f3': neo121,
   '2b8f61e4d7a09c53': cobblemon,
-  [MOCK_PICKED_PACK.id]: explorerKit,
+  // MOCK_PICKED_PACK.id, as a literal so the table stays a pure (tree-shakable) object.
+  a7c3e91f05d24b68: explorerKit,
 };
 
 const cache = new Map<string, JarRecord[]>();
