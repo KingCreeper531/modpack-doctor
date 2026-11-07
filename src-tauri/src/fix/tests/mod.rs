@@ -2,6 +2,7 @@
 //! the CDN are wiremock servers driven through the real `ModrinthClient`.
 
 mod exec;
+mod live;
 mod plan;
 mod undo;
 
