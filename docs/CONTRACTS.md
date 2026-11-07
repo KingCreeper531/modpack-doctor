@@ -329,6 +329,24 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     The drop overlay follows Tauri's webview drag events under Tauri (DOM drag events in the browser
     build), for the visual only: opening a dropped pack is always Rust's `InstanceAdded` / `DropRejected`.
 
+18. **Release and updates (M8).**
+    - The updater (`tauri-plugin-updater`, Rust-side only, no JS permission) is the one network
+      access besides Modrinth: `https://github.com/KingCreeper531/modpack-doctor/releases/latest/download/latest.json`
+      and the release assets it names on `github.com` / `objects.githubusercontent.com`. It runs only
+      when the user asks (About → "Check for updates", or the palette); never automatically.
+    - `check_update` → `UpdateInfo | null`; `install_update` downloads, verifies the minisign
+      signature against the public key in `tauri.conf.json` (`plugins.updater.pubkey`), installs and
+      restarts. It is refused while a work order executes. Nothing is installed without the user
+      clicking Install for the version shown.
+    - Signing: the private key lives outside the repo (`%USERPROFILE%/.tauri/modpack-doctor.key`);
+      CI reads it from the GitHub secret `TAURI_SIGNING_PRIVATE_KEY` (and
+      `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, empty for this key). It never appears in the repo, logs or
+      artifacts. Public key (base64, as in `tauri.conf.json`): `dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0MTRBMjc3NTE0MDZFOEUKUldTT2JrQlJkNklVeEpWU1BWcjFHYkhYa3R3bDVEc0lLaG04cFJrdUZLN0RwSnhEQ1hxYmo1ajgK`.
+    - Release workflow (`.github/workflows/release.yml`): on a pushed tag `v*`, `tauri-action` builds
+      Windows (.msi, .exe), macOS universal (.dmg), Linux (.AppImage, .deb), uploads them to a draft
+      GitHub Release with `latest.json` and updater signatures. Creating the repo, setting secrets and
+      pushing are done only with the owner's explicit OK.
+
 ## Commands
 
 | Command | Args | Returns | Events | Milestone |
