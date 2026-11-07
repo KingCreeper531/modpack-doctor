@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -24,6 +25,24 @@ const ICON_EXTS: [&str; 4] = ["png", "jpg", "webp", "gif"];
 /// Icons are re-fetched (when online) after this long.
 const ICON_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 3600);
 const ICON_CONCURRENCY: usize = 4;
+/// Per-request timeout of one icon fetch (`Tuning::icon_timeout`).
+pub(crate) const ICON_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Makes every icon temp file name unique, so concurrent fetches of one icon never share one.
+static ICON_NONCE: AtomicU64 = AtomicU64::new(0);
+
+/// One icon fetch, with a connection-level failure kept visible for `fetch_icons`.
+struct IconFetch {
+    result: Result<Option<PathBuf>>,
+    /// The CDN could not be reached at all (timeout, refused connection, DNS).
+    unreachable: bool,
+}
+
+impl IconFetch {
+    fn done(result: Result<Option<PathBuf>>) -> Self {
+        IconFetch { result, unreachable: false }
+    }
+}
 
 fn icon_ext(content_type: &str) -> Option<&'static str> {
     let mime = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
@@ -147,33 +166,55 @@ impl ModrinthClient {
     /// `Ok(None)` when the icon is unusable (SVG or other type, wrong bytes, over 1 MB) or when
     /// offline with nothing cached. An existing icon younger than 7 days is reused as is.
     pub async fn fetch_icon(&self, project_id: &str, icon_url: &str, icon_dir: &Path) -> Result<Option<PathBuf>> {
+        self.fetch_icon_classified(project_id, icon_url, icon_dir, None).await.result
+    }
+
+    /// `fetch_icon`, reporting whether the CDN was unreachable. `abort` (set by another fetch of
+    /// the same pass) makes the request give up before it is sent.
+    async fn fetch_icon_classified(
+        &self,
+        project_id: &str,
+        icon_url: &str,
+        icon_dir: &Path,
+        abort: Option<&AtomicBool>,
+    ) -> IconFetch {
         if !validate::is_base62_id(project_id) {
-            return Err(Error::Invalid(format!("\"{project_id}\" is not a Modrinth project id")));
+            return IconFetch::done(Err(Error::Invalid(format!("\"{project_id}\" is not a Modrinth project id"))));
         }
-        let url = self.inner.cdn.parse(icon_url).ok_or_else(|| {
-            Error::Invalid(format!("refusing to fetch an icon from {icon_url}: only https://{}/ is allowed", self.inner.cdn.host))
-        })?;
+        let Some(url) = self.inner.cdn.parse(icon_url) else {
+            return IconFetch::done(Err(Error::Invalid(format!(
+                "refusing to fetch an icon from {icon_url}: only https://{}/ is allowed",
+                self.inner.cdn.host
+            ))));
+        };
         let existing = existing_icon(icon_dir, project_id).await;
         if let Some((p, modified)) = &existing {
             let young = modified
                 .and_then(|m| SystemTime::now().duration_since(m).ok())
                 .is_some_and(|age| age < ICON_MAX_AGE);
             if young || !self.inner.online {
-                return Ok(Some(p.clone()));
+                return IconFetch::done(Ok(Some(p.clone())));
             }
         }
         if !self.inner.online {
-            return Ok(None);
+            return IconFetch::done(Ok(None));
         }
         let fallback = existing.map(|(p, _)| p);
 
         let client = self.inner.http.clone();
-        let build = move || client.get(url.clone()).timeout(Duration::from_secs(30));
-        let resp = match http::send(&build, None, None, &self.inner.policy, None).await {
+        let timeout = self.inner.icon_timeout;
+        let build = move || client.get(url.clone()).timeout(timeout);
+        let resp = match http::send(&build, None, None, &self.inner.policy, abort).await {
             Ok((r, _)) => r,
-            Err(_) if fallback.is_some() => return Ok(fallback),
-            Err(ReqError::NotFound) => return Ok(None),
-            Err(e) => return Err(e.into_error("the project icon")),
+            Err(e) => {
+                let unreachable = matches!(e, ReqError::Connect(_));
+                let result = match (fallback, e) {
+                    (Some(p), _) => Ok(Some(p)),
+                    (None, ReqError::NotFound) => Ok(None),
+                    (None, e) => Err(e.into_error("the project icon")),
+                };
+                return IconFetch { result, unreachable };
+            }
         };
         let content_type = resp
             .headers()
@@ -185,28 +226,82 @@ impl ModrinthClient {
         // serves some WebP icons as `image/png`. Anything that is not PNG/JPEG/WebP/GIF by its
         // magic bytes (an SVG or HTML in disguise) is refused.
         if icon_ext(&content_type).is_none() {
-            return Ok(fallback);
+            return IconFetch::done(Ok(fallback));
         }
         let bytes = match http::read_capped(resp, MAX_ICON).await {
             Ok(b) => b,
-            Err(_) => return Ok(fallback),
+            Err(_) => return IconFetch::done(Ok(fallback)),
         };
-        let Some(ext) = ICON_EXTS.into_iter().find(|e| magic_matches(e, &bytes)) else { return Ok(fallback) };
-        tokio::fs::create_dir_all(icon_dir).await.map_err(|e| Error::io(icon_dir, e))?;
-        let dest = icon_dir.join(format!("{project_id}.{ext}"));
-        let temp = icon_dir.join(format!(".{project_id}.{ext}.part"));
-        if let Err(e) = tokio::fs::write(&temp, &bytes).await {
-            let _ = tokio::fs::remove_file(&temp).await;
-            return Err(Error::io(&temp, e));
+        let Some(ext) = ICON_EXTS.into_iter().find(|e| magic_matches(e, &bytes)) else {
+            return IconFetch::done(Ok(fallback));
+        };
+        IconFetch::done(store_icon(icon_dir, project_id, ext, &bytes).await.map(Some))
+    }
+
+    /// The `modrinth_icons` second pass. Looks `project_ids` (base62 ids; anything else is
+    /// ignored) up through the project cache, fetches missing or stale icons (at most
+    /// `ICON_CONCURRENCY` at a time) and returns project id → absolute path for every requested
+    /// icon now on disk, fresh or not. Nothing is fetched when this client is offline or the
+    /// project lookup came back offline or failed; after the first connection-level failure the
+    /// remaining fetches are skipped. Never fails: an icon problem just leaves a project out.
+    pub async fn fetch_icons(&self, project_ids: &[String], icon_dir: &Path) -> BTreeMap<String, String> {
+        let ids = super::dedup_keep_order(project_ids.iter().filter(|id| validate::is_base62_id(id)).cloned().collect());
+        if self.inner.online && !ids.is_empty() {
+            if let Ok((lookup, urls)) = self.projects_with_icon_urls(&ids, false).await {
+                if !lookup.offline {
+                    let todo: Vec<(String, String)> = lookup
+                        .found
+                        .iter()
+                        .filter(|(key, p)| **key == p.id)
+                        .filter_map(|(_, p)| urls.get(&p.id).map(|u| (p.id.clone(), u.clone())))
+                        .collect();
+                    self.fetch_icon_set(todo, icon_dir).await;
+                }
+            }
         }
-        if let Err(e) = tokio::fs::rename(&temp, &dest).await {
-            let _ = tokio::fs::remove_file(&temp).await;
-            return Err(Error::io(&dest, e));
+        let mut out = BTreeMap::new();
+        for id in ids {
+            if let Some((p, _)) = existing_icon(icon_dir, &id).await {
+                out.insert(id, p.to_string_lossy().into_owned());
+            }
         }
-        for other in ICON_EXTS.iter().filter(|e| **e != ext) {
-            let _ = tokio::fs::remove_file(icon_dir.join(format!("{project_id}.{other}"))).await;
+        out
+    }
+
+    /// Fetch `(project id, icon URL)` pairs with bounded concurrency; the first connection-level
+    /// failure stops every fetch that has not started yet.
+    async fn fetch_icon_set(&self, todo: Vec<(String, String)>, icon_dir: &Path) {
+        let sem = Arc::new(Semaphore::new(ICON_CONCURRENCY));
+        let abort = Arc::new(AtomicBool::new(false));
+        let mut set = JoinSet::new();
+        for (id, url) in todo {
+            let (me, dir, sem, abort) = (self.clone(), icon_dir.to_path_buf(), Arc::clone(&sem), Arc::clone(&abort));
+            set.spawn(async move {
+                let Ok(_permit) = sem.acquire_owned().await else { return };
+                if abort.load(Ordering::SeqCst) {
+                    return;
+                }
+                let f = me.fetch_icon_classified(&id, &url, &dir, Some(&abort)).await;
+                // Set while the permit is still held, so no queued fetch starts after a failure.
+                if f.unreachable {
+                    abort.store(true, Ordering::SeqCst);
+                }
+            });
         }
-        Ok(Some(dest))
+        while set.join_next().await.is_some() {}
+    }
+
+    /// Fill `icon_path` of every found project that has an icon URL with the icon already on
+    /// disk (any age). Never sends a request; `modrinth_projects` uses this.
+    pub async fn attach_cached_icons(&self, lookup: &mut ProjectLookup, icon_urls: &BTreeMap<String, String>, icon_dir: &Path) {
+        for p in lookup.found.values_mut() {
+            if !icon_urls.contains_key(&p.id) || !validate::is_base62_id(&p.id) {
+                continue;
+            }
+            if let Some((path, _)) = existing_icon(icon_dir, &p.id).await {
+                p.icon_path = Some(path.to_string_lossy().into_owned());
+            }
+        }
     }
 
     /// Fill `icon_path` of every found project that has an icon URL (from
@@ -236,4 +331,29 @@ impl ModrinthClient {
             }
         }
     }
+}
+
+/// Write the icon through a temp file unique to this writer, then rename it into place.
+async fn store_icon(icon_dir: &Path, project_id: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf> {
+    tokio::fs::create_dir_all(icon_dir).await.map_err(|e| Error::io(icon_dir, e))?;
+    let dest = icon_dir.join(format!("{project_id}.{ext}"));
+    let nonce = ICON_NONCE.fetch_add(1, Ordering::Relaxed);
+    let temp = icon_dir.join(format!(".{project_id}.{ext}.{}.{nonce}.part", std::process::id()));
+    if let Err(e) = tokio::fs::write(&temp, bytes).await {
+        let _ = tokio::fs::remove_file(&temp).await;
+        return Err(Error::io(&temp, e));
+    }
+    if let Err(e) = tokio::fs::rename(&temp, &dest).await {
+        let _ = tokio::fs::remove_file(&temp).await;
+        // On Windows a concurrent fetch replacing the same icon (or a reader holding it open) can
+        // make the replace fail; an icon is in place either way.
+        if e.kind() == std::io::ErrorKind::PermissionDenied && tokio::fs::metadata(&dest).await.is_ok_and(|m| m.is_file()) {
+            return Ok(dest);
+        }
+        return Err(Error::io(&dest, e));
+    }
+    for other in ICON_EXTS.iter().filter(|e| **e != ext) {
+        let _ = tokio::fs::remove_file(icon_dir.join(format!("{project_id}.{other}"))).await;
+    }
+    Ok(dest)
 }

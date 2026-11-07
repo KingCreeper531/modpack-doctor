@@ -212,23 +212,63 @@ async fn identify_and_find_updates_go_through_the_shared_client() {
     h.assert_ua().await;
 }
 
+fn icon_requests(reqs: &[Request]) -> Vec<String> {
+    reqs.iter().map(|r| r.url.path().to_string()).filter(|p| p.starts_with("/data/")).collect()
+}
+
+fn age_file(p: &Path, days: u64) {
+    let f = std::fs::File::options().write(true).open(p).unwrap();
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(days * 24 * 3600)).unwrap();
+}
+
 #[tokio::test]
-async fn projects_cache_icons_under_the_icon_dir_and_icon_failures_do_not_fail() {
+async fn projects_never_download_icons_and_icons_is_the_second_pass() {
     let h = Harness::new().await;
     h.mount_world().await;
 
+    // First pass: titles and sides at once, no icon request, no icon on disk yet.
     let r = projects_with(&h.st, s(&["sodium", FAPI, "nope"]), false).await.unwrap();
     assert!(r.failed.is_empty() && !r.offline);
-    let sodium = &r.found["sodium"];
-    assert_eq!(sodium.id, SODIUM);
-    let icon = sodium.icon_path.clone().expect("sodium icon");
-    assert!(is_under(&icon, &h.icon_dir), "{icon} is not a cached file under {}", h.icon_dir.display());
-    assert_eq!(Path::new(&icon), h.icon_dir.join(format!("{SODIUM}.webp")));
-    assert_eq!(std::fs::read(&icon).unwrap(), WEBP);
-    // The icon server failed for Fabric API: the project is still found, just without an icon.
+    assert_eq!(r.found["sodium"].id, SODIUM);
     assert_eq!(r.found[FAPI].title, "Fabric API");
-    assert_eq!(r.found[FAPI].icon_path, None);
+    assert!(r.found.values().all(|p| p.icon_path.is_none()));
     assert!(!r.found.contains_key("nope"));
+    assert_eq!(icon_requests(&h.requests().await), Vec::<String>::new());
+    let after_projects = h.count().await;
+
+    // Second pass: icons. SODIUM and FAPI come from the project cache, CLOTH needs a lookup.
+    // The icon server failed for Fabric API: it is just left out.
+    let icons = icons_with(&h.st, s(&[SODIUM, FAPI, CLOTH])).await.unwrap();
+    assert_eq!(icons.keys().map(String::as_str).collect::<Vec<_>>(), vec![CLOTH, SODIUM]);
+    for (id, p) in &icons {
+        assert!(is_under(p, &h.icon_dir), "{p} is not a cached file under {}", h.icon_dir.display());
+        assert_eq!(Path::new(p), h.icon_dir.join(format!("{id}.webp")));
+        assert_eq!(std::fs::read(p).unwrap(), WEBP);
+    }
+    let reqs = h.requests().await;
+    let projects_calls: Vec<&Request> = reqs[after_projects..].iter().filter(|r| r.url.path() == "/v2/projects").collect();
+    assert_eq!(projects_calls.len(), 1);
+    assert!(projects_calls[0].url.query().unwrap().contains(CLOTH));
+    assert!(!projects_calls[0].url.query().unwrap().contains(SODIUM));
+
+    // Again: fresh icons are reused and the projects are cached; only the failed icon is retried.
+    let before = h.count().await;
+    assert_eq!(icons_with(&h.st, s(&[SODIUM, FAPI, CLOTH])).await.unwrap(), icons);
+    let new: Vec<String> = h.requests().await[before..].iter().map(|r| r.url.path().to_string()).collect();
+    assert!(!new.is_empty() && new.iter().all(|p| *p == format!("/data/{FAPI}/icon.webp")), "{new:?}");
+
+    // Now `modrinth_projects` attaches the icons on disk, still without any request.
+    let before = h.count().await;
+    let r = projects_with(&h.st, s(&["sodium", FAPI]), false).await.unwrap();
+    assert_eq!(r.found["sodium"].icon_path.as_ref(), Some(&icons[SODIUM]));
+    assert_eq!(r.found[FAPI].icon_path, None);
+    // Any age: a stale icon is still attached by `modrinth_projects`, and refreshed by `modrinth_icons`.
+    age_file(Path::new(&icons[SODIUM]), 30);
+    let r = projects_with(&h.st, s(&["sodium"]), false).await.unwrap();
+    assert_eq!(r.found["sodium"].icon_path.as_ref(), Some(&icons[SODIUM]));
+    assert_eq!(h.count().await, before);
+    assert_eq!(icons_with(&h.st, s(&[SODIUM])).await.unwrap()[SODIUM], icons[SODIUM]);
+    assert_eq!(icon_requests(&h.requests().await[before..]), vec![format!("/data/{SODIUM}/icon.webp")]);
     h.assert_ua().await;
 }
 
@@ -275,6 +315,8 @@ async fn disabled_modrinth_is_cache_only_and_reenabling_needs_no_restart() {
 
     // Prime the caches while enabled.
     identify_with(&h.st, vec![sha(2)], false).await.unwrap();
+    let icons = icons_with(&h.st, s(&[SODIUM])).await.unwrap();
+    assert!(icons.contains_key(SODIUM));
     let projects = projects_with(&h.st, s(&["sodium"]), false).await.unwrap();
     let versions = project_versions_with(&h.st, SODIUM.into(), s(&["fabric"]), s(&["1.20.1"]), s(&["release"])).await.unwrap();
     let resolved = resolve_mod_id_with(&h.st, "cloth_config".into(), s(&["forge"]), vec![]).await.unwrap();
@@ -291,7 +333,12 @@ async fn disabled_modrinth_is_cache_only_and_reenabling_needs_no_restart() {
     let p = projects_with(&h.st, s(&["sodium"]), true).await.unwrap();
     assert!(p.offline);
     assert_eq!(p.found, projects.found, "cached project with its cached icon path");
-    assert!(p.found["sodium"].icon_path.is_some());
+    assert_eq!(p.found["sodium"].icon_path.as_ref(), Some(&icons[SODIUM]));
+    // Icons: what is on disk (SODIUM, and CLOTH from the resolve), no request even when stale.
+    age_file(Path::new(&icons[SODIUM]), 30);
+    let off_icons = icons_with(&h.st, s(&[SODIUM, CLOTH, FAPI])).await.unwrap();
+    assert_eq!(off_icons.keys().map(String::as_str).collect::<Vec<_>>(), vec![CLOTH, SODIUM]);
+    assert_eq!(off_icons[SODIUM], icons[SODIUM]);
     let v = project_versions_with(&h.st, SODIUM.into(), s(&["fabric"]), s(&["1.20.1"]), s(&["release"])).await.unwrap();
     assert_eq!(v, versions);
     let e = project_versions_with(&h.st, SODIUM.into(), s(&["quilt"]), s(&["1.20.1"]), s(&["release"])).await.unwrap_err();
@@ -326,6 +373,9 @@ async fn invalid_input_is_rejected_with_a_sentence_and_no_request() {
         ("bad loader", find_updates_with(&h.st, vec![sha(2)], s(&["fab ric"]), mc(), rel(), false).await.unwrap_err()),
         ("empty game version", find_updates_with(&h.st, vec![sha(2)], ok(), s(&[""]), rel(), false).await.unwrap_err()),
         ("bad project id", projects_with(&h.st, s(&["sodium", "../etc"]), false).await.unwrap_err()),
+        ("icon slug", icons_with(&h.st, s(&[SODIUM, "sodium"])).await.unwrap_err()),
+        ("icon path id", icons_with(&h.st, s(&["../../x"])).await.unwrap_err()),
+        ("too many icons", icons_with(&h.st, vec![SODIUM.to_string(); 1_001]).await.unwrap_err()),
         ("path project id", project_versions_with(&h.st, "a/b".into(), ok(), mc(), rel()).await.unwrap_err()),
         ("dots project id", project_versions_with(&h.st, "..".into(), ok(), mc(), rel()).await.unwrap_err()),
         ("alpha typo", project_versions_with(&h.st, SODIUM.into(), ok(), mc(), s(&["alfa"])).await.unwrap_err()),
@@ -374,6 +424,8 @@ async fn rate_limit_surfaces_retry_after_s() {
     assert_eq!(AppError::from(e).retry_after_s, Some(120));
     let e = projects_with(&h.st, s(&["sodium"]), false).await.unwrap_err();
     assert_eq!(AppError::from(e).retry_after_s, Some(120));
+    // Icons are never worth an error: nothing on disk, nothing fetched, an empty answer.
+    assert_eq!(icons_with(&h.st, s(&[SODIUM])).await.unwrap(), BTreeMap::new());
     h.assert_ua().await;
 }
 
