@@ -304,7 +304,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - `src/core` checks declared files with Modrinth data (identified by sha1, like jars):
       a version whose `loaders` exclude the pack loader → E-WRONG-LOADER; whose `gameVersions`
       exclude the pack MC → E-MC-RANGE; a required dependency project not among the declared or
-      override files → E-MISSING-DEP; not identified → I-NOT-ON-MODRINTH; a `downloads` URL whose
+      override files → E-MISSING-DEP, lowered to **warning** for declared files (Modrinth can't see
+      every provider; Quilted Fabric API counts as Fabric API; dependencies of versions built for
+      another loader family are skipped); a repeated `files[].path` → the last entry counts (what
+      installers write) plus a `ScanIssue`; not identified → I-NOT-ON-MODRINTH; a `downloads` URL whose
       host is not in Modrinth's allowlist (`cdn.modrinth.com`, `github.com`,
       `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). Override jars
       get every static check. Packs never get fix actions (read-only); findings carry no fixes.
@@ -316,13 +319,15 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     same data the UI shows: instance, effective pack, scan summary, static + crash findings with
     evidence, Modrinth match summary. Markdown and JSON (`schemaVersion: 1`). No absolute paths of
     the user's home in the report: paths are shown relative to the game dir, and the game dir with
-    the home folder replaced by `~` (Rust's `home_dir`; the UI's path heuristic only as a fallback). `save_report` opens the native save dialog with the sanitized
+    the home folder replaced by `~` (Rust's `home_dir`; the UI's path heuristic only as a fallback),
+    including its 8.3 short forms, percent-encoded and NFC/NFD variants, and UNC admin-share forms. `save_report` opens the native save dialog with the sanitized
     default name and the format's extension (`.md` / `.json`, enforced), contents ≤ 16 MiB, writes
     temp + rename in the chosen folder. An existing file is replaced only when the dialog confirmed that exact path;
     if the extension had to be appended, an existing file is a `Conflict`. That path is the one write outside PathGuard roots, allowed
     because the user picked it in a native dialog; nothing else may be written there.
 17. **Interaction (M7).** Shortcuts: Ctrl/Cmd+K palette, J/K next/previous finding, Enter expand,
-    Ctrl/Cmd+R rescan, Esc closes the top-most layer. Shortcuts never fire while typing in an input,
+    Ctrl/Cmd+R rescan, Esc closes the top-most layer. Webview reload keys (F5, Ctrl/Cmd+Shift+R)
+    are swallowed. Shortcuts never fire while typing in an input,
     and never execute a work order (Enter stays bound to DESIGN §6.4's rule). Context menus are
     native Tauri menus (`@tauri-apps/api/menu`, `core:menu:default`) under Tauri and a DESIGN-styled
     DOM menu in the browser dev build; every menu item that mutates files only *plans* a work order.
