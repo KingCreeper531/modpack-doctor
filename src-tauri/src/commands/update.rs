@@ -2,21 +2,27 @@
 //! `tauri-plugin-updater`, which runs in Rust only (the webview has no updater permission).
 //!
 //! - Nothing happens on its own: `check_update` runs when the user asks, and only reports.
-//! - `install_update` re-checks (no state is kept between the two commands), downloads, verifies
-//!   the minisign signature against `plugins.updater.pubkey` in `tauri.conf.json`, installs and
-//!   restarts. It is refused while a work order executes, checked again right before installing.
+//! - `check_update` remembers the version it showed (`AppState::checked_update`).
+//!   `install_update` installs only that version: it re-checks, and a different version (or no
+//!   check at all) is a `Conflict`. Then it downloads, verifies the minisign signature against
+//!   `plugins.updater.pubkey` in `tauri.conf.json`, installs and restarts.
+//! - Installing is atomic with "no work order executes": `install_update` first enters the
+//!   "update installing" state ([`FixState::begin_update`], refused while an order executes or
+//!   another install runs), in which no work order can start, and holds it through the install
+//!   (on Windows the plugin exits the process from inside `install`). Every error releases it.
 //! - The endpoint and the release assets are on GitHub only (`plugins.updater.endpoints`).
 //!
 //! Updater errors become `AppError`s with sentences of their own here: `Error::Network` and
 //! `Error::Offline` speak about Modrinth, which is not the host involved.
 
+use std::future::Future;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 
 use crate::error::{AppError, ErrorKind};
-use crate::fix::FixState;
+use crate::fix::{FixState, UpdateTicket};
 use crate::model::UpdateInfo;
 use crate::state::AppState;
 
@@ -38,13 +44,20 @@ enum Stage {
     Install,
 }
 
+// Remembers the version shown, the only one `install_update` will install (doc comments here
+// end up in `src/bindings.ts`).
 /// Checks GitHub for a newer release and reports it (null when up to date); never installs.
 #[tauri::command]
 #[specta::specta]
 pub async fn check_update(app: AppHandle) -> Cmd<Option<UpdateInfo>> {
-    Ok(find_update(&app).await?.as_ref().map(update_info))
+    let info = find_update(&app).await?.as_ref().map(update_info);
+    if let Some(st) = app.try_state::<AppState>() {
+        remember_checked(&st, info.as_ref().map(|i| i.version.clone()));
+    }
+    Ok(info)
 }
 
+// Only the version the last `check_update` showed.
 /// Downloads, verifies the updater signature, installs, restarts.
 #[tauri::command]
 #[specta::specta]
@@ -53,31 +66,70 @@ pub async fn install_update(app: AppHandle) -> Cmd<()> {
         .try_state::<AppState>()
         .map(|s| AppState::clone(&s))
         .ok_or_else(|| internal("the app state is not ready yet"))?;
-    refuse_while_fixing(&st.fixes)?;
-
-    // Re-check: the user confirmed a version a moment ago, but the release may be gone since.
-    let Some(mut update) = find_update(&app).await? else {
-        return Err(no_update_anymore());
+    let fixes = st.fixes.clone();
+    let find = || async {
+        // Re-check: the user confirmed a version a moment ago, but the release may have changed.
+        Ok(find_update(&app).await?.map(|u| (u.version.clone(), u)))
     };
-    update.timeout = Some(DOWNLOAD_TIMEOUT);
-
-    // `download` verifies the minisign signature (and the signed version) before returning bytes.
-    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| map_error(Stage::Install, &e))?;
-
-    // A work order may have started during the download; installing restarts the app.
-    refuse_while_fixing(&st.fixes)?;
-
-    // Windows: the installer is launched and this process exits (`installMode: passive`, the
-    // installer starts the new version). macOS / Linux: files are replaced, then we restart.
-    // Off the async workers: a Linux package install waits for the administrator prompt.
-    tauri::async_runtime::spawn_blocking(move || update.install(bytes))
-        .await
-        .map_err(|e| internal(&format!("the install task stopped unexpectedly ({e})")))?
-        .map_err(|e| map_error(Stage::Install, &e))?;
-
+    let install = |mut update: Update| async move {
+        update.timeout = Some(DOWNLOAD_TIMEOUT);
+        // `download` verifies the minisign signature (and the signed version) before returning bytes.
+        let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| map_error(Stage::Install, &e))?;
+        // No order can have started (the update ticket is held), but a recovery pass may run.
+        refuse_while_fixing(&fixes)?;
+        // Windows: the installer is launched and this process exits inside `install`
+        // (`installMode: passive`, the installer starts the new version). macOS / Linux: files
+        // are replaced, then we restart. Off the async workers: a Linux package install waits for
+        // the administrator prompt.
+        tauri::async_runtime::spawn_blocking(move || update.install(bytes))
+            .await
+            .map_err(|e| internal(&format!("the install task stopped unexpectedly ({e})")))?
+            .map_err(|e| map_error(Stage::Install, &e))
+    };
+    let ticket = guarded_install(&st.fixes, checked_version(&st), find, install).await?;
+    // The new version is in place: no work order may start before the restart, so the ticket is
+    // never released.
+    std::mem::forget(ticket);
     // Through `ExitRequested`, so the usual "fixes are being applied" guard still holds.
     app.request_restart();
     Ok(())
+}
+
+/// The install sequence without the updater itself (so it can be tested): enter the "update
+/// installing" state (a `Conflict` while an order executes or another install runs), re-check
+/// with `find` (version, update), insist on the `checked` version, then `install`. Returns the
+/// still-held ticket on success; every error releases it.
+async fn guarded_install<U, F, I>(
+    fixes: &FixState,
+    checked: Option<String>,
+    find: impl FnOnce() -> F,
+    install: impl FnOnce(U) -> I,
+) -> Cmd<UpdateTicket>
+where
+    F: Future<Output = Cmd<Option<(String, U)>>>,
+    I: Future<Output = Cmd<()>>,
+{
+    let ticket = fixes.begin_update()?;
+    let Some(checked) = checked else {
+        return Err(not_checked());
+    };
+    let Some((version, update)) = find().await? else {
+        return Err(no_update_anymore());
+    };
+    if version != checked {
+        return Err(newer_published(&version));
+    }
+    install(update).await?;
+    Ok(ticket)
+}
+
+/// What `check_update` showed (None: up to date or never checked).
+fn remember_checked(st: &AppState, version: Option<String>) {
+    *st.checked_update.lock().unwrap_or_else(|p| p.into_inner()) = version;
+}
+
+fn checked_version(st: &AppState) -> Option<String> {
+    st.checked_update.lock().unwrap_or_else(|p| p.into_inner()).clone()
 }
 
 /// The release the endpoint announces, if it is newer than this build.
@@ -108,6 +160,18 @@ fn refuse_while_fixing(fixes: &FixState) -> Cmd<()> {
         ));
     }
     Ok(())
+}
+
+fn not_checked() -> AppError {
+    app_error(ErrorKind::Conflict, "Check for updates first, then install the version shown.")
+}
+
+fn newer_published(version: &str) -> AppError {
+    let shown: String = version.chars().filter(|c| !c.is_control()).take(64).collect();
+    app_error(
+        ErrorKind::Conflict,
+        &format!("A newer update ({shown}) was published since you checked; check for updates again."),
+    )
 }
 
 fn no_update_anymore() -> AppError {
@@ -147,10 +211,15 @@ fn map_error(stage: Stage, e: &UpdaterError) -> AppError {
         ),
         UpdaterError::Network(status) => app_error(
             ErrorKind::Network,
-            &format!(
-                "The update could not be downloaded from GitHub ({}). Nothing was changed; try again later.",
-                status.trim_matches('`')
-            ),
+            &match stage {
+                Stage::Check => {
+                    format!("Updates could not be checked on GitHub ({}). Try again later.", status.trim_matches('`'))
+                }
+                Stage::Install => format!(
+                    "The update could not be downloaded from GitHub ({}). Nothing was changed; try again later.",
+                    status.trim_matches('`')
+                ),
+            },
         ),
         UpdaterError::Serialization(_) | UpdaterError::Semver(_) => app_error(
             ErrorKind::Network,
@@ -245,6 +314,133 @@ mod tests {
         assert!(refuse_while_fixing(&fixes).is_ok());
     }
 
+    type Found = Cmd<Option<(String, ())>>;
+
+    fn found(version: &str) -> impl FnOnce() -> std::future::Ready<Found> {
+        let v = version.to_string();
+        move || std::future::ready(Ok(Some((v, ()))))
+    }
+
+    fn installs_ok(_: ()) -> std::future::Ready<Cmd<()>> {
+        std::future::ready(Ok(()))
+    }
+
+    #[tokio::test]
+    async fn an_update_installing_refuses_work_orders_until_released() {
+        let fixes = FixState::default();
+        let ticket = fixes.begin_update().expect("begin");
+        assert!(fixes.is_updating());
+        let e = AppError::from(fixes.claim("0123456789abcdef", "Test Pack").expect_err("no order may start"));
+        assert_eq!(e.kind, ErrorKind::Conflict);
+        assert!(e.message.starts_with("An update is being installed"), "{}", e.message);
+        assert_sentence(&e);
+        // The window may still close (the restart goes through the same guard).
+        assert!(!fixes.any_executing());
+        drop(ticket);
+        assert!(!fixes.is_updating());
+        drop(fixes.claim("0123456789abcdef", "Test Pack").expect("claim after release"));
+    }
+
+    #[tokio::test]
+    async fn an_executing_order_refuses_the_install() {
+        let fixes = FixState::default();
+        let order = fixes.claim("0123456789abcdef", "Test Pack").expect("claim");
+        let e = guarded_install(&fixes, Some("0.2.0".into()), found("0.2.0"), installs_ok).await.expect_err("refused");
+        assert_eq!(e.kind, ErrorKind::Conflict);
+        assert!(e.message.contains("applying fixes"), "{}", e.message);
+        assert_sentence(&e);
+        assert!(!fixes.is_updating(), "a refused install leaves no update state behind");
+        drop(order);
+        assert!(guarded_install(&fixes, Some("0.2.0".into()), found("0.2.0"), installs_ok).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn no_order_can_start_between_the_final_check_and_the_install() {
+        let fixes = FixState::default();
+        let during = fixes.clone();
+        let ticket = guarded_install(&fixes, Some("0.2.0".into()), found("0.2.0"), move |()| {
+            // Inside `install` (where Windows exits the process): an order still cannot start.
+            let refused = during.claim("0123456789abcdef", "Test Pack").is_err();
+            std::future::ready(if refused { Ok(()) } else { Err(internal("an order started during the install")) })
+        })
+        .await
+        .expect("installed");
+        // Still held after a successful install (until the restart).
+        assert!(fixes.claim("0123456789abcdef", "Test Pack").is_err());
+        drop(ticket);
+    }
+
+    #[tokio::test]
+    async fn a_second_concurrent_install_is_a_conflict() {
+        let fixes = FixState::default();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        let first_fixes = fixes.clone();
+        let first = tokio::spawn(async move {
+            guarded_install(&first_fixes, Some("0.2.0".into()), found("0.2.0"), move |()| async move {
+                started_tx.send(()).ok();
+                go_rx.await.ok();
+                Ok(())
+            })
+            .await
+            .map(drop)
+        });
+        started_rx.await.expect("first install running");
+        let e = guarded_install(&fixes, Some("0.2.0".into()), found("0.2.0"), installs_ok).await.expect_err("second refused");
+        assert_eq!(e.kind, ErrorKind::Conflict);
+        assert!(e.message.contains("already being installed"), "{}", e.message);
+        assert_sentence(&e);
+        go_tx.send(()).ok();
+        first.await.unwrap().expect("first install finished");
+        assert!(!fixes.is_updating());
+    }
+
+    #[tokio::test]
+    async fn every_error_releases_the_update_state() {
+        let fixes = FixState::default();
+        let failing_install = |()| std::future::ready(Err(map_error(Stage::Install, &UpdaterError::AuthenticationFailed)));
+        let e = guarded_install(&fixes, Some("0.2.0".into()), found("0.2.0"), failing_install).await.expect_err("failed");
+        assert_eq!(e.kind, ErrorKind::Permission);
+        assert!(!fixes.is_updating());
+
+        let failing_check = || std::future::ready::<Found>(Err(map_error(Stage::Check, &UpdaterError::ReleaseNotFound)));
+        assert!(guarded_install(&fixes, Some("0.2.0".into()), failing_check, installs_ok).await.is_err());
+        assert!(!fixes.is_updating());
+
+        let gone = || std::future::ready::<Found>(Ok(None));
+        let e = guarded_install(&fixes, Some("0.2.0".into()), gone, installs_ok).await.expect_err("gone");
+        assert_eq!(e.message, no_update_anymore().message);
+        assert!(!fixes.is_updating());
+        drop(fixes.claim("0123456789abcdef", "Test Pack").expect("orders work again"));
+    }
+
+    #[tokio::test]
+    async fn only_the_version_shown_is_installed() {
+        let fixes = FixState::default();
+        let never = |()| std::future::ready::<Cmd<()>>(Err(internal("must not install")));
+        let e = guarded_install(&fixes, None, found("0.2.0"), never).await.expect_err("not checked");
+        assert_eq!(e.kind, ErrorKind::Conflict);
+        assert!(e.message.contains("Check for updates first"), "{}", e.message);
+        assert_sentence(&e);
+
+        let e = guarded_install(&fixes, Some("0.2.0".into()), found("0.3.0"), never).await.expect_err("newer");
+        assert_eq!(e.kind, ErrorKind::Conflict);
+        assert_eq!(e.message, "A newer update (0.3.0) was published since you checked; check for updates again.");
+        assert!(!fixes.is_updating());
+
+        assert!(guarded_install(&fixes, Some("0.3.0".into()), found("0.3.0"), installs_ok).await.is_ok());
+    }
+
+    #[test]
+    fn check_update_remembers_the_version_shown() {
+        let st = AppState::default();
+        assert_eq!(checked_version(&st), None);
+        remember_checked(&st, Some("0.2.0".into()));
+        assert_eq!(checked_version(&AppState::clone(&st)).as_deref(), Some("0.2.0"));
+        remember_checked(&st, None);
+        assert_eq!(checked_version(&st), None);
+    }
+
     #[test]
     fn no_update_anymore_is_a_readable_conflict() {
         let e = no_update_anymore();
@@ -266,6 +462,12 @@ mod tests {
             assert!(mapped.message.contains(needle), "{}", mapped.message);
             assert_sentence(&mapped);
         }
+        // A status error while checking is about checking, not downloading.
+        let status = UpdaterError::Network("`Download request failed with status: 500`".into());
+        let check = map_error(Stage::Check, &status);
+        assert!(check.message.contains("could not be checked") && !check.message.contains("downloaded"), "{}", check.message);
+        assert_sentence(&check);
+        assert!(map_error(Stage::Install, &status).message.contains("could not be downloaded"));
     }
 
     #[test]

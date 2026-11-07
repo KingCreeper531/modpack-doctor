@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use super::archive::path_problem;
 use super::{display_name, is_hidden_char, issue, strip_hidden, INDEX_NAME, MAX_INDEX_FILES};
-use crate::model::{DeclaredFile, LoaderInfo, LoaderKind, ScanIssue};
+use crate::model::{DeclaredFile, LoaderInfo, LoaderKind, ScanIssue, UnverifiedDownload};
 
 /// Longest pack name kept (characters).
 const MAX_NAME_CHARS: usize = 128;
@@ -15,6 +15,8 @@ const MAX_NAME_CHARS: usize = 128;
 pub const MAX_DOWNLOADS: usize = 64;
 /// Longest download URL kept (bytes); a longer one is replaced by [`TOO_LONG`].
 pub const MAX_URL_BYTES: usize = 4096;
+/// Longest `UnverifiedDownload.entry` kept (characters).
+const MAX_ENTRY_CHARS: usize = 256;
 /// Problems reported per index (one per bad `files[]` entry, up to this many; the same again for
 /// download-link and duplicate-path notes).
 const MAX_FILE_ISSUES: usize = 100;
@@ -39,6 +41,10 @@ pub struct PackIndex {
     pub mc_version: Option<String>,
     pub loader: Option<LoaderInfo>,
     pub files: Vec<DeclaredFile>,
+    /// Download links of `files[]` entries not in `files`: skipped (not an object, no path, unsafe
+    /// or folder path, bad hashes, or the whole list over [`MAX_INDEX_FILES`]) or shadowed by a
+    /// later entry with the same path. In index order.
+    pub unverified: Vec<UnverifiedDownload>,
 }
 
 /// Loader dependency keys, in the order used when a pack (wrongly) names several.
@@ -99,15 +105,21 @@ pub fn parse(bytes: &[u8], issues: &mut Vec<ScanIssue>) -> Option<PackIndex> {
         issues.push(index_issue(format!("The pack's {INDEX_NAME} has no files list.")));
         return Some(out);
     };
+    let mut notes = Notes::default();
+    let mut unverified: Vec<(usize, UnverifiedDownload)> = Vec::new();
     if files.len() > MAX_INDEX_FILES {
         issues.push(index_issue(format!(
-            "The pack's {INDEX_NAME} lists {} files, more than the {MAX_INDEX_FILES} Modpack Doctor reads, so its files were not checked.",
+            "The pack's {INDEX_NAME} lists {} files, more than the {MAX_INDEX_FILES} Modpack Doctor reads, so its files were not checked (only their download links).",
             files.len()
         )));
+        for (i, f) in files.iter().enumerate() {
+            unverified.extend(skipped_downloads(i, f, issues, &mut notes).into_iter().map(|u| (i, u)));
+        }
+        out.unverified = unverified.into_iter().map(|(_, u)| u).collect();
+        notes.finish(issues);
         return Some(out);
     }
     let mut bad = 0usize;
-    let mut notes = Notes::default();
     let mut kept: Vec<(usize, DeclaredFile)> = Vec::new();
     for (i, f) in files.iter().enumerate() {
         match declared_file(f) {
@@ -122,15 +134,38 @@ pub fn parse(bytes: &[u8], issues: &mut Vec<ScanIssue>) -> Option<PackIndex> {
                 if bad <= MAX_FILE_ISSUES {
                     issues.push(index_issue(format!("Skipped files[{i}] of the pack's {INDEX_NAME}: {why}.")));
                 }
+                unverified.extend(skipped_downloads(i, f, issues, &mut notes).into_iter().map(|u| (i, u)));
             }
         }
     }
     if bad > MAX_FILE_ISSUES {
         issues.push(index_issue(format!("{} more files of the pack's {INDEX_NAME} were skipped.", bad - MAX_FILE_ISSUES)));
     }
-    out.files = dedupe(kept, issues, &mut notes);
+    out.files = dedupe(kept, issues, &mut notes, &mut unverified);
     notes.finish(issues);
+    // Stable: the links of one entry stay in their order.
+    unverified.sort_by_key(|(i, _)| *i);
+    out.unverified = unverified.into_iter().map(|(_, u)| u).collect();
     Some(out)
+}
+
+/// `UnverifiedDownload.entry` for a path as written: control and format characters removed, at
+/// most [`MAX_ENTRY_CHARS`] characters; None when nothing is left.
+fn entry_label(path: &str) -> Option<String> {
+    let label: String = strip_hidden(path).chars().take(MAX_ENTRY_CHARS).collect();
+    (!label.is_empty()).then_some(label)
+}
+
+/// The download links of `files[i]`, which was skipped, as [`UnverifiedDownload`]s (same
+/// sentinel rules as declared files, notes included). Nothing for a value that is not an object.
+fn skipped_downloads(i: usize, v: &Value, issues: &mut Vec<ScanIssue>, notes: &mut Notes) -> Vec<UnverifiedDownload> {
+    let Some(obj) = v.as_object() else { return Vec::new() };
+    let entry = obj.get("path").and_then(Value::as_str).and_then(entry_label).unwrap_or_else(|| format!("files[{i}]"));
+    let (urls, file_notes) = downloads(obj.get("downloads"), &display_name(&entry));
+    for n in file_notes {
+        notes.push(issues, format!("files[{i}] of the pack's {INDEX_NAME} (skipped): {n}."));
+    }
+    urls.into_iter().map(|url| UnverifiedDownload { entry: entry.clone(), url }).collect()
 }
 
 fn index_issue(message: String) -> ScanIssue {
@@ -162,9 +197,15 @@ impl Notes {
 }
 
 /// Files listed more than once under the same `path`: installers write them in order, so the
-/// last one is what ends up on disk. Only it is kept; each earlier one is a note. Paths that
-/// differ only in letter case are both kept, with a note (on Windows they are the same file).
-fn dedupe(kept: Vec<(usize, DeclaredFile)>, issues: &mut Vec<ScanIssue>, notes: &mut Notes) -> Vec<DeclaredFile> {
+/// last one is what ends up on disk. Only it is kept; each earlier one is a note, and its download
+/// links go to `unverified` (a launcher still fetches it before overwriting it). Paths that differ
+/// only in letter case are both kept, with a note (on Windows they are the same file).
+fn dedupe(
+    kept: Vec<(usize, DeclaredFile)>,
+    issues: &mut Vec<ScanIssue>,
+    notes: &mut Notes,
+    unverified: &mut Vec<(usize, UnverifiedDownload)>,
+) -> Vec<DeclaredFile> {
     let mut last: HashMap<String, usize> = HashMap::new();
     for (i, d) in &kept {
         last.insert(d.path.clone(), *i);
@@ -182,6 +223,8 @@ fn dedupe(kept: Vec<(usize, DeclaredFile)>, issues: &mut Vec<ScanIssue>, notes: 
                     display_name(&d.path)
                 ),
             );
+            let entry = entry_label(&d.path).unwrap_or_else(|| format!("files[{i}]"));
+            unverified.extend(d.downloads.into_iter().map(|url| (i, UnverifiedDownload { entry: entry.clone(), url })));
         }
     }
     let mut by_folded: HashMap<String, usize> = HashMap::new();

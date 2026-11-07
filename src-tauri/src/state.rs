@@ -44,6 +44,9 @@ pub struct AppState {
     /// `.mrpack` files opened this session (CONTRACTS invariant 15), in opening order. Never
     /// persisted; merged into the registry by every discovery so they survive rediscovery.
     pub opened_packs: Arc<RwLock<Vec<Instance>>>,
+    /// The update version the last successful `check_update` showed (None: up to date, or not
+    /// checked yet). `install_update` installs only this version (CONTRACTS invariant 18).
+    pub checked_update: Arc<Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for AppState {

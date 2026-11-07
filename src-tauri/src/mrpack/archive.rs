@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 
 use zip::read::ZipReadOptions;
+use zip::result::ZipError;
 use zip::ZipArchive;
 
 use super::{
     display_name, issue, INDEX_NAME, MAX_CD_BYTES, MAX_ENTRIES, MAX_ENTRY_ISSUES, MAX_RATIO, MAX_TOTAL_UNCOMPRESSED,
-    OVERRIDE_DIRS, OVERRIDE_MOD_DIRS,
+    OVERRIDE_DIRS,
 };
 use crate::guard::PathGuard;
 use crate::model::ScanIssue;
@@ -158,6 +159,12 @@ fn is_jar_name(name: &str) -> bool {
     name.len() > 4 && name.as_bytes()[name.len() - 4..].eq_ignore_ascii_case(b".jar")
 }
 
+/// True when `rest` (a path inside an override folder) is a file directly in `mods/`, with `mods`
+/// in any letter case: on Windows `MODS/` and `mods/` are one folder, so a loader loads it.
+pub fn directly_in_mods(rest: &str) -> bool {
+    rest.len() > 5 && rest.as_bytes()[..5].eq_ignore_ascii_case(b"mods/") && !rest[5..].contains('/')
+}
+
 /// What the central directory says, after the safety checks.
 #[derive(Debug, Default)]
 pub struct Listing {
@@ -204,17 +211,22 @@ fn duplicate_problem<R: Read + Seek>(zip: &ZipArchive<R>) -> Option<String> {
 }
 
 /// Whether entry `idx`'s local header disagrees with its central-directory record (name,
-/// compression, flags, sizes, CRC, time): Some(reason) for a mismatch. An entry the zip library
+/// compression, flags, sizes, CRC, …): Some(reason) for a mismatch. An entry the zip library
 /// cannot open for other reasons (unsupported compression, …) is not judged here.
+///
+/// The zip crate has no typed error for this (it is an `InvalidArchive` with a message), so it is
+/// detected by behaviour, not by the message text: the entry fails to open with the consistency
+/// check and opens without it.
 fn header_mismatch<R: Read + Seek>(zip: &mut ZipArchive<R>, idx: usize) -> Option<&'static str> {
-    match zip.by_index_with_options(idx, ZipReadOptions::new().enforce_header_consistency(true)) {
-        Ok(_) => None,
-        Err(e) if e.to_string().contains("header inconsistency") => {
-            Some("its local header does not match the archive's table of contents (a tool reading one or the other would see a different file)")
-        }
-        Err(_) => None,
+    let strict = zip.by_index_with_options(idx, ZipReadOptions::new().enforce_header_consistency(true)).map(drop);
+    match strict {
+        Err(ZipError::InvalidArchive(_)) if zip.by_index_with_options(idx, ZipReadOptions::new()).is_ok() => Some(HEADER_MISMATCH),
+        _ => None,
     }
 }
+
+const HEADER_MISMATCH: &str =
+    "its local header does not match the archive's table of contents (a tool reading one or the other would see a different file)";
 
 /// Check the whole archive against the entry-count and total-size limits and for duplicate
 /// names, then classify every entry (path checks, symlinks, local/central header consistency).
@@ -292,7 +304,7 @@ pub fn list<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Listing {
         if name == INDEX_NAME {
             out.index = Some(i);
         } else if OVERRIDE_DIRS.iter().any(|d| name.starts_with(d)) && is_jar_name(&name) {
-            let in_mods = OVERRIDE_MOD_DIRS.iter().any(|d| name.strip_prefix(d).is_some_and(|rest| !rest.contains('/')));
+            let in_mods = OVERRIDE_DIRS.iter().any(|d| name.strip_prefix(d).is_some_and(directly_in_mods));
             if in_mods {
                 out.jars.push((i, name));
             } else {
@@ -300,7 +312,7 @@ pub fn list<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Listing {
                 if ignored <= MAX_ENTRY_ISSUES {
                     out.issues.push(issue(
                         &display_name(&name),
-                        "This jar is not directly in a mods/ folder, so loaders ignore it; it was not scanned.".to_string(),
+                        "This jar is not directly in the mods/ folder of the pack's overrides, where mod loaders look for mods, so it was not scanned.".to_string(),
                     ));
                 }
             }
@@ -366,14 +378,11 @@ pub fn read_entry<R: Read + Seek>(zip: &mut ZipArchive<R>, idx: usize, cap: u64,
     if let Some(why) = size_problem(zip, idx, cap, budget) {
         return Err(why);
     }
+    if let Some(why) = header_mismatch(zip, idx) {
+        return Err(why.to_string());
+    }
     let opts = ZipReadOptions::new().enforce_header_consistency(true);
-    let mut file = zip.by_index_with_options(idx, opts).map_err(|e| {
-        if e.to_string().contains("header inconsistency") {
-            "its local header does not match the archive's table of contents".to_string()
-        } else {
-            format!("it could not be unpacked ({e})")
-        }
-    })?;
+    let mut file = zip.by_index_with_options(idx, opts).map_err(|e| format!("it could not be unpacked ({e})"))?;
     let declared = file.size();
     let mut buf = Vec::with_capacity(usize::try_from(declared.min(super::MIB)).unwrap_or(0));
     (&mut file)

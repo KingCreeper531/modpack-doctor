@@ -3,7 +3,7 @@
  * I-NOT-ON-MODRINTH from Modrinth data, W-MRPACK-DOWNLOAD from the index URLs. No fixes ever.
  */
 import { describe, expect, it } from 'vitest';
-import type { DeclaredFile, JarRecord, LoaderKind, MrDependency, MrVersion } from '../../../bindings';
+import type { DeclaredFile, JarRecord, LoaderKind, MrDependency, MrVersion, UnverifiedDownload } from '../../../bindings';
 import { findingId } from '../../crash/id';
 import type { CheckInput, Finding, ModrinthContext, PackContext } from '../../model';
 import { enrichFindings } from '../../modrinth';
@@ -366,6 +366,83 @@ describe('W-MRPACK-DOWNLOAD: URL allowlist', () => {
 
   it('nothing without declared files (an ordinary instance)', () => {
     expect(mrpackDownloadCheck.run(packInput([], mrPack('fabric', '1.20.1')))).toEqual([]);
+  });
+});
+
+describe('W-MRPACK-DOWNLOAD: skipped and shadowed index entries', () => {
+  const withUnverified = (files: DeclaredFile[], unverified: UnverifiedDownload[]): CheckInput => {
+    const input = packInput(files, mrPack('fabric', '1.20.1'), modrinth({ offline: true }));
+    return { ...input, scan: { ...input.scan, unverifiedDownloads: unverified } };
+  };
+  const download = (f: Finding) => f.code === 'W-MRPACK-DOWNLOAD';
+
+  it('one warning per skipped entry with a URL outside the allowlist, even with no declared files', () => {
+    // The reviewer's examples: a bad-hash entry and an unsafe path, both pointing anywhere, and
+    // an entry without a path. Rust skipped all three, so they are not declared files.
+    const input = withUnverified(
+      [],
+      [
+        { entry: 'mods/bad-hash.jar', url: 'https://evil.example/1.jar' },
+        { entry: '../escape.jar', url: 'https://cdn.modrinth.com/data/a/x.jar' },
+        { entry: '../escape.jar', url: 'http://evil.example/2.jar' },
+        { entry: 'files[4]', url: 'https://evil.example/4.jar' },
+        { entry: 'mods/fine.jar', url: 'https://cdn.modrinth.com/data/a/fine.jar' },
+      ],
+    );
+    const found = runChecks(input).filter(download);
+    expect(found.map((f) => f.culprits[0]?.jarId)).toEqual(['mods/bad-hash.jar', '../escape.jar', 'files[4]']);
+    const esc = found[1] as Finding;
+    expect(esc.severity).toBe('warning');
+    expect(esc.fixes).toEqual([]);
+    expect(esc.id).toBe(findingId('W-MRPACK-DOWNLOAD', ['../escape.jar'], 'unverified'));
+    expect(esc.title).toBe("Unchecked index entry escape.jar downloads from evil.example outside Modrinth's allowed hosts");
+    expect(esc.explanation).toContain('A launcher may still install it');
+    expect(notes(esc)).toEqual([
+      'modrinth.index.json entry ../escape.jar was skipped or shadowed by a later entry with the same path, so its file was not checked; a launcher may still install it.',
+      'Download URL http://evil.example/2.jar: it uses http, not https.',
+      'Pack: Fabric (version unknown) on Minecraft 1.20.1 (from the .mrpack index)',
+    ]);
+    // Stable across runs.
+    expect(runChecks(input).filter(download).map((f) => f.id)).toEqual(found.map((f) => f.id));
+  });
+
+  it('a shadowed entry is checked next to the declared file that replaces it, with a distinct id', () => {
+    const winner = declared('mods/dup.jar', { downloads: ['https://evil.example/winner.jar'] });
+    const found = mrpackDownloadCheck.run(withUnverified([winner], [{ entry: 'mods/dup.jar', url: 'https://other.example/first.jar' }]));
+    expect(found.map((f) => f.id)).toEqual([
+      findingId('W-MRPACK-DOWNLOAD', ['mods/dup.jar'], 'declared'),
+      findingId('W-MRPACK-DOWNLOAD', ['mods/dup.jar'], 'unverified'),
+    ]);
+    expect(notes(found[1])).toContain('Download URL https://other.example/first.jar: other.example is not on Modrinth\'s allowlist.');
+  });
+
+  it('sentinels count as outside the allowlist', () => {
+    const found = mrpackDownloadCheck.run(
+      withUnverified([], [
+        { entry: 'mods/a.jar', url: 'invalid:too-long' },
+        { entry: 'mods/b.jar', url: 'invalid:not-a-list' },
+      ]),
+    );
+    expect(found.map((f) => f.culprits[0]?.jarId)).toEqual(['mods/a.jar', 'mods/b.jar']);
+    expect(found[0]?.title).toBe("Unchecked index entry a.jar downloads outside Modrinth's allowed hosts");
+  });
+
+  it('entry names are shown without hidden characters, and junk input does not throw', () => {
+    const found = mrpackDownloadCheck.run(
+      withUnverified([], [
+        { entry: 'mods/\u202egnp.jar\u0007', url: 'https://evil.example/x.jar' },
+        { entry: '', url: 'https://evil.example/y.jar' },
+        null as unknown as UnverifiedDownload,
+        { entry: 42, url: 7 } as unknown as UnverifiedDownload,
+      ]),
+    );
+    expect(found.map((f) => f.culprits[0]?.jarId)).toEqual(['mods/gnp.jar', 'an unnamed index entry']);
+    expect(notes(found[1])).toContain('Download URL https://evil.example/y.jar: evil.example is not on Modrinth\'s allowlist.');
+    expect(notes(found[1])).toContain('Download URL 7: it is empty.');
+  });
+
+  it('nothing when every unverified link is on the allowlist', () => {
+    expect(mrpackDownloadCheck.run(withUnverified([], [{ entry: 'mods/a.jar', url: 'https://cdn.modrinth.com/data/a/a.jar' }]))).toEqual([]);
   });
 });
 
