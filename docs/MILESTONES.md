@@ -200,3 +200,43 @@ result.
 - **Not done / known:** fixes still can't run (M6). An icon request already in flight when
   Modrinth is switched off finishes. Icon file names are case-sensitive base62 ids (collisions on
   case-insensitive disks are theoretical). The 524 KB JS chunk warning remains.
+
+## M6 — Fix actions (safety-critical)
+
+- **Contracts first:** CONTRACTS invariant 14 (plan never mutates and records preconditions;
+  single-use orders that expire after 15 min; execute order with game guard → snapshot → ops with
+  per-op re-checks; rollback; backup layout; undo with sha1 checks; tests only on copies), later
+  extended by the safety reviews (write-ahead + recovery, no replacing renames, one app process,
+  bound intents, fresh version fetch, source URL shown).
+- **Agents:**
+  - M (Rust, `fix/**`, `commands/fix.rs`): planner, executor, rollback, backups, undo.
+  - K3 (Rust): CurseForge hs_err — evidence shows current CurseForge runs the JVM in the instance
+    folder, so hs_err already lands in the game dir; the owner's narrow read-only rule for
+    `Install/hs_err_pid*.log` is in place as a defence. Game guard probe replaced: the contract's
+    DELETE-access probe was measured to block the game's own jar opens; the probe now only asks
+    Windows which processes hold the jar (`FileProcessIdsUsingFileInformation`).
+  - N (UI): work-order panel with live op status, toggle via work order, History tab with per-action
+    undo, game-running warning, mock engine with gamerunning / fixfail / expired scenarios.
+  - Independent safety reviewer (three passes), M2 / N2 / M3 for its findings.
+- **Safety review findings fixed:** interrupted orders recoverable (write-ahead `running` records,
+  fsynced and on Windows flushed incl. the snapshot folder; recovery at startup / list / execute;
+  `BackupStatus` complete / rolledBack / incomplete; Recover in History); all-or-nothing rollback per
+  op; per-undo recovery that never touches other actions; honest status when a changed file is left
+  in place; atomic no-replace moves (MoveFileExW without REPLACE_EXISTING, renameat2, link+unlink);
+  single app instance; close refused while an order runs; InstallDependency bound to a real missing
+  required dependency and the project Rust resolves; versions fetched fresh when planning; full CDN
+  URL in the panel; Enter repeat / outside-panel guards; tracked cross-volume temps.
+- **Decisions:** no extra native confirmation dialog (owner, 2026-11-07); Quilt accepts fabric
+  versions; a completed fix recovery reads as rolled back.
+- **Live check on a copy** (never the real instance): `live_copy` on a copy of Jungle #2 —
+  disable Xaero's Minimap + replace FallingTree 4.1.1 → 4.3.6 from the real CDN (SHA-512 + mod id
+  verified), rescan clean, undo restores the copy byte-identically.
+- **Gates:** 472 Rust tests (4 ignored) and clippy `-D warnings` clean; 2075 Vitest tests green on
+  repeated runs; both typechecks; production bundle has no mock data; `tauri build` `.msi`
+  8.32 MiB / `.exe` 6.09 MiB. Screenshots in `docs/screenshots/m6/` (untracked).
+- **Known / left:** the close guard and single-instance plugin have no automated tests (need a Tauri
+  runtime); hard links named `hs_err_pid*.log` in CurseForge's Install dir are readable (needs write
+  access to the user's own folder); `.part` leftovers move only once History or an execute runs for
+  that instance; FAT/macOS volumes without hard links fail moves safely instead of falling back.
+- **Note:** M7's core (Q) and Rust (P) work was built in parallel at the owner's request and is
+  already merged when `m6` is tagged; the M7 UI lands after.
