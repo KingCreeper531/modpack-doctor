@@ -91,9 +91,7 @@ import { runChecks as coreRunChecks } from '../../core/checks';
 import { analyzeCrash as coreAnalyzeCrash, CRASH_ANCHORS, CRASH_ANCHOR_TEXTS } from '../../core/crash';
 import { summarizeCrash } from '../../core/crash/summary';
 import type { CheckInput, CrashInput, Finding, JarIndex, ModrinthContext, PackContext } from '../../core/model';
-// Namespace import, like `coreModrinth`: the frozen report API is implemented in parallel (M7), so
-// a missing function fails that export (an inline error) instead of the whole module graph.
-import * as coreReport from '../../core/report';
+import { buildReport, reportFileName, reportJson, reportMarkdown } from '../../core/report';
 // A namespace import: the module's functions are looked up when called, so a missing one fails
 // that step (and degrades) instead of failing the whole module graph.
 import * as coreModrinth from '../../core/modrinth';
@@ -421,6 +419,18 @@ const UNKNOWN_PACK: AppError = {
   path: null,
 };
 
+/** Project ids every identified version requires (`dependencies[].dependencyType: required`). */
+function requiredDependencyProjects(identify: HashLookup): string[] {
+  const out = new Set<string>();
+  for (const v of Object.values(identify.found)) {
+    for (const d of v.dependencies ?? []) {
+      const pid = d.projectId?.trim();
+      if (d.dependencyType === 'required' && pid && pid !== v.projectId) out.add(pid);
+    }
+  }
+  return [...out];
+}
+
 /** A pack finding keeps its advice (manual steps) but offers nothing to plan. */
 function readOnlyFinding(f: Finding): Finding {
   return f.fixes.some((x) => x.kind !== 'manual') ? { ...f, fixes: f.fixes.filter((x) => x.kind === 'manual') } : f;
@@ -441,7 +451,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const mr: ModrinthCoreApi = deps.modrinthCore ?? coreModrinth;
   const setTimer = deps.setTimer ?? ((cb: () => void, ms: number) => void setTimeout(cb, ms));
   let initialSelect = deps.initialSelect ?? null;
-  const reportCore: ReportCoreApi = deps.reportCore ?? coreReport;
+  const reportCore: ReportCoreApi = deps.reportCore ?? { buildReport, reportMarkdown, reportJson, reportFileName };
   const appVersion = deps.appVersion ?? '0.0.0';
   const cmd = backend.commands;
   /** Latest export per instance; an older one's answer is dropped. */
@@ -507,6 +517,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       set((st) => ({ scans: { ...st.scans, [id]: fn(st.scans[id] ?? emptyScan()) } }));
 
     const instanceById = (id: string) => get().discovery?.instances.find((i) => i.id === id) ?? null;
+    /** An opened `.mrpack`: read-only, so no fix is ever looked up for it (invariant 15). */
+    const isPack = (id: string) => instanceById(id)?.launcher === 'mrpack';
 
     /** Apply every buffered `ScanProgress` in one update. */
     const flush = () => {
@@ -576,7 +588,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
         let findings: Finding[] | null = null;
         if (m) {
           try {
-            findings = mr.enrichFindings(core.runChecks({ instance: inst, scan: sc.result, pack, modrinth: m.ctx }), m.ctx, m.resolutions, sc.result.jars);
+            const checked = core.runChecks({ instance: inst, scan: sc.result, pack, modrinth: m.ctx });
+            // Packs get the Modrinth context for their checks, never `replace` / `installDependency`.
+            findings = inst.launcher === 'mrpack' ? checked : mr.enrichFindings(checked, m.ctx, m.resolutions, sc.result.jars);
           } catch {
             // A Modrinth-side failure must not cost the static findings.
             findings = null;
@@ -598,7 +612,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (!sel || !sc) return;
       const exists =
         sel.kind === 'jar'
-          ? !!sc.result?.jars.some((j) => j.id === sel.id)
+          ? !!sc.result?.jars.some((j) => j.id === sel.id) || !!sc.result?.declared?.some((d) => d.path === sel.id)
           : sel.kind === 'finding'
             ? sc.findings.some((f) => f.id === sel.id)
             : !!get().crashes[id]?.analyses[sel.sourceId]?.findings.some((f) => f.id === sel.id);
@@ -636,7 +650,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         if (sc?.pack) input.pack = sc.pack;
         let findings = crashCore.analyzeCrash(input);
         // Modrinth fixes (replace / installDependency) for crash findings too.
-        const m = sc?.result && sc.pack ? usableModrinth(id, sc.result, sc.pack) : null;
+        const m = sc?.result && sc.pack && !isPack(id) ? usableModrinth(id, sc.result, sc.pack) : null;
         if (m) {
           try {
             findings = mr.enrichFindings(findings, m.ctx, m.resolutions, sc?.result?.jars ?? []);
@@ -743,6 +757,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       const m = get().modrinth[id];
       const sc = get().scans[id];
       if (!m || m.status !== 'done' || !m.ctx || m.ctx.offline || !m.filters || !sc || m.notice?.kind === 'rateLimited') return;
+      // Nothing is ever installed into a pack.
+      if (isPack(id)) return;
       const token = mrTokens.get(id) ?? 0;
       const key = m.key;
       let attempted = mrAttempted.get(id);
@@ -998,6 +1014,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
       let projectIds: string[] = [];
       try {
         projectIds = mr.projectIdsOf(identify);
+        // A pack's declared files: also the projects their identified versions require, so a
+        // declared-file E-MISSING-DEP names the dependency by title.
+        if (isPack(id)) projectIds = [...new Set([...projectIds, ...requiredDependencyProjects(identify)])].sort();
       } catch (e) {
         firstError ??= internalError('lookup', e);
       }
@@ -1044,6 +1063,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
 
       // 5–6. Missing dependencies → installDependency fixes; 7. icons, alongside (never when
       // Modrinth was unreachable: no icon request then, CONTRACTS invariant 10).
+      // A pack skips both: nothing is installed into it, and its rows need no icons.
+      if (isPack(id)) return;
       const icons = unreachable || !projects || projects.offline ? null : loadIcons(id, token, Object.keys(ctx.projects).sort());
       await Promise.all([resolveMissing(id), icons]);
     };

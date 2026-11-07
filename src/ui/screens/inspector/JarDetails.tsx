@@ -6,16 +6,16 @@
 import { ArrowSquareOut } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
-import type { JarRecord, ModMeta } from '../../../bindings';
+import type { DeclaredFile, JarRecord, ModMeta } from '../../../bindings';
 import { Chip } from '../../components/Chip';
 import { formatBytes, formatInt } from '../../components/format';
 import { FindingCode, SeverityRail } from '../../components/Severity';
 import { Table, type Column } from '../../components/Table';
 import { LoaderGlyph } from '../../glyphs/LoaderGlyph';
 import { LOADER_NAME } from '../../glyphs/loaders';
-import { jarMatch } from '../../../core/modrinth';
+import { declaredMatch, jarMatch } from '../../../core/modrinth';
 import { crashFindingsCiting, sourceName } from '../../app/crashState';
-import { javaRelease } from '../../app/derive';
+import { envLabel, javaRelease } from '../../app/derive';
 import { openExternal } from '../../app/external';
 import { matchProject, projectUrl, sideSupport, updateWords, viewContext } from '../../app/modrinthState';
 import { useActions, useApp } from '../../app/StoreContext';
@@ -302,17 +302,87 @@ function JarFacts({ jar, byId }: { jar: JarRecord; byId: ReadonlyMap<string, Jar
   );
 }
 
+/**
+ * A file a `.mrpack` index declares (CONTRACTS invariant 15): not in the zip, so there is no jar
+ * record, only the index entry (path, hashes, size, env, download URLs) and what Modrinth knows
+ * of its hash. Read-only: nothing here plans anything.
+ */
+function DeclaredDetails({ instanceId, file }: { instanceId: string; file: DeclaredFile }) {
+  const result = useApp((s) => s.scans[instanceId]?.result ?? null);
+  const m = useApp((s) => s.modrinth[instanceId]);
+  const backendKind = useApp((s) => s.backendKind);
+  const ctx = viewContext(m, result);
+  const match = useMemo(() => {
+    try {
+      return declaredMatch(file, ctx);
+    } catch {
+      return { state: 'unknown' } as const;
+    }
+  }, [file, ctx]);
+  const project = matchProject(match);
+  const env = envLabel(file.client, file.server);
+  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
+  return (
+    <div className="flex flex-col">
+      <div className="flex flex-col px-4 py-2">
+        <h3 className="truncate t-title text-fg" title={project?.title ?? name}>
+          {project?.title ?? name}
+        </h3>
+        <span className="t-mono text-fg-dim">pack index entry</span>
+      </div>
+      <Plate label="Pack index entry" className="border-t border-line">
+        <PlateRow label="Path">{file.path}</PlateRow>
+        <PlateRow label="Size">{formatBytes(file.size)}</PlateRow>
+        <PlateRow label="SHA-1">{file.sha1}</PlateRow>
+        <PlateRow label="Env">{env ? env.words : 'not stated'}</PlateRow>
+        <PlateRow label="Downloads">
+          <span className="flex flex-col">
+            {file.downloads.map((u) => (
+              <span key={u}>{u}</span>
+            ))}
+          </span>
+        </PlateRow>
+      </Plate>
+      <SubLegend>Modrinth</SubLegend>
+      <Plate label="Modrinth">
+        <PlateRow label="Project">
+          {project ? (
+            <button type="button" onClick={() => void openExternal(projectUrl(project), backendKind)} className="flex items-center gap-1 text-left text-fg hover:underline">
+              {project.title}
+              <ArrowSquareOut size={12} aria-hidden />
+            </button>
+          ) : match.state === 'missing' ? (
+            <span className="text-fg-dim">Not on Modrinth (possibly CurseForge or manual)</span>
+          ) : (
+            <span className="text-fg-faint">Unknown (Modrinth off, unreachable, or not looked up yet)</span>
+          )}
+        </PlateRow>
+        {match.state === 'matched' || match.state === 'update' ? (
+          <>
+            <PlateRow label="Version">{match.version.versionNumber}</PlateRow>
+            <PlateRow label="Loaders">{match.version.loaders.join(', ') || '—'}</PlateRow>
+            <PlateRow label="Minecraft">{match.version.gameVersions.join(', ') || '—'}</PlateRow>
+          </>
+        ) : null}
+      </Plate>
+      <CitingFindings instanceId={instanceId} jarId={file.path} />
+    </div>
+  );
+}
+
 export function JarDetails({ instanceId, jarId }: { instanceId: string; jarId: string }) {
   const result = useApp((s) => s.scans[instanceId]?.result ?? null);
   const stub = useApp((s) => s.scans[instanceId]?.stubs.find((j) => j.id === jarId) ?? null);
   const byId = useMemo(() => new Map((result?.jars ?? []).map((j) => [j.id, j])), [result]);
   const jar = byId.get(jarId);
+  const declared = jar ? undefined : result?.declared?.find((d) => d.path === jarId);
 
+  if (declared) return <DeclaredDetails instanceId={instanceId} file={declared} />;
   if (!jar) {
     return (
       <div className="px-4 py-2">
         <h3 className="truncate t-title text-fg">{stub?.fileName ?? jarId}</h3>
-        <p className="t-small text-fg-faint">Details appear when the scan finishes.</p>
+        <p className="t-small text-fg-faint">{result ? 'This file is not in the last scan.' : 'Details appear when the scan finishes.'}</p>
       </div>
     );
   }

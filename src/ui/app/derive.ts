@@ -2,8 +2,8 @@
  * Pure view derivations from the store's scan state: tile states for the scan grid, mod-table
  * rows, rail pips, severity counts and the `PackIdentity` sent with fixes. No React, no IPC.
  */
-import type { DeclaredFile, GridSort, JarRecord, JarStub, MrVersion, PackIdentity } from '../../bindings';
-import type { Finding, ModrinthContext, PackContext, Severity } from '../../core/model';
+import type { DeclaredFile, GridSort, JarRecord, JarStub, PackIdentity } from '../../bindings';
+import type { Finding, PackContext, Severity } from '../../core/model';
 import type { ScanStatus } from '../components/InstanceRailRow';
 import type { ModRow } from '../components/ModTable';
 import type { Tile } from '../components/TileGrid';
@@ -224,29 +224,17 @@ export function overrideEnv(path: string): { short: string; words: string } {
   return { short: 'both', words: 'overrides/ (client and server)' };
 }
 
-/**
- * Modrinth match of a declared file by its sha1 (no jar record exists for it). "Not on Modrinth"
- * only when the hash was part of the completed lookup (`queried`); otherwise unknown.
- */
-export function declaredMatch(
-  file: DeclaredFile,
-  ctx: ModrinthContext | null,
-  queried?: ReadonlySet<string>,
-): { modrinth: ModRow['modrinth']; version: MrVersion | null; title: string | null } {
-  if (!ctx) return { modrinth: { state: 'offline' }, version: null, title: null };
-  const sha1 = file.sha1.trim().toLowerCase();
-  const v = ctx.versions[sha1];
-  if (v) return { modrinth: { state: 'matched' }, version: v, title: ctx.projects[v.projectId]?.title ?? null };
-  const unknown = !sha1 || ctx.offline || ctx.failed.some((h) => h.toLowerCase() === sha1) || !queried?.has(sha1);
-  return { modrinth: { state: unknown ? 'offline' : 'missing' }, version: null, title: null };
-}
+/** Modrinth facts of a declared file for its row (modrinthState.ts `declaredRowView`). */
+export type DeclaredRowView = (file: DeclaredFile) => { modrinth: ModRow['modrinth']; version: string | null; title: string | null; iconUrl?: string | null };
+
+const UNKNOWN_DECLARED: DeclaredRowView = () => ({ modrinth: { state: 'offline' }, version: null, title: null });
 
 /**
  * Mod-table rows of a pack: its override jars (`deriveModRows`, with the override folder as env)
  * followed by the files its index declares (path, Modrinth match, env; never a toggle). A finding
  * counts on a declared row when it cites the file's path as its jar id.
  */
-export function derivePackRows(scan: InstanceScan, ctx: ModrinthContext | null, jarView?: ModrinthRowView, queried?: ReadonlySet<string>): ModRow[] {
+export function derivePackRows(scan: InstanceScan, jarView?: ModrinthRowView, declaredView: DeclaredRowView = UNKNOWN_DECLARED): ModRow[] {
   const jars = deriveModRows(scan, jarView).map((r) => {
     const env = overrideEnv(r.id);
     return { ...r, env: env.short, envTitle: env.words };
@@ -255,16 +243,17 @@ export function derivePackRows(scan: InstanceScan, ctx: ModrinthContext | null, 
   if (!declared.length) return jars;
   const { exact } = findingsByJar(scan.findings);
   const rows = declared.map((d): ModRow => {
-    const m = declaredMatch(d, ctx, queried);
+    const m = declaredView(d);
     const env = envLabel(d.client, d.server);
     const file = d.path.slice(d.path.lastIndexOf('/') + 1);
     return {
       id: d.path,
       name: m.title ?? file,
       modId: null,
-      version: m.version?.versionNumber ?? null,
+      version: m.version,
       loader: null,
       modrinth: m.modrinth,
+      iconUrl: m.iconUrl ?? null,
       findings: exact.get(d.path) ?? zero(),
       enabled: true,
       declared: true,
