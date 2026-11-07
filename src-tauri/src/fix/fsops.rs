@@ -129,13 +129,14 @@ pub fn random_hex(words: usize) -> String {
     out
 }
 
+/// ERROR_NOT_SAME_DEVICE (Windows) / EXDEV (Unix).
+#[cfg(windows)]
+const CROSS_DEVICE: i32 = 17;
+#[cfg(not(windows))]
+const CROSS_DEVICE: i32 = 18;
+
 fn is_cross_device(e: &std::io::Error) -> bool {
-    // EXDEV (Unix) / ERROR_NOT_SAME_DEVICE (Windows).
-    #[cfg(windows)]
-    const CODE: i32 = 17;
-    #[cfg(not(windows))]
-    const CODE: i32 = 18;
-    e.raw_os_error() == Some(CODE) || e.kind() == std::io::ErrorKind::CrossesDevices
+    e.raw_os_error() == Some(CROSS_DEVICE) || e.kind() == std::io::ErrorKind::CrossesDevices
 }
 
 fn exists_error(dst: &Path) -> Error {
@@ -154,6 +155,9 @@ pub(crate) mod hook {
     pub enum Stage {
         /// Right before the rename (the source is still in place).
         Before,
+        /// Cross-volume moves only: the temporary copy is written and verified, right before it
+        /// is renamed into place (the hook's `dst` is the temporary copy).
+        Copied,
         /// Right after a successful rename, before the caller records it.
         After,
     }
@@ -163,6 +167,8 @@ pub(crate) mod hook {
         Go,
         /// The move fails with an I/O error (`Before` only: nothing moved).
         Fail,
+        /// `Before` only: the rename fails as "not the same device", so the move copies.
+        CrossDevice,
         /// Panic: the process "dies" here; the manifest on disk stays as last saved.
         Crash,
     }
@@ -186,6 +192,7 @@ pub(crate) mod hook {
         match act {
             Act::Go => Ok(()),
             Act::Fail => Err(std::io::Error::other("injected failure (test)")),
+            Act::CrossDevice => Err(std::io::Error::from_raw_os_error(super::CROSS_DEVICE)),
             Act::Crash => panic!("simulated crash (test) at {stage:?} {} -> {}", src.display(), dst.display()),
         }
     }
@@ -278,14 +285,27 @@ fn link_then_unlink(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// volumes) a verified copy (mtime kept) put into place with the same primitive, and only then
 /// is `src` removed (if that fails, the copy is removed again and the move fails, so the file
 /// stays where it was). On Windows a file another program holds open fails here (sharing
-/// violation) instead of being moved.
+/// violation) instead of being moved. The cross-volume copy goes to a random temporary name
+/// next to `dst`; use [`move_file_named`] when that name must be recorded ahead.
 pub fn move_file(src: &Path, dst: &Path) -> Result<()> {
+    move_via(src, dst, None)
+}
+
+/// [`move_file`] whose cross-volume temporary copy is exactly `temp` (in `dst`'s folder, named in
+/// a write-ahead record so a copy left by a crash can be found and moved away).
+pub fn move_file_named(src: &Path, dst: &Path, temp: &Path) -> Result<()> {
+    move_via(src, dst, Some(temp))
+}
+
+fn move_via(src: &Path, dst: &Path, temp: Option<&Path>) -> Result<()> {
     #[cfg(test)]
-    hook::check(hook::Stage::Before, src, dst).map_err(|e| Error::io(src, e))?;
-    match rename_noreplace(src, dst) {
+    let renamed = hook::check(hook::Stage::Before, src, dst).and_then(|()| rename_noreplace(src, dst));
+    #[cfg(not(test))]
+    let renamed = rename_noreplace(src, dst);
+    match renamed {
         Ok(()) => sync_parent(dst),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(exists_error(dst)),
-        Err(e) if is_cross_device(&e) => copy_then_remove(src, dst)?,
+        Err(e) if is_cross_device(&e) => copy_then_remove(src, dst, temp)?,
         Err(e) => return Err(Error::io(src, e)),
     }
     #[cfg(test)]
@@ -293,14 +313,22 @@ pub fn move_file(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_then_remove(src: &Path, dst: &Path) -> Result<()> {
+fn copy_then_remove(src: &Path, dst: &Path, temp: Option<&Path>) -> Result<()> {
     let meta = fs::symlink_metadata(src).map_err(|e| Error::io(src, e))?;
     if !meta.is_file() {
         return Err(Error::Invalid(format!("{} is a link or folder and cannot be moved to another drive", src.display())));
     }
     let parent = dst.parent().ok_or_else(|| Error::Invalid(format!("{} has no parent folder", dst.display())))?;
-    let name = dst.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let temp = parent.join(format!(".{name}.{}.part", random_hex(1)));
+    let temp = match temp {
+        Some(t) if t.parent() == Some(parent) => t.to_path_buf(),
+        Some(t) => {
+            return Err(Error::Internal(format!("the temporary copy {} is not next to {}", t.display(), dst.display())))
+        }
+        None => {
+            let name = dst.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            parent.join(format!(".{name}.{}.part", random_hex(1)))
+        }
+    };
     let mut created = false;
     let result = (|| {
         let want = sha1_file(src)?;
@@ -320,6 +348,8 @@ fn copy_then_remove(src: &Path, dst: &Path) -> Result<()> {
         if got != want {
             return Err(Error::Corrupt { path: dst.display().to_string(), reason: "the copy does not match the original".into() });
         }
+        #[cfg(test)]
+        hook::check(hook::Stage::Copied, src, &temp).map_err(|e| Error::io(&temp, e))?;
         match rename_noreplace(&temp, dst) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(exists_error(dst)),
@@ -352,6 +382,27 @@ fn sync_parent(path: &Path) {
     let _ = path;
 }
 
+/// `FlushFileBuffers` on an open handle (a file, or a folder opened with
+/// `FILE_FLAG_BACKUP_SEMANTICS`): its data and metadata reach the disk.
+#[cfg(windows)]
+fn flush_handle(f: &fs::File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::FlushFileBuffers;
+    // SAFETY: the handle is owned by `f`, open and valid for the duration of the call.
+    unsafe { FlushFileBuffers(HANDLE(f.as_raw_handle())) }.map_err(|e| win_io(&e))
+}
+
+/// Flush a folder's directory entries (Windows): the folder is opened for writing with
+/// `FILE_FLAG_BACKUP_SEMANTICS` (needed to open a folder at all), then `FlushFileBuffers`.
+#[cfg(windows)]
+fn flush_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+    let d = fs::OpenOptions::new().write(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0).open(dir)?;
+    flush_handle(&d)
+}
+
 /// Replace the app's own file `dst` with `src`, durably (manifests only, never user files).
 fn rename_replace_durable(src: &Path, dst: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
@@ -371,9 +422,12 @@ fn rename_replace_durable(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Write `bytes` to `path` atomically and durably: temp file in the same folder → fsync →
-/// write-through rename over it. Only used for the app's own files (manifests), never for user
-/// files.
+/// Write `bytes` to `path` atomically and durably: temp file in the same folder → flushed to
+/// disk → write-through rename over it → the folder's entries flushed. On Windows that is
+/// `FlushFileBuffers` on the temp file's handle before the rename and on the folder's handle
+/// after it, so the record is on disk on its own volume, whatever the instance's volume does;
+/// elsewhere fsync of the file and of the folder. Only used for the app's own files
+/// (manifests), never for user files.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().ok_or_else(|| Error::Invalid(format!("{} has no parent folder", path.display())))?;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -383,17 +437,28 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&temp).map_err(|e| Error::io(&temp, e))?;
         created = true;
         f.write_all(bytes).map_err(|e| Error::io(&temp, e))?;
+        #[cfg(windows)]
+        flush_handle(&f).map_err(|e| Error::io(&temp, e))?;
+        #[cfg(not(windows))]
         f.sync_all().map_err(|e| Error::io(&temp, e))?;
         drop(f);
         let mut last = None;
         for attempt in 0..3 {
             match rename_replace_durable(&temp, path) {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    last = None;
+                    break;
+                }
                 Err(e) => last = Some(e),
             }
             std::thread::sleep(std::time::Duration::from_millis(20 * (attempt + 1)));
         }
-        Err(Error::io(path, last.unwrap_or_else(|| std::io::Error::other("rename failed"))))
+        if let Some(e) = last {
+            return Err(Error::io(path, e));
+        }
+        #[cfg(windows)]
+        flush_dir(parent).map_err(|e| Error::io(parent, e))?;
+        Ok(())
     })();
     if written.is_err() && created && !is_absent(&temp) {
         let _ = fs::remove_file(&temp);
@@ -479,7 +544,7 @@ mod tests {
         let old = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
         fs::File::options().write(true).open(&a).expect("open").set_modified(old).expect("set mtime");
         let b = t.path().join("b.jar");
-        copy_then_remove(&a, &b).expect("copy move");
+        copy_then_remove(&a, &b, None).expect("copy move");
         assert!(is_absent(&a));
         assert_eq!(fs::read(&b).expect("r"), b"payload");
         assert_eq!(fs::metadata(&b).expect("meta").modified().expect("mtime"), old);
@@ -489,10 +554,48 @@ mod tests {
         // Across volumes, an existing destination is refused too.
         let c = t.path().join("c.jar");
         fs::write(&c, b"other").expect("w");
-        assert!(matches!(copy_then_remove(&b, &c), Err(Error::Conflict(_))));
+        assert!(matches!(copy_then_remove(&b, &c, None), Err(Error::Conflict(_))));
         assert_eq!(fs::read(&c).expect("r"), b"other");
         assert_eq!(fs::read(&b).expect("r"), b"payload");
         assert_eq!(fs::read_dir(t.path()).expect("ls").count(), 2);
+    }
+
+    #[test]
+    fn a_named_cross_volume_copy_uses_exactly_that_temp_and_a_crash_leaves_it() {
+        let t = tempfile::tempdir().expect("tmp");
+        let a = t.path().join("a.jar");
+        fs::write(&a, b"payload").expect("w");
+        let b = t.path().join("b.jar");
+        let temp = t.path().join(".b.jar.0123456789abcdef.part");
+        // A temp outside the destination's folder is refused (it would not be on its volume).
+        let elsewhere = t.path().join("sub").join(".b.jar.0123456789abcdef.part");
+        assert!(matches!(copy_then_remove(&a, &b, Some(&elsewhere)), Err(Error::Internal(_))));
+        hook::set(|stage, _, _| match stage {
+            hook::Stage::Before => hook::Act::CrossDevice,
+            hook::Stage::Copied => hook::Act::Crash,
+            hook::Stage::After => hook::Act::Go,
+        });
+        let r = std::panic::catch_unwind(|| move_file_named(&a, &b, &temp));
+        hook::clear();
+        assert!(r.is_err(), "the simulated crash did not happen");
+        assert_eq!(fs::read(&temp).expect("the temp copy is left"), b"payload");
+        assert!(is_absent(&b));
+        assert_eq!(fs::read(&a).expect("source"), b"payload");
+        // Without a crash the named temp is used and gone afterwards.
+        fs::remove_file(&temp).expect("rm");
+        hook::set(|stage, _, _| if stage == hook::Stage::Before { hook::Act::CrossDevice } else { hook::Act::Go });
+        let r = move_file_named(&a, &b, &temp);
+        hook::clear();
+        r.expect("copy move");
+        assert!(is_absent(&a) && is_absent(&temp));
+        assert_eq!(fs::read(&b).expect("r"), b"payload");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn folders_can_be_flushed() {
+        let t = tempfile::tempdir().expect("tmp");
+        flush_dir(t.path()).expect("FlushFileBuffers on a folder handle");
     }
 
     #[test]

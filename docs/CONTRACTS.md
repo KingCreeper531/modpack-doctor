@@ -301,13 +301,18 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       host is not in Modrinth's allowlist (`cdn.modrinth.com`, `github.com`,
       `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). Override jars
       get every static check. Packs never get fix actions (read-only); findings carry no fixes.
+    - Also (M7, implementation limits): one override jar ≤ 256 MiB (skipped above); a drop handles
+      at most 32 files; when `overrides/X` and `client-overrides/X`/`server-overrides/X` both exist,
+      both are scanned and the shadowed one gets a `ScanIssue`; a pack's `modCount` = declared
+      `.jar` files + override jars; an unusable index gives `metadataSource: inferred`.
 16. **Reports (M7).** `src/core/report` (frozen API in its `index.ts`) builds the report from the
     same data the UI shows: instance, effective pack, scan summary, static + crash findings with
     evidence, Modrinth match summary. Markdown and JSON (`schemaVersion: 1`). No absolute paths of
     the user's home in the report: paths are shown relative to the game dir, and the game dir with
     the home folder replaced by `~`. `save_report` opens the native save dialog with the sanitized
     default name and the format's extension (`.md` / `.json`, enforced), contents ≤ 16 MiB, writes
-    temp + rename in the chosen folder. That path is the one write outside PathGuard roots, allowed
+    temp + rename in the chosen folder. An existing file is replaced only when the dialog confirmed that exact path;
+    if the extension had to be appended, an existing file is a `Conflict`. That path is the one write outside PathGuard roots, allowed
     because the user picked it in a native dialog; nothing else may be written there.
 17. **Interaction (M7).** Shortcuts: Ctrl/Cmd+K palette, J/K next/previous finding, Enter expand,
     Ctrl/Cmd+R rescan, Esc closes the top-most layer. Shortcuts never fire while typing in an input,

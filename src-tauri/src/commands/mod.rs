@@ -8,6 +8,8 @@ mod fix;
 mod instances;
 mod logs;
 mod modrinth;
+mod mrpack;
+mod report;
 mod scanning;
 
 #[cfg(test)]
@@ -29,6 +31,8 @@ use instances::{blocking, discover_blocking, pick_folder};
 pub use logs::{disable_watch, enable_watch, forget_instance, remove_manual_and_forget};
 pub use fix::*;
 pub use modrinth::*;
+pub use mrpack::*;
+pub use report::*;
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -77,7 +81,14 @@ pub async fn remove_manual_instance(state: State<'_, AppState>, instance_id: Str
     let st = AppState::clone(&state);
     let _scope = st.scope_lock.clone().write_owned().await;
     // Also stops its watcher and drops its `watched` entry and pack override.
-    Ok(blocking(move || remove_manual_and_forget(&st, &instance_id)).await?)
+    Ok(blocking(move || {
+        // An opened `.mrpack` is closed (session only; CONTRACTS invariant 15).
+        if st.instance(&instance_id).is_ok_and(|i| i.instance.launcher == Launcher::Mrpack) {
+            return mrpack::remove_pack_and_forget(&st, &instance_id);
+        }
+        remove_manual_and_forget(&st, &instance_id)
+    })
+    .await?)
 }
 
 /// Native folder picker for an extra launcher data root (portable Prism/MultiMC, custom
@@ -125,12 +136,7 @@ pub async fn remove_launcher_root(state: State<'_, AppState>, path: String) -> C
     .await?)
 }
 
-/// Opens a native file picker filtered to `.mrpack`; registers it as an Mrpack instance.
-#[tauri::command]
-#[specta::specta]
-pub async fn pick_mrpack(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<Option<Instance>> {
-    not_yet("Opening .mrpack files" /* M7 */)
-}
+// `pick_mrpack` lives in `mrpack.rs` (glob re-export above), with the drop handler.
 
 // ── Scanning ─────────────────────────────────────────────────────────────────
 
@@ -140,11 +146,11 @@ pub async fn pick_mrpack(_app: AppHandle, _state: State<'_, AppState>) -> Cmd<Op
 pub async fn scan_instance(app: AppHandle, state: State<'_, AppState>, instance_id: String) -> Cmd<ScanResult> {
     let st = AppState::clone(&state);
     let inst = st.instance(&instance_id)?;
-    if inst.instance.launcher == Launcher::Mrpack {
-        return not_yet("Scanning .mrpack files" /* M7 */);
-    }
     let sink = EventSink::new(app);
     let _scope = st.scope_lock.clone().read_owned().await;
+    if inst.instance.launcher == Launcher::Mrpack {
+        return Ok(blocking(move || mrpack::scan_registered_pack(&st.guard, &st.scans, &inst, &sink)).await?);
+    }
     Ok(blocking(move || scan_registered(&st.guard, &st.scan_cache, &st.scans, &inst, &sink)).await?)
 }
 
@@ -236,17 +242,7 @@ pub async fn set_settings(_app: AppHandle, state: State<'_, AppState>, patch: Se
     Ok(settings)
 }
 
-/// Rust opens the save dialog; returns the saved path, or None if cancelled.
-#[tauri::command]
-#[specta::specta]
-pub async fn save_report(
-    _app: AppHandle,
-    _default_name: String,
-    _format: ReportFormat,
-    _contents: String,
-) -> Cmd<Option<String>> {
-    not_yet("Saving reports" /* M7 */)
-}
+// `save_report` lives in `report.rs` (glob re-export above).
 
 /// Re-themes the native title bar (Windows DWM); no-op elsewhere. Called on every resolved theme change.
 #[tauri::command]

@@ -9,6 +9,7 @@ pub mod jar_id;
 pub mod logs;
 pub mod model;
 pub mod modrinth;
+pub mod mrpack;
 pub mod paths;
 pub mod process;
 pub mod scan;
@@ -144,6 +145,11 @@ pub fn run() {
                     api.prevent_close();
                     refuse_to_close(window.app_handle());
                 }
+            }
+            // Files dropped on the window: `.mrpack`s are opened, everything else is reported
+            // as `DropRejected` (CONTRACTS.md invariants 1 and 15). Paths never reach the UI.
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                commands::handle_drop(window.app_handle().clone(), paths.clone());
             }
         })
         .build(tauri::generate_context!());

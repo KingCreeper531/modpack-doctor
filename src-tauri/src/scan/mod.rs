@@ -7,7 +7,9 @@
 //! - [`scan_paths`] scans relative paths under a root (e.g. `.mrpack` overrides). Paths are
 //!   joined lexically (absolute paths, drive prefixes and `..` are refused). UI-supplied ids
 //!   must still go through `PathGuard::join_relative` / `jar_id::resolve` before reaching here.
-//! - [`scan_jar_bytes`] analyses one in-memory jar plus all of its nested jars.
+//! - [`scan_jar_bytes`] analyses one in-memory jar plus all of its nested jars;
+//!   [`scan_top_level_bytes`] does the same for a top-level jar (e.g. a `.mrpack` override read
+//!   from the pack) and also returns the `ScanIssue`s.
 //! - [`ScanCache`] lets a caller skip unchanged jars across rescans.
 //!
 //! Scoping: every top-level file is passed through `PathGuard::check_existing` before it is
@@ -121,6 +123,27 @@ pub fn scan_jar_bytes(id: &str, path: &str, file_name: &str, bytes: &[u8], depth
     scan_into(&ctx, bytes, &mut Budget::new(DEFAULT_LIMITS), &mut out, &mut issues);
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out
+}
+
+/// Scan one in-memory **top-level** jar (`id` / `path` / `file_name` as they should appear in
+/// the record; `mtime_ms` 0) and all of its nested jars, under the same zip-bomb budget as a jar
+/// on disk. Returns the records (sorted by id; the jar itself has `id == id`) and the
+/// `ScanIssue`s the scan raised (damaged jar, limits reached), as a directory scan would.
+pub fn scan_top_level_bytes(id: &str, path: &str, file_name: &str, bytes: &[u8]) -> (Vec<JarRecord>, Vec<ScanIssue>) {
+    let ctx = JarCtx {
+        id: id.to_string(),
+        path: path.to_string(),
+        file_name: file_name.to_string(),
+        depth: 0,
+        parent_id: None,
+        disabled: is_disabled_path(path),
+        mtime_ms: 0,
+    };
+    let mut out = Vec::new();
+    let mut issues = Vec::new();
+    scan_into(&ctx, bytes, &mut Budget::new(DEFAULT_LIMITS), &mut out, &mut issues);
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    (out, issues)
 }
 
 // ---------------------------------------------------------------------------------------------
