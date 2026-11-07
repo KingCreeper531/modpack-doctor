@@ -1,15 +1,18 @@
 /** Small view hooks shared by the screens. */
 import { useEffect, useLayoutEffect, useState } from 'react';
 
-/** Wall clock that re-renders the caller every `intervalMs` while `active`. */
-export function useNow(intervalMs: number, active = true): number {
+/**
+ * Wall clock that re-renders the caller every `intervalMs` while `active`. A change of `restart`
+ * (e.g. a new countdown target) reads the clock again at once.
+ */
+export function useNow(intervalMs: number, active = true, restart?: unknown): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
     setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(id);
-  }, [intervalMs, active]);
+  }, [intervalMs, active, restart]);
   return now;
 }
 

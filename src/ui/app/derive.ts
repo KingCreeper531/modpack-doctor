@@ -128,8 +128,16 @@ function stripRank({ rank: _rank, ...t }: TileWithRank): Tile {
   return t;
 }
 
-/** Mod-table rows in file-name order; nested jars become children. Modrinth is `—` until M5. */
-export function deriveModRows(scan: InstanceScan): ModRow[] {
+/** Per-jar Modrinth column and icon (modrinthState.ts `modrinthRowView`). */
+export type ModrinthRowView = (jar: JarRecord) => Pick<ModRow, 'modrinth' | 'iconUrl'>;
+
+const UNKNOWN_VIEW: ModrinthRowView = () => ({ modrinth: { state: 'offline' }, iconUrl: null });
+
+/**
+ * Mod-table rows in file-name order; nested jars become children. The Modrinth column is `—`
+ * (unknown) unless `modrinth` says otherwise.
+ */
+export function deriveModRows(scan: InstanceScan, modrinth: ModrinthRowView = UNKNOWN_VIEW): ModRow[] {
   const stubs = displayStubs(scan);
   if (!scan.result) {
     return stubs.map((s) => ({
@@ -148,13 +156,15 @@ export function deriveModRows(scan: InstanceScan): ModRow[] {
   const row = (j: JarRecord): ModRow => {
     const meta = j.mods[0];
     const kids = j.nested.map((id) => byId.get(id)).filter((k): k is JarRecord => !!k);
+    const mr = modrinth(j);
     const r: ModRow = {
       id: j.id,
       name: meta?.name ?? meta?.modId ?? j.fileName,
       modId: meta?.modId ?? null,
       version: meta?.version ?? null,
       loader: j.loaders[0] ?? null,
-      modrinth: { state: 'offline' },
+      modrinth: mr.modrinth,
+      iconUrl: mr.iconUrl ?? null,
       findings: exact.get(j.id) ?? zero(),
       enabled: !j.disabled,
     };

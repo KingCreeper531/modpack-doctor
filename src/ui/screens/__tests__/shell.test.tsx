@@ -75,9 +75,10 @@ describe('shell', () => {
     expect(screen.getByText('1 E · 1 W · 0 I')).toBeTruthy();
   });
 
-  it('shows the Modrinth-off notice when Modrinth is disabled', async () => {
-    await renderApp({ scenario: 'offline' });
-    expect(screen.getByText('Modrinth off — static checks only')).toBeTruthy();
+  it('shows a quiet Modrinth off segment (no notice) when Modrinth is disabled', async () => {
+    await renderApp({ scenario: 'modrinthoff' });
+    expect(screen.getByText('Modrinth off')).toBeTruthy();
+    expect(screen.queryByText(/Modrinth unreachable/)).toBeNull();
   });
 
   it('triage: a click expands the row, shows it in the inspector, and a fix renders its refusal inline', async () => {
@@ -129,21 +130,21 @@ describe('shell', () => {
   it('inspector override editor stores the override and re-runs the checks', async () => {
     const m = await renderApp();
     await scanned(m);
-    expect(m.calls).toHaveLength(1);
     const form = screen.getByRole('form', { name: 'Pack identity override' });
     fireEvent.change(within(form).getByLabelText('Minecraft'), { target: { value: '1.20.4' } });
     fireEvent.change(within(form).getByLabelText('Loader'), { target: { value: 'neoforge' } });
     fireEvent.change(within(form).getByLabelText('Loader ver.'), { target: { value: '20.4.80' } });
     await act(async () => {
       fireEvent.click(within(form).getByRole('button', { name: 'Apply and recheck' }));
-      await until(() => m.calls.length === 2);
+      await until(() => m.calls.some((c) => c.pack.source === 'override'));
     });
     expect(m.backend.settings().overrides[ATM.id]).toEqual({ mcVersion: '1.20.4', loader: { kind: 'neoforge', version: '20.4.80' }, side: null });
-    expect(m.calls[1]!.pack).toMatchObject({ mcVersion: '1.20.4', source: 'override' });
+    expect(m.calls.find((c) => c.pack.source === 'override')!.pack).toMatchObject({ mcVersion: '1.20.4', source: 'override' });
     expect(screen.getByText('from your override')).toBeTruthy();
     await act(async () => {
+      const before = m.calls.length;
       fireEvent.click(screen.getByRole('button', { name: 'Clear override' }));
-      await until(() => m.calls.length === 3);
+      await until(() => m.calls.length > before && m.calls.at(-1)!.pack.source !== 'override');
     });
     expect(m.backend.settings().overrides[ATM.id]).toBeUndefined();
   });

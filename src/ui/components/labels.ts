@@ -44,12 +44,27 @@ export function probeResult(r: ProbeResult): { text: string; tone: ProbeTone } {
 
 export const SEVERITY_WORD: Record<Severity, string> = { error: 'ERR', warning: 'WARN', info: 'INFO' };
 
+/** What a fix button knows about a Modrinth version (`replace` / `installDependency`). */
+export interface FixVersionInfo {
+  versionNumber: string;
+  /** Not a release: labelled "(beta)" (CONTRACTS invariant 8). */
+  beta: boolean;
+  /** Modrinth project title. */
+  title?: string;
+}
+
+/** Modrinth version id → facts, from the instance's Modrinth context and resolutions. */
+export type FixVersions = Readonly<Record<string, FixVersionInfo>>;
+
 /**
  * Default fix-button label. `names` maps jar ids to display names (mod name or file name);
- * unknown ids fall back to the jar's file name.
+ * unknown ids fall back to the jar's file name. `versions` names the Modrinth versions of
+ * `replace` / `installDependency` fixes: `Update Sodium to 0.5.11`,
+ * `Update Sodium to 0.6.0-beta.2 (beta)`, `Install Cloth Config 15.0.140`.
  */
-export function fixLabel(fix: FixAction, names: Readonly<Record<string, string>> = {}): string {
+export function fixLabel(fix: FixAction, names: Readonly<Record<string, string>> = {}, versions: FixVersions = {}): string {
   const name = (id: string) => names[id] ?? basename(id);
+  const beta = (v: FixVersionInfo) => (v.beta ? ' (beta)' : '');
   switch (fix.kind) {
     case 'disable':
       return `Disable ${name(fix.jarId)}`;
@@ -57,10 +72,16 @@ export function fixLabel(fix: FixAction, names: Readonly<Record<string, string>>
       return `Enable ${name(fix.jarId)}`;
     case 'removeDuplicate':
       return `Remove ${name(fix.remove)}, keep ${name(fix.keep)}`;
-    case 'replace':
-      return `Replace ${name(fix.jarId)}`;
-    case 'installDependency':
-      return `Install ${fix.modId}`;
+    case 'replace': {
+      const v = versions[fix.versionId];
+      if (!v) return `Replace ${name(fix.jarId)}`;
+      return `Update ${v.title ?? name(fix.jarId)} to ${v.versionNumber}${beta(v)}`;
+    }
+    case 'installDependency': {
+      const v = versions[fix.versionId];
+      if (!v) return `Install ${fix.modId}`;
+      return `Install ${v.title ?? fix.modId} ${v.versionNumber}${beta(v)}`;
+    }
     case 'manual':
       return 'Show steps';
   }

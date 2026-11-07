@@ -2,7 +2,10 @@
  * Summary strip (DESIGN.md §5, §10): one 32px line of mono segments separated by ` · `.
  * `1.20.1 · Forge 47.3.0 · 214 mods · 3 errors · 5 warnings · scanned 2.1s ago`.
  * Error / warning counts are coloured only when non-zero; the age is `fg-faint`.
- * Variants: `scanning 132/214` while a scan runs; the offline notice with an `info` pip.
+ * Variants: `scanning 132/214` while a scan runs; the Modrinth notice (`Modrinth unreachable —
+ * static checks only`, or the rate-limit countdown) in `fg-dim` with an `info` pip. When the user
+ * switched Modrinth off, a quiet `Modrinth off` segment in `fg-faint` instead: a choice, not a
+ * degraded state, so it gets no pip.
  */
 import { Fragment, type ReactNode } from 'react';
 
@@ -24,8 +27,10 @@ export interface SummaryStripProps {
   scanning?: { done: number; total: number } | null;
   /** Modrinth unreachable: static checks only. */
   offline?: boolean;
-  /** Replaces the offline notice text, e.g. when Modrinth is switched off in settings. */
+  /** Replaces the offline notice text (e.g. the rate-limit countdown). */
   offlineNotice?: string;
+  /** Modrinth is switched off in settings: a `Modrinth off` segment, no notice. */
+  modrinthOff?: boolean;
   className?: string;
 }
 
@@ -39,6 +44,7 @@ export function SummaryStrip({
   scanning = null,
   offline = false,
   offlineNotice = 'Modrinth unreachable — static checks only',
+  modrinthOff = false,
   className,
 }: SummaryStripProps) {
   const segments: Array<{ key: string; node: ReactNode }> = [
@@ -74,6 +80,8 @@ export function SummaryStrip({
     });
   }
 
+  if (modrinthOff) segments.push({ key: 'mr-off', node: <span className="text-fg-faint">Modrinth off</span> });
+
   return (
     <div className={cx('flex h-8 min-w-0 items-center gap-4 t-mono', className)}>
       <p className="min-w-0 truncate">
@@ -84,7 +92,7 @@ export function SummaryStrip({
           </Fragment>
         ))}
       </p>
-      {offline ? (
+      {offline && !modrinthOff ? (
         <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status">
           <Pip tone="info" />
           {offlineNotice}

@@ -21,6 +21,7 @@ import { TriageRow } from '../components/TriageRow';
 import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { CrashesView } from './CrashesView';
+import { useFixVersions } from './modrinthHooks';
 
 function StaticFindings({ instanceId }: { instanceId: string }) {
   const s = useAppShallow((st) => {
@@ -42,6 +43,7 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
   const expandRequest = useApp((st) => st.expandFindingId);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(expandRequest ? [expandRequest] : []));
   const listRef = useRef<HTMLDivElement>(null);
+  const versions = useFixVersions(instanceId);
 
   // A finding selected from outside the list (URL hook, later the palette) opens and scrolls in.
   useEffect(() => {
@@ -106,6 +108,7 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
                 }}
                 selected={selection?.kind === 'finding' && selection.id === f.id}
                 jarNames={jarNames}
+                fixVersions={versions}
                 selectedJarId={selection?.kind === 'jar' ? selection.id : null}
                 onJarClick={a.revealJar}
                 onFix={(fix) => void a.fix(f.id, fix, 'triage')}

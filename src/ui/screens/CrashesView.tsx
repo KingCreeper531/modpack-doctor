@@ -23,6 +23,7 @@ import { TriageRow } from '../components/TriageRow';
 import { digestView, LOG_KIND_LABEL, sourceDir, sourceName, type CrashAnalysis, type CrashPane } from '../app/crashState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { useNow } from './hooks';
+import { useFixVersions } from './modrinthHooks';
 
 const TONE: Record<Severity, PipTone> = { error: 'error', warning: 'warning', info: 'info' };
 
@@ -110,6 +111,7 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
     for (const j of result?.jars ?? []) names[j.id] = j.fileName;
     return names;
   }, [result]);
+  const versions = useFixVersions(instanceId);
   const findings = analysis.findings;
   // The top error opens by itself the first time this source's findings appear.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -153,6 +155,7 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
             }}
             selected={selection?.kind === 'crash' && selection.id === f.id && selection.sourceId === source.id}
             jarNames={jarNames}
+            fixVersions={versions}
             selectedJarId={selection?.kind === 'jar' ? selection.id : null}
             onJarClick={a.revealJar}
             onFix={(fix) => void a.fix(f.id, fix, 'triage')}

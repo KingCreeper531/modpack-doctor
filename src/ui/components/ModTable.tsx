@@ -20,9 +20,10 @@ import { Toggle } from './Toggle';
 
 export type ModrinthMatch =
   | { state: 'matched' }
-  | { state: 'update'; version: string }
+  /** `beta`: the suggested version is not a release (labelled `beta`). */
+  | { state: 'update'; version: string; beta?: boolean }
   | { state: 'missing' }
-  /** Lookup unavailable (offline / failed). */
+  /** Unknown: lookup off, offline, failed, or not run yet (`—`). */
   | { state: 'offline' };
 
 export interface ModRow {
@@ -77,16 +78,30 @@ function ModrinthCell({ m }: { m: ModrinthMatch }) {
       return <span className="t-small text-ok">matched</span>;
     case 'update':
       return (
-        <span className="flex min-w-0 items-baseline gap-1 text-signal">
+        <span className="flex min-w-0 items-baseline gap-1 text-signal" title={`update ${m.version}${m.beta ? ' (beta)' : ''}`}>
           <span className="t-small">update</span>
           <span className="truncate t-mono">{m.version}</span>
+          {m.beta ? <span className="shrink-0 t-small">beta</span> : null}
         </span>
       );
     case 'missing':
       return <span className="truncate t-small text-fg-faint">not on Modrinth</span>;
     case 'offline':
-      return <span className="t-mono text-fg-faint">—</span>;
+      return (
+        <span className="t-mono text-fg-faint" title="Modrinth status unknown">
+          —
+        </span>
+      );
   }
+}
+
+/** The 16px Modrinth icon, or the loader glyph when there is none or it fails to load. */
+function RowIcon({ url, loader }: { url: string | null; loader: LoaderKind | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (url && failed !== url) {
+    return <img src={url} alt="" width={16} height={16} className="size-4 rounded-1" onError={() => setFailed(url)} data-testid="mod-icon" />;
+  }
+  return <LoaderGlyph kind={loader} size={16} />;
 }
 
 function StatusCounts({ f }: { f: ModRow['findings'] }) {
@@ -198,11 +213,7 @@ export function ModTable({
                     <SeverityRail severity={worst} />
                   </Cell>
                   <Cell flush align="center" className={r.enabled ? 'text-fg-dim' : 'text-fg-faint'}>
-                    {r.iconUrl ? (
-                      <img src={r.iconUrl} alt="" width={16} height={16} className="size-4 rounded-1" />
-                    ) : (
-                      <LoaderGlyph kind={r.loader} size={16} />
-                    )}
+                    <RowIcon url={r.iconUrl ?? null} loader={r.loader} />
                   </Cell>
                   <Cell>
                     <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: f.depth * 16 }}>

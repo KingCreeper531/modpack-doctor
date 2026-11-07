@@ -41,6 +41,19 @@ describe('labels', () => {
     expect(fixLabel({ kind: 'disable', jarId: 'mods/sodium.jar' })).toBe('Disable sodium.jar');
     expect(fixLabel({ kind: 'disable', jarId: 'mods/sodium.jar' }, { 'mods/sodium.jar': 'Sodium' })).toBe('Disable Sodium');
     expect(fixLabel({ kind: 'removeDuplicate', keep: 'mods/a.jar', remove: 'mods/b.jar' })).toBe('Remove b.jar, keep a.jar');
+    // Modrinth fixes (M5): named versions, a beta label, readable fallbacks without facts.
+    const versions = {
+      v1: { versionNumber: '0.5.11', beta: false, title: 'Sodium' },
+      v2: { versionNumber: '0.6.0-beta.2', beta: true, title: 'Sodium' },
+      v3: { versionNumber: '15.0.140', beta: false, title: 'Cloth Config' },
+      v4: { versionNumber: '2.0.0', beta: false },
+    };
+    expect(fixLabel({ kind: 'replace', jarId: 'mods/sodium.jar', versionId: 'v1' }, {}, versions)).toBe('Update Sodium to 0.5.11');
+    expect(fixLabel({ kind: 'replace', jarId: 'mods/sodium.jar', versionId: 'v2' }, {}, versions)).toBe('Update Sodium to 0.6.0-beta.2 (beta)');
+    expect(fixLabel({ kind: 'replace', jarId: 'mods/x.jar', versionId: 'v4' }, { 'mods/x.jar': 'X' }, versions)).toBe('Update X to 2.0.0');
+    expect(fixLabel({ kind: 'replace', jarId: 'mods/x.jar', versionId: 'gone' }, {}, versions)).toBe('Replace x.jar');
+    expect(fixLabel({ kind: 'installDependency', modId: 'cloth_config', versionId: 'v3' }, {}, versions)).toBe('Install Cloth Config 15.0.140');
+    expect(fixLabel({ kind: 'installDependency', modId: 'cloth_config', versionId: 'gone' })).toBe('Install cloth_config');
   });
 });
 

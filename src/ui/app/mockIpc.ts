@@ -5,15 +5,22 @@
  * way the Rust scanner reports jars as rayon finishes them.
  *
  * URL parameters (screenshots and manual review):
- * - `?scenario=default|empty|scanning|errors|offline|crash`
+ * - `?scenario=default|empty|scanning|errors|offline|ratelimit|modrinthoff|crash`
  *   - `empty`: no instances, so the app shows the probes table.
  *   - `scanning`: the first scan freezes mid-way (about 55 % of jars reported).
  *   - `errors`: scanning the first instance fails with a permission error, and so does listing
  *     its logs; fixes fail as always.
- *   - `offline`: Modrinth is switched off in settings (static checks only).
+ *   - `offline`: Modrinth is unreachable: every lookup answers `offline` with nothing cached.
+ *   - `ratelimit`: the first `modrinth_identify` answers `rateLimited` (`retryAfterS: 5`), every
+ *     later call succeeds.
+ *   - `modrinthoff`: Modrinth is switched off in settings (static checks only).
  *   - `crash`: two instances are watched (`Settings.watched`); a few seconds after the UI re-arms
  *     them, each "crashes": a new crash report appears in its log list, the game process goes
  *     away and one `CrashDetected` is emitted per instance, as Rust watch mode would.
+ *
+ * Modrinth (M5): realistic answers over the mock jar sets (mockModrinth.ts). With
+ * `modrinthEnabled` false every lookup is cache-only and the cache is empty (`offline: true`),
+ * as in Rust.
  *
  * Logs (M4): `list_log_sources` / `read_log_digest` serve real-format texts from fixtures/logs
  * (mockLogs.ts); the digest is the whole file, as `digestFromText` builds it.
@@ -25,10 +32,14 @@ import type {
   DropRejected,
   GridSort,
   GameStatus,
+  HashLookup,
   InstanceAdded,
   LogDigest,
   LogSource,
+  MrProject,
+  MrVersion,
   OpStatus,
+  ProjectLookup,
   ScanProgress,
   ScanStarted,
   Instance,
@@ -44,8 +55,17 @@ import { digestFromText } from '../../core/crash';
 import type { AppCommands, Backend, EventChannel, Result, Unlisten } from './ipc';
 import { mockDiscovery, mockJars, pickedFolderInstance, seeded } from './mockData';
 import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from './mockLogs';
+import {
+  MOCK_RATE_LIMIT_S,
+  mockFindUpdates,
+  mockIdentify,
+  mockOffline,
+  mockProjects,
+  mockProjectVersions,
+  mockResolveModId,
+} from './mockModrinth';
 
-export type MockScenario = 'default' | 'empty' | 'scanning' | 'errors' | 'offline' | 'crash';
+export type MockScenario = 'default' | 'empty' | 'scanning' | 'errors' | 'offline' | 'ratelimit' | 'modrinthoff' | 'crash';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -59,7 +79,7 @@ export interface MockOptions {
   crashDelayMs?: number;
 }
 
-const SCENARIOS: readonly MockScenario[] = ['default', 'empty', 'scanning', 'errors', 'offline', 'crash'];
+const SCENARIOS: readonly MockScenario[] = ['default', 'empty', 'scanning', 'errors', 'offline', 'ratelimit', 'modrinthoff', 'crash'];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
   const p = new URLSearchParams(search);
@@ -123,13 +143,16 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     launcherRoots: [],
     watched: opts.scenario === 'crash' ? mockCrashInstances() : [],
     overrides: {},
-    modrinthEnabled: opts.scenario !== 'offline',
+    modrinthEnabled: opts.scenario !== 'modrinthoff',
     includeBeta: false,
     gridSort: opts.gridSort ?? 'name',
     inspectorWidth: 360,
   };
   let picks = 0;
   let scans = 0;
+  let identifies = 0;
+  /** No network: Modrinth switched off (cache-only, empty cache) or unreachable. */
+  const mrOffline = () => !settings.modrinthEnabled || opts.scenario === 'offline';
   const added: Instance[] = [];
 
   const ev = {
@@ -318,11 +341,42 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       settings = { ...settings, watched: enabled ? [...watched, instanceId] : watched };
       return ok(null);
     },
-    modrinthIdentify: async () => notYet('Modrinth lookups'),
-    modrinthFindUpdates: async () => notYet('Modrinth update suggestions'),
-    modrinthProjects: async () => notYet('Modrinth project details'),
-    modrinthProjectVersions: async () => notYet('Modrinth version lookups'),
-    modrinthResolveModId: async () => notYet('Modrinth lookups'),
+    modrinthIdentify: async (sha1s: string[]): Promise<Result<HashLookup>> => {
+      await lag();
+      if (mrOffline()) return ok(mockOffline(sha1s));
+      if (opts.scenario === 'ratelimit' && identifies++ === 0) {
+        return {
+          status: 'error',
+          error: {
+            kind: 'rateLimited',
+            message: 'Modrinth is limiting requests from this computer for a moment. Modpack Doctor will try again by itself.',
+            path: null,
+            retryAfterS: MOCK_RATE_LIMIT_S,
+          },
+        };
+      }
+      return ok(mockIdentify(sha1s));
+    },
+    modrinthFindUpdates: async (sha1s: string[], loaders: string[], gameVersions: string[], versionTypes: string[]): Promise<Result<HashLookup>> => {
+      await lag();
+      if (mrOffline()) return ok(mockOffline(sha1s));
+      return ok(mockFindUpdates(sha1s, loaders, gameVersions, versionTypes));
+    },
+    modrinthProjects: async (ids: string[]): Promise<Result<ProjectLookup>> => {
+      await lag();
+      if (mrOffline()) return ok({ found: {}, failed: [...ids], offline: true });
+      return ok(mockProjects(ids));
+    },
+    modrinthProjectVersions: async (projectId: string, loaders: string[], gameVersions: string[]): Promise<Result<MrVersion[]>> => {
+      await lag();
+      if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so versions could not be listed.');
+      return ok(mockProjectVersions(projectId, loaders, gameVersions));
+    },
+    modrinthResolveModId: async (modId: string): Promise<Result<MrProject | null>> => {
+      await lag();
+      if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so the mod could not be looked up.');
+      return ok(mockResolveModId(modId));
+    },
     planWorkOrder: async () => {
       await lag();
       return notYet('Applying fixes');

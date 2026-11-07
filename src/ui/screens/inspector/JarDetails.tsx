@@ -1,8 +1,9 @@
 /**
  * Inspector: one jar. File facts (path, hashes, size, status, loaders, Java level, packages,
- * mixins, module, nesting), then each declared mod with its ranges, dependencies and
- * `provides`, then the findings that cite the jar.
+ * mixins, module, nesting), its Modrinth project (M5), then each declared mod with its ranges,
+ * dependencies and `provides`, then the findings that cite the jar.
  */
+import { ArrowSquareOut } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import type { JarRecord, ModMeta } from '../../../bindings';
@@ -12,8 +13,11 @@ import { FindingCode, SeverityRail } from '../../components/Severity';
 import { Table, type Column } from '../../components/Table';
 import { LoaderGlyph } from '../../glyphs/LoaderGlyph';
 import { LOADER_NAME } from '../../glyphs/loaders';
+import { jarMatch } from '../../../core/modrinth';
 import { crashFindingsCiting, sourceName } from '../../app/crashState';
 import { javaRelease } from '../../app/derive';
+import { openExternal } from '../../app/external';
+import { matchProject, projectUrl, sideSupport, viewContext } from '../../app/modrinthState';
 import { useActions, useApp } from '../../app/StoreContext';
 import { Plate, PlateRow, rangeText, SubLegend } from './Plate';
 
@@ -121,6 +125,86 @@ function CitingCrashes({ instanceId, jarId }: { instanceId: string; jarId: strin
         ))}
       </ul>
     </section>
+  );
+}
+
+/** Why a jar's Modrinth state is unknown, in words. */
+function unknownReason(enabled: boolean, status: string | undefined): string {
+  if (!enabled) return 'unknown (Modrinth off)';
+  if (status === 'loading' || status === 'idle' || status === undefined) return 'looking up…';
+  return 'unknown (Modrinth unreachable)';
+}
+
+/**
+ * The jar's Modrinth project: title with a link to its page (opened in the browser), the
+ * identified version, the suggested update (with a `beta` label), and where it runs.
+ */
+function ModrinthFacts({ instanceId, jar }: { instanceId: string; jar: JarRecord }) {
+  const result = useApp((s) => s.scans[instanceId]?.result ?? null);
+  const m = useApp((s) => s.modrinth[instanceId]);
+  const enabled = useApp((s) => s.settings.modrinthEnabled);
+  const backendKind = useApp((s) => s.backendKind);
+  const ctx = viewContext(m, result);
+  const match = useMemo(() => {
+    try {
+      return jarMatch(jar, ctx);
+    } catch {
+      return { state: 'unknown' } as const;
+    }
+  }, [jar, ctx]);
+  const project = matchProject(match);
+  return (
+    <Plate label="Modrinth">
+      {match.state === 'missing' ? (
+        <PlateRow label="Project">
+          <span className="text-fg-dim">Not on Modrinth (possibly CurseForge or manual)</span>
+        </PlateRow>
+      ) : match.state === 'unknown' ? (
+        <PlateRow label="Project">
+          <span className="text-fg-faint">{unknownReason(enabled, m?.status)}</span>
+        </PlateRow>
+      ) : (
+        <>
+          <PlateRow label="Project">
+            {project ? (
+              <span className="flex min-w-0 flex-col items-start">
+                <span className="text-fg">{project.title}</span>
+                <button
+                  type="button"
+                  onClick={() => void openExternal(projectUrl(project), backendKind)}
+                  title={`Open ${projectUrl(project)} in your browser`}
+                  className="flex items-center gap-1 text-fg-dim underline decoration-line-strong underline-offset-2 hover:text-fg hover:decoration-fg"
+                >
+                  modrinth.com/mod/{project.slug}
+                  <ArrowSquareOut size={12} aria-hidden />
+                </button>
+              </span>
+            ) : (
+              <span className="text-fg-dim">{match.version.projectId}</span>
+            )}
+          </PlateRow>
+          <PlateRow label="Version">
+            {match.version.versionNumber}
+            {match.version.versionType !== 'release' ? <span className="pl-2 text-fg-dim">{match.version.versionType}</span> : null}
+          </PlateRow>
+          <PlateRow label="Update">
+            {match.state === 'update' ? (
+              <span className="text-signal">
+                {match.update.versionNumber}
+                {match.beta ? <span className="pl-2 t-small">beta</span> : null}
+              </span>
+            ) : m?.updatesChecked ? (
+              <span className="text-ok">up to date</span>
+            ) : m?.filters ? (
+              <span className="text-fg-faint">unknown (update lookup failed)</span>
+            ) : (
+              <span className="text-fg-faint">not checked (pack MC version or loader unknown)</span>
+            )}
+          </PlateRow>
+          <PlateRow label="Runs on">{sideSupport(match.version, project)}</PlateRow>
+        </>
+      )}
+    </Plate>
   );
 }
 
@@ -242,6 +326,8 @@ export function JarDetails({ instanceId, jarId }: { instanceId: string; jarId: s
       <div className="border-t border-line">
         <JarFacts jar={jar} byId={byId} />
       </div>
+      <SubLegend>Modrinth</SubLegend>
+      <ModrinthFacts instanceId={instanceId} jar={jar} />
       <CitingFindings instanceId={instanceId} jarId={jarId} />
       <CitingCrashes instanceId={instanceId} jarId={jarId} />
       {jar.mods.length ? (
