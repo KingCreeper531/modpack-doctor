@@ -121,6 +121,7 @@ export const commands = {
 	 *  reports (CONTRACTS invariant 16). Empty when the OS reports none. Read-only; never a scope.
 	 */
 	homeDir: () => typedError<string, AppError>(__TAURI_INVOKE("home_dir")),
+	/**  Checks GitHub for a newer release and reports it (null when up to date); never installs. */
 	checkUpdate: () => typedError<UpdateInfo | null, AppError>(__TAURI_INVOKE("check_update")),
 	/**  Downloads, verifies the updater signature, installs, restarts. */
 	installUpdate: () => typedError<null, AppError>(__TAURI_INVOKE("install_update")),

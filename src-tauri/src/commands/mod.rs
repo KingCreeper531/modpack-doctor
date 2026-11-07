@@ -1,7 +1,7 @@
 //! IPC surface. FROZEN signatures (M1) — see docs/CONTRACTS.md.
 //!
 //! Commands are thin: resolve ids through `AppState`, call the owning module, map
-//! `Error` → `AppError`. Bodies marked `not_yet` are filled in by later milestones;
+//! `Error` → `AppError`. Every command is implemented (M8 filled in the last two);
 //! signatures do not change without an approved contract proposal.
 
 mod fix;
@@ -11,6 +11,7 @@ mod modrinth;
 mod mrpack;
 mod report;
 mod scanning;
+mod update;
 
 #[cfg(test)]
 mod tests;
@@ -33,13 +34,9 @@ pub use fix::*;
 pub use modrinth::*;
 pub use mrpack::*;
 pub use report::*;
+pub use update::*;
 
 type Cmd<T> = Result<T, AppError>;
-
-/// A command whose feature arrives in a later milestone (noted at each call site).
-fn not_yet<T>(feature: &str) -> Cmd<T> {
-    Err(Error::Unavailable(feature.to_string()).into())
-}
 
 // ── Instances ────────────────────────────────────────────────────────────────
 
@@ -259,15 +256,4 @@ pub fn set_window_theme(window: tauri::WebviewWindow, theme: ResolvedTheme) -> C
     crate::window_theme::apply(&window, theme).map_err(AppError::from)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn check_update(_app: AppHandle) -> Cmd<Option<UpdateInfo>> {
-    not_yet("Update checks" /* M8 */)
-}
-
-/// Downloads, verifies the updater signature, installs, restarts.
-#[tauri::command]
-#[specta::specta]
-pub async fn install_update(_app: AppHandle) -> Cmd<()> {
-    not_yet("Installing updates" /* M8 */)
-}
+// `check_update` and `install_update` live in `update.rs` (glob re-export above).
