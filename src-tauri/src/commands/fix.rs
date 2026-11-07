@@ -53,12 +53,13 @@ pub(crate) fn execute_with(
     fix::execute_order(st, order_id, &env)
 }
 
-/// Interrupted orders of the instance are marked and their leftover `.part` downloads moved
-/// into their snapshots first (skipped while an order of the instance executes).
+/// Interrupted orders of the instance are marked and their leftover temporary files moved into
+/// their snapshots first. The pass never blocks an execution: the manifest an executing order
+/// writes is left alone (it is not "interrupted"), and nothing is moved while one executes.
 pub(crate) fn list_backups_with(st: &AppState, instance_id: &str) -> Result<Vec<BackupEntry>> {
     let root = st.fixes.backups_root()?;
     if fix::is_instance_id(instance_id) {
-        fix::recover::recover_with_claim(st, instance_id);
+        fix::recover::recover_one(st, instance_id);
     }
     fix::list_backups(&st.guard, &root, instance_id)
 }

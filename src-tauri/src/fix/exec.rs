@@ -11,7 +11,9 @@
 //!
 //! Nothing is ever deleted: a removed or replaced jar is moved into the snapshot's `files/`, a
 //! file a fix created is moved into `created/` when it is rolled back or undone. The only files
-//! this module removes are its own temporary `.part` downloads.
+//! this module removes are its own temporary `.part` downloads. A move from the snapshot into
+//! the instance that has to copy across volumes writes its temporary copy under a name recorded
+//! ahead in the op's record (`temps`), so a copy left by a crash is found and moved away.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,8 +23,8 @@ use crate::guard::PathGuard;
 use crate::model::{BackupEntry, BackupStatus, FileOp, GameStatus, OpState, OpStatus, WorkOrderResult};
 use crate::state::AppState;
 
-use super::fsops::{self, existing, is_absent, move_file, new_path};
-use super::manifest::{self, FileChange, Manifest, OpRecord, RecState, UndoSession};
+use super::fsops::{self, existing, is_absent, move_file, move_file_named, new_path};
+use super::manifest::{self, FileChange, Manifest, OpRecord, RecState, TempFile, UndoSession};
 use super::remote::Remote;
 use super::{Check, Expect, Loc, OpPlan, StoredOrder};
 
@@ -62,9 +64,17 @@ pub fn execute_order(st: &AppState, order_id: &str, env: &ExecEnv) -> Result<Wor
     if stored.game_dir != game_dir {
         return Err(Error::Conflict("The instance's folder changed since the fixes were reviewed. Review them again.".into()));
     }
-    // Leftovers of an interrupted earlier order go into its snapshot first (we hold the claim).
-    if let Ok(root) = st.fixes.backups_root() {
-        super::recover::recover_instance(&st.guard, &root, &instance_id, Some(&game_dir));
+    {
+        // Leftovers of an interrupted earlier order go into its snapshot first (we hold the
+        // claim, so no other order of this instance runs), then this order's backup is bound to
+        // the claim, so later recovery passes leave its manifest alone. Both under the recovery
+        // lock, so no pass is halfway through that manifest when this order opens it.
+        let _recovery = st.fixes.recovery_lock();
+        if let Ok(root) = st.fixes.backups_root() {
+            let busy = st.fixes.busy_backups();
+            super::recover::recover_instance(&st.guard, &root, &instance_id, Some(&game_dir), &busy);
+        }
+        _exec.bind(&stored.backup_id);
     }
     run(&st.guard, env, stored)
 }
@@ -172,6 +182,8 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                 finished: false,
                 recovery: undo.recovery,
                 interrupted: false,
+                reapplied: undo.reapplied.clone(),
+                left_in_place: undo.left_in_place.clone(),
             });
             let session = Some(m.undo_log.len() - 1);
             let mut j = Journal { manifest: m, session, dir };
@@ -240,12 +252,21 @@ impl Cx<'_> {
 
     /// Move a file between the game dir and the snapshot (either direction), creating the
     /// destination's parent folders inside the snapshot when needed. Never replaces anything.
-    fn mv(&self, from: (Loc, &str), to: (Loc, &str)) -> Result<()> {
+    /// From the snapshot into the instance, a cross-volume copy uses the temporary name `rec`
+    /// recorded ahead for that destination (and the move is refused without one).
+    fn mv(&self, rec: &OpRecord, from: (Loc, &str), to: (Loc, &str)) -> Result<()> {
         let src = existing(self.guard, self.base(from.0), from.1)?;
         if to.0 == Loc::Snapshot {
             fsops::ensure_parent(self.guard, self.snap, to.1)?;
         }
         let dst = new_path(self.guard, self.base(to.0), to.1)?;
+        if from.0 == Loc::Snapshot && to.0 == Loc::Game {
+            let temp = rec
+                .temp_for(to.1)
+                .ok_or_else(|| Error::Internal(format!("no temporary copy name was recorded for {}", to.1)))?;
+            let temp = new_path(self.guard, self.game, &temp)?;
+            return move_file_named(&src, &dst, &temp);
+        }
         move_file(&src, &dst)
     }
 
@@ -269,11 +290,33 @@ fn missing_sha(rel: &str) -> Error {
     Error::Internal(format!("the plan for {rel} has no fingerprint"))
 }
 
-/// The record of an op about to run: every intended move with its hashes, the `.part` name and
-/// the `created/` name, all known before anything is touched (write-ahead).
+/// The game paths a file can be moved to from the snapshot by this op or by its rollback (each
+/// gets a recorded temporary copy name for a cross-volume move).
+fn snapshot_to_game(op: &FileOp) -> Vec<&str> {
+    match op {
+        FileOp::Rename { .. } => Vec::new(),
+        FileOp::MoveToBackup { path } | FileOp::RemoveCreated { path, .. } => vec![path.as_str()],
+        FileOp::Download { dest, replaces, .. } => {
+            // A case-only replace moves the old jar back to its own spelling: both get a name.
+            let mut v = vec![dest.as_str()];
+            if let Some(r) = replaces {
+                if r != dest {
+                    v.push(r.as_str());
+                }
+            }
+            v
+        }
+        FileOp::Restore { to, .. } => vec![to.as_str()],
+    }
+}
+
+/// The record of an op about to run: every intended move with its hashes, the `.part` name, the
+/// `created/` name and the temporary copy names, all known before anything is touched
+/// (write-ahead).
 fn intent(cx: &Cx, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> Result<()> {
     rec.state = RecState::Running;
     rec.message = None;
+    rec.temps = snapshot_to_game(op).into_iter().map(|to| TempFile { path: manifest::temp_name(to), backup: None }).collect();
     rec.files = match op {
         FileOp::Rename { from, to } => {
             let sha = planned_sha(plan, Loc::Game, from).ok_or_else(|| missing_sha(from))?;
@@ -338,15 +381,15 @@ impl From<Error> for Fail {
 /// Run one op (preconditions verified, intent saved). `Err(Fail::Clean)` = nothing applied.
 fn run_op(cx: &Cx, j: &mut Journal, i: usize, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> std::result::Result<(), Fail> {
     match op {
-        FileOp::Rename { from, to } => Ok(cx.mv((Loc::Game, from), (Loc::Game, to))?),
-        FileOp::MoveToBackup { path } => Ok(cx.mv((Loc::Game, path), (Loc::Snapshot, &format!("files/{path}")))?),
+        FileOp::Rename { from, to } => Ok(cx.mv(rec, (Loc::Game, from), (Loc::Game, to))?),
+        FileOp::MoveToBackup { path } => Ok(cx.mv(rec, (Loc::Game, path), (Loc::Snapshot, &format!("files/{path}")))?),
         FileOp::Download { url, sha512, size_bytes, dest, replaces, .. } => {
             download(cx, j, i, plan, rec, url, sha512, *size_bytes, dest, replaces.as_deref())
         }
-        FileOp::Restore { backup_path, to, .. } => Ok(cx.mv((Loc::Snapshot, backup_path), (Loc::Game, to))?),
+        FileOp::Restore { backup_path, to, .. } => Ok(cx.mv(rec, (Loc::Snapshot, backup_path), (Loc::Game, to))?),
         FileOp::RemoveCreated { path, .. } => {
             let created = rec.created_backup.clone().ok_or_else(|| missing_sha(path))?;
-            Ok(cx.mv((Loc::Game, path), (Loc::Snapshot, &created))?)
+            Ok(cx.mv(rec, (Loc::Game, path), (Loc::Snapshot, &created))?)
         }
     }
 }
@@ -389,7 +432,8 @@ fn download(
         let bytes = fs::read(&part).map_err(|e| Error::io(&part, e))?;
         let new_sha = fsops::sha1_bytes(&bytes);
         let ids = super::plan::jar_mod_ids(&bytes, dest);
-        if !plan.expect_mod_ids.iter().any(|want| ids.contains(want)) {
+        // Case-insensitive, like planning (`InstallDependency` requirements and `provides`).
+        if !plan.expect_mod_ids.iter().any(|want| ids.iter().any(|id| id.eq_ignore_ascii_case(want))) {
             let declared = if ids.is_empty() { "none".to_string() } else { ids.join(", ") };
             return Err(Error::Corrupt {
                 path: dest_name.to_string(),
@@ -422,7 +466,7 @@ fn download(
         let step = (|| {
             let check = plan.checks.iter().find(|c| c.loc == Loc::Game && c.rel == r).cloned().ok_or_else(|| missing_sha(r))?;
             cx.verify(&check)?;
-            cx.mv((Loc::Game, r), (Loc::Snapshot, &format!("files/{r}")))
+            cx.mv(rec, (Loc::Game, r), (Loc::Snapshot, &format!("files/{r}")))
         })();
         if let Err(e) = step {
             drop_part();
@@ -436,7 +480,7 @@ fn download(
         drop_part();
         let Some(r) = replaces else { return Err(Fail::Clean(e)) };
         let backup = format!("files/{r}");
-        return match cx.mv((Loc::Snapshot, &backup), (Loc::Game, r)) {
+        return match cx.mv(rec, (Loc::Snapshot, &backup), (Loc::Game, r)) {
             Ok(()) => Err(Fail::Clean(e)),
             Err(back) => {
                 // The old jar stays in the snapshot (recorded in `files`), the new one was not
@@ -470,23 +514,25 @@ fn rollback_op(cx: &Cx, op: &FileOp, rec: &mut OpRecord) -> Back {
         Ok(()) => Back::Reverted,
         Err(e) => Back::StillApplied(e),
     };
+    // The record as written ahead of this step (its temporary copy names).
+    let ahead = rec.clone();
     match op {
-        FileOp::Rename { from, to } => one(cx.mv((Loc::Game, to), (Loc::Game, from))),
-        FileOp::MoveToBackup { path } => one(cx.mv((Loc::Snapshot, &format!("files/{path}")), (Loc::Game, path))),
+        FileOp::Rename { from, to } => one(cx.mv(&ahead, (Loc::Game, to), (Loc::Game, from))),
+        FileOp::MoveToBackup { path } => one(cx.mv(&ahead, (Loc::Snapshot, &format!("files/{path}")), (Loc::Game, path))),
         FileOp::Download { dest, replaces, .. } => {
             let Some(created) = rec.created_backup.clone() else {
                 return Back::StillApplied(missing_sha(dest));
             };
-            if let Err(e) = cx.mv((Loc::Game, dest), (Loc::Snapshot, &created)) {
+            if let Err(e) = cx.mv(&ahead, (Loc::Game, dest), (Loc::Snapshot, &created)) {
                 rec.created_backup = None;
                 return Back::StillApplied(e);
             }
             let Some(r) = replaces else { return Back::Reverted };
             let backup = format!("files/{r}");
-            match cx.mv((Loc::Snapshot, &backup), (Loc::Game, r)) {
+            match cx.mv(&ahead, (Loc::Snapshot, &backup), (Loc::Game, r)) {
                 Ok(()) => Back::Reverted,
                 // Keep the order consistently applied: the new jar goes back to `dest`.
-                Err(e) => match cx.mv((Loc::Snapshot, &created), (Loc::Game, dest)) {
+                Err(e) => match cx.mv(&ahead, (Loc::Snapshot, &created), (Loc::Game, dest)) {
                     Ok(()) => {
                         rec.created_backup = None;
                         Back::StillApplied(e)
@@ -499,9 +545,9 @@ fn rollback_op(cx: &Cx, op: &FileOp, rec: &mut OpRecord) -> Back {
                 },
             }
         }
-        FileOp::Restore { backup_path, to, .. } => one(cx.mv((Loc::Game, to), (Loc::Snapshot, backup_path))),
+        FileOp::Restore { backup_path, to, .. } => one(cx.mv(&ahead, (Loc::Game, to), (Loc::Snapshot, backup_path))),
         FileOp::RemoveCreated { path, .. } => match rec.created_backup.clone() {
-            Some(created) => one(cx.mv((Loc::Snapshot, &created), (Loc::Game, path))),
+            Some(created) => one(cx.mv(&ahead, (Loc::Snapshot, &created), (Loc::Game, path))),
             None => Back::StillApplied(missing_sha(path)),
         },
     }
@@ -651,7 +697,9 @@ pub(crate) fn run(guard: &PathGuard, env: &ExecEnv, o: StoredOrder) -> Result<Wo
             session.rolled_back = rolled_back;
             session.finished = true;
             if !rolled_back {
-                let done = session.action_indexes.clone();
+                // A recovery that reverted an interrupted undo leaves those actions applied.
+                let reapplied = session.reapplied.clone();
+                let done: Vec<u32> = session.action_indexes.iter().copied().filter(|a| !reapplied.contains(a)).collect();
                 let undone = &mut journal.manifest.entry.undone_actions;
                 undone.extend(done);
                 undone.sort_unstable();
