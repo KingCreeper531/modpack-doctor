@@ -372,6 +372,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so versions could not be listed.');
       return ok(mockProjectVersions(projectId, loaders, gameVersions));
     },
+    modrinthIcons: async () => notYet('Modrinth icons'),
     modrinthResolveModId: async (modId: string): Promise<Result<MrProject | null>> => {
       await lag();
       if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so the mod could not be looked up.');

@@ -44,6 +44,12 @@ pub struct MrVersion {
     pub loaders: Vec<String>,
     /// `release` | `beta` | `alpha`
     pub version_type: String,
+    /// ISO 8601 publish time (`date_published`). An update must be published after the identified
+    /// version (CONTRACTS invariant 8): Modrinth returns the newest *matching* version, which can
+    /// be older than a beta the user runs. None only when the API omitted it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub date_published: Option<String>,
     /// Raw v3 environment of this version (`client_only`, `client_and_server`,
     /// `server_only_client_optional`, …). Preferred over the project's legacy side fields.
     pub environment: Option<String>,

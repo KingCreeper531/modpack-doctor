@@ -14,7 +14,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
-const SCHEMA: u32 = 1;
+// 2: `MrVersion.date_published` (M5): older entries lack it and are refetched.
+const SCHEMA: u32 = 2;
 /// Entries "fetched" further than this in the future (clock moved back) count as expired.
 const MAX_CLOCK_SKEW_MS: u64 = 24 * 3600 * 1000;
 

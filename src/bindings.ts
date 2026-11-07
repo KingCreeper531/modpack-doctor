@@ -51,9 +51,9 @@ export const commands = {
 	 */
 	modrinthFindUpdates: (sha1s: string[], loaders: string[], gameVersions: string[], versionTypes: string[], refresh: boolean) => typedError<HashLookup, AppError>(__TAURI_INVOKE("modrinth_find_updates", { sha1s, loaders, gameVersions, versionTypes, refresh })),
 	/**
-	 *  `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request); caches icons into
-	 *  `paths::icon_cache_dir`. Used by src/core to resolve a missing dependency's mod id
-	 *  (validated slug guess) to a project.
+	 *  `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request). `iconPath` is set only for icons
+	 *  already in `paths::icon_cache_dir`: this command never downloads icons, so titles, sides and
+	 *  fixes never wait for the CDN (see `modrinth_icons`).
 	 */
 	modrinthProjects: (ids: string[], refresh: boolean) => typedError<ProjectLookup, AppError>(__TAURI_INVOKE("modrinth_projects", { ids, refresh })),
 	/**
@@ -67,6 +67,13 @@ export const commands = {
 	 *  pseudo-dependency (`minecraft`, `java`, loaders). Used by src/core for `InstallDependency`.
 	 */
 	modrinthResolveModId: (modId: string, loaders: string[], gameVersions: string[]) => typedError<MrProject | null, AppError>(__TAURI_INVOKE("modrinth_resolve_mod_id", { modId, loaders, gameVersions })),
+	/**
+	 *  Downloads missing or stale project icons into `paths::icon_cache_dir` (CDN only, magic-byte
+	 *  checked) and returns project id → absolute cached path for every icon now on disk. Never
+	 *  touches the network when Modrinth is off; stops fetching after the first connection failure.
+	 *  The UI calls it after `modrinth_projects`, as a second pass.
+	 */
+	modrinthIcons: (projectIds: string[]) => typedError<{ [key in string]: string }, AppError>(__TAURI_INVOKE("modrinth_icons", { projectIds })),
 	/**
 	 *  Turn intents into a concrete, stored work order. No filesystem mutation.
 	 * 
@@ -643,6 +650,12 @@ export type MrVersion = {
 	loaders: string[],
 	/**  `release` | `beta` | `alpha` */
 	versionType: string,
+	/**
+	 *  ISO 8601 publish time (`date_published`). An update must be published after the identified
+	 *  version (CONTRACTS invariant 8): Modrinth returns the newest *matching* version, which can
+	 *  be older than a beta the user runs. None only when the API omitted it.
+	 */
+	datePublished?: string | null,
 	/**
 	 *  Raw v3 environment of this version (`client_only`, `client_and_server`,
 	 *  `server_only_client_optional`, …). Preferred over the project's legacy side fields.

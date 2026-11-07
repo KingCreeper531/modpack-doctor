@@ -50,6 +50,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             modrinth_projects,
             modrinth_project_versions,
             modrinth_resolve_mod_id,
+            modrinth_icons,
             plan_work_order,
             execute_work_order,
             discard_work_order,

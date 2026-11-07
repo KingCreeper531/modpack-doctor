@@ -161,13 +161,26 @@ pub async fn modrinth_find_updates(
     Ok(find_updates_with(&state, sha1s, loaders, game_versions, version_types, refresh).await?)
 }
 
-/// `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request); caches icons into
-/// `paths::icon_cache_dir`. Used by src/core to resolve a missing dependency's mod id
-/// (validated slug guess) to a project.
+/// `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request). `iconPath` is set only for icons
+/// already in `paths::icon_cache_dir`: this command never downloads icons, so titles, sides and
+/// fixes never wait for the CDN (see `modrinth_icons`).
 #[tauri::command]
 #[specta::specta]
 pub async fn modrinth_projects(state: State<'_, AppState>, ids: Vec<String>, refresh: bool) -> Cmd<ProjectLookup> {
     Ok(projects_with(&state, ids, refresh).await?)
+}
+
+/// Downloads missing or stale project icons into `paths::icon_cache_dir` (CDN only, magic-byte
+/// checked) and returns project id → absolute cached path for every icon now on disk. Never
+/// touches the network when Modrinth is off; stops fetching after the first connection failure.
+/// The UI calls it after `modrinth_projects`, as a second pass.
+#[tauri::command]
+#[specta::specta]
+pub async fn modrinth_icons(
+    _state: State<'_, AppState>,
+    _project_ids: Vec<String>,
+) -> Cmd<std::collections::BTreeMap<String, String>> {
+    Err(Error::Unavailable("Modrinth icons".into()).into())
 }
 
 /// `GET /v2/project/{id}/version?loaders=…&game_versions=…` newest first, filtered by

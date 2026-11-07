@@ -131,6 +131,14 @@ export interface ModrinthContext {
   /** sha1s whose lookup failed (unknown, not "missing"). */
   failed: string[];
   offline: boolean;
+  /**
+   * Per identified sha1 (lower-case), what the update lookup established. `update`: a newer
+   * compatible version is in `updates`. `upToDate`: the newest compatible version is this one,
+   * or older than it (a beta newer than the last release). `noCompatible`: nothing for the pack's
+   * loader + MC version (release, or beta via the fallback). `unknown`: no update lookup ran or it
+   * failed for this hash. Absent for unidentified hashes.
+   */
+  updateStatus?: Record<string, 'update' | 'upToDate' | 'noCompatible' | 'unknown'>;
 }
 
 export interface CheckInput {

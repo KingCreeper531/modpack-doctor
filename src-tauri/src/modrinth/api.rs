@@ -86,6 +86,8 @@ struct ApiVersion {
     loaders: Option<Vec<String>>,
     version_type: String,
     #[serde(default)]
+    date_published: Option<String>,
+    #[serde(default)]
     environment: Option<String>,
     #[serde(default)]
     files: Option<Vec<ApiFile>>,
@@ -187,6 +189,7 @@ pub(crate) fn version_from_json(v: serde_json::Value, cdn: &CdnCheck) -> Option<
         game_versions: v.game_versions.unwrap_or_default(),
         loaders: v.loaders.unwrap_or_default(),
         version_type: v.version_type,
+        date_published: v.date_published,
         environment: v.environment,
         dropped_files,
         primary_dropped,

@@ -90,7 +90,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    - Rust re-fetches every `versionId` from the API and re-validates it against the
      `PackIdentity` sent with `plan_work_order`. That identity must itself agree with launcher or
      mrpack metadata and any override. The checks:
-     - `version.loaders` contains the pack loader (NeoForge 1.20.1 also accepts `forge`).
+     - `version.loaders` contains the pack loader (NeoForge 1.20.1 also accepts `forge`; Quilt
+       also accepts `fabric`, since Quilt loads Fabric mods — decided 2026-11-07, matching
+       `modrinthLoaders`).
      - `version.gameVersions` contains the pack MC version.
      - `Replace` stays within the same Modrinth project as the current jar, which must be
        identifiable by hash.
@@ -99,7 +101,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
      Any failure rejects the order with a readable error naming the action.
    - Downloadable files exclude `fileType` `sources-jar`, `dev-jar`, `javadoc-jar` and `signature`.
      From what remains, pick the file marked `primary`, else the sole file, else planning fails
-     with a readable error.
+     with a readable error. "Sole file" counts the API's whole file list: when no file is primary
+     and any file was dropped (`droppedFiles > 0`, off-CDN or hash-less), planning fails too. The
+     TS `downloadFile` and the M6 planner apply this identical rule to the same `MrVersion`.
    - The URL must be `https://cdn.modrinth.com/…` exactly as the API returned it.
    - Every download is SHA-512-verified and written as temp file in the same dir → fsync → rename.
    - "Remove" moves the file into the backup snapshot; nothing is ever deleted.
@@ -109,7 +113,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
      single-rename undo; everything else needs Execute.
    - Update suggestions: `["release"]` unless `includeBeta`. If no release is compatible,
      `src/core` retries with `["release","beta"]` and labels any result "beta". Alpha versions are
-     never suggested.
+     never suggested. An update must be **published after** the identified version
+     (`datePublished`): Modrinth returns the newest *matching* version, which can be older than a
+     beta the user runs, and that is never offered (it would be a downgrade). When either date is
+     missing the update is not offered.
 9. **Minecraft versions** are no longer only `1.x.y`. Year-based releases such as `26.1`, `26.1.2`
    and `26.3`, and snapshots such as `26.4-snapshot-6`, are live, alongside legacy `1.21.11`,
    `23w51a` and `1.20.5-pre1`. Version code must never assume a `1.` prefix; use
@@ -123,7 +130,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       to the next command without a restart. Batched lookups never fail for network reasons
       (`failed` / `offline`); the UI shows `Modrinth unreachable — static checks only` then.
     - Icons are cached by Rust under `$APPCACHE/icons/` and shown with `convertFileSrc`; the
-      webview never requests a remote URL.
+      webview never requests a remote URL. `modrinth_projects` never downloads icons (only cached
+      ones are attached); `modrinth_icons` downloads them as a separate second pass, so Modrinth
+      results never wait for the CDN. No icon request when Modrinth is off or unreachable.
     - Enrichment is pure TS in `src/core/modrinth` (frozen API in its `index.ts`): queries,
       `ModrinthContext`, beta-only fallback, per-jar match, the invariant-8 download file, and
       `replace` / `installDependency` fixes. `Finding.missingModIds` carries missing ids.
@@ -209,6 +218,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `modrinth_projects` | `ids, refresh` | `ProjectLookup` | | M5 |
 | `modrinth_project_versions` | `projectId, loaders, gameVersions, versionTypes` | `MrVersion[]` | | M5 |
 | `modrinth_resolve_mod_id` | `modId, loaders, gameVersions` | `MrProject | null` | | M5 |
+| `modrinth_icons` | `projectIds` | `Record<projectId, path>` | | M5 |
 | `plan_work_order` | `instanceId, pack: PackIdentity, actions: FixAction[]` | `WorkOrder` | | M6 |
 | `execute_work_order` | `orderId` | `WorkOrderResult` | `OpStatus` | M6 |
 | `discard_work_order` | `orderId` | `null` | | M6 |
