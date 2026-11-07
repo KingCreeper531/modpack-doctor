@@ -9,7 +9,7 @@
  * chips ellipsize and collapse past `MAX_CHIPS` into `+N`. Metadata evidence is clipped to
  * `EVIDENCE_LINES` with a Show all toggle; the inspector shows it in full.
  */
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import type { AppError, FixAction } from '../../bindings';
 import type { Finding } from '../../core/model';
@@ -50,6 +50,8 @@ export interface TriageRowProps {
   fixHint?: ReactNode;
   /** Where a crash finding came from (log file name); shown as `from <origin>` after the title. */
   origin?: string;
+  /** Right-click / Menu key: the row's context menu. */
+  onContextMenu?: (e: MouseEvent<HTMLElement>) => void;
 }
 
 export function TriageRow({
@@ -67,6 +69,7 @@ export function TriageRow({
   fixError = null,
   fixHint = null,
   origin,
+  onContextMenu,
 }: TriageRowProps) {
   const name = (id: string) => jarNames[id] ?? basename(id);
   const bodyId = `triage-${finding.id}`;
@@ -81,7 +84,9 @@ export function TriageRow({
         focused && 'outline-1 -outline-offset-1 outline-signal',
       )}
       data-severity={finding.severity}
+      data-cursor={focused || undefined}
       aria-current={selected || undefined}
+      onContextMenu={onContextMenu}
     >
       <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1', RAIL_BG[finding.severity])} />
       <div className="flex h-8 items-center pl-1">

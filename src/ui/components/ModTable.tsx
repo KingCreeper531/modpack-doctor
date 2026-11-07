@@ -6,7 +6,7 @@
  */
 import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import type { LoaderKind } from '../../bindings';
 import type { Severity } from '../../core/model';
@@ -40,9 +40,16 @@ export interface ModRow {
   enabled: boolean;
   /** Nested jars (JarJar / JiJ). */
   children?: ModRow[];
+  /** A file a `.mrpack` index declares (not inside the zip): no toggle, its path shown. */
+  declared?: boolean;
+  /** Path shown under the name for declared files (`mods/sodium.jar`). */
+  path?: string;
+  /** Pack table only: where the file runs, short (`c req · s opt`), with words in `envTitle`. */
+  env?: string | null;
+  envTitle?: string;
 }
 
-export type ModSortKey = 'name' | 'version' | 'loader' | 'modrinth' | 'status' | 'enabled';
+export type ModSortKey = 'name' | 'version' | 'loader' | 'modrinth' | 'status' | 'enabled' | 'env';
 
 const COLUMNS = [
   { key: 'rail', label: '', srLabel: 'Severity', width: '4px', flush: true },
@@ -55,6 +62,12 @@ const COLUMNS = [
   { key: 'status', label: 'Status', width: '96px', sortable: true, align: 'right' as const },
   { key: 'enabled', label: 'On', srLabel: 'Enabled', width: '48px', sortable: true, align: 'center' as const },
 ] as const;
+
+/**
+ * An opened `.mrpack` is read-only (CONTRACTS invariant 15): no enable toggles; the last column
+ * says where each file runs instead (the index's `env`, or the override folder).
+ */
+const PACK_COLUMNS = [...COLUMNS.slice(0, 7), { key: 'env', label: 'Env', srLabel: 'Environment', width: '112px', sortable: true }] as const;
 
 export function worstSeverity(f: ModRow['findings']): Severity | null {
   return f.error ? 'error' : f.warning ? 'warning' : f.info ? 'info' : null;
@@ -70,6 +83,7 @@ const ACCESSOR: Record<ModSortKey, (r: ModRow) => SortValue> = {
   // Worst first when ascending: errors dominate warnings dominate info.
   status: (r) => -(r.findings.error * 1e6 + r.findings.warning * 1e3 + r.findings.info),
   enabled: (r) => r.enabled,
+  env: (r) => r.env ?? null,
 };
 
 function ModrinthCell({ m }: { m: ModrinthMatch }) {
@@ -132,6 +146,10 @@ export interface ModTableProps {
    */
   height?: number | 'fill';
   className?: string;
+  /** `pack`: a read-only `.mrpack` (no toggles, an Env column). */
+  variant?: 'instance' | 'pack';
+  /** Right-click / Menu key on a row. */
+  onRowContextMenu?: (id: string, e: MouseEvent<HTMLElement>) => void;
 }
 
 export function ModTable({
@@ -145,7 +163,10 @@ export function ModTable({
   defaultExpanded = [],
   height = 384,
   className,
+  variant = 'instance',
+  onRowContextMenu,
 }: ModTableProps) {
+  const pack = variant === 'pack';
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(defaultExpanded));
   const flat = useMemo(
     () => flattenTree(rows, expanded, sort ? ACCESSOR[sort.key] : null, sort?.dir ?? 'asc'),
@@ -177,7 +198,8 @@ export function ModTable({
       return next;
     });
 
-  const template = gridTemplate(COLUMNS);
+  const columns = pack ? PACK_COLUMNS : COLUMNS;
+  const template = gridTemplate(columns);
 
   return (
     <TableRoleContext.Provider value="grid">
@@ -187,7 +209,7 @@ export function ModTable({
         aria-rowcount={flat.length + 1}
         className={cx('flex min-w-0 flex-col', fill && 'h-full min-h-0', className)}
       >
-        <TableHeader<string> columns={COLUMNS} sort={sort} onSort={(s) => onSort(s as SortState<ModSortKey>)} />
+        <TableHeader<string> columns={columns} sort={sort} onSort={(s) => onSort(s as SortState<ModSortKey>)} />
         <div ref={scrollRef} className={cx('overflow-y-auto', fill && 'min-h-0 flex-1')} style={fill ? undefined : { height }}>
           <div role="rowgroup" className="relative w-full" style={{ height: virtual.getTotalSize() }}>
             {virtual.getVirtualItems().map((v) => {
@@ -201,6 +223,8 @@ export function ModTable({
                   focusable
                   selected={selectedId === r.id}
                   onClick={() => onSelect?.(r.id)}
+                  {...(onRowContextMenu ? { onContextMenu: (e: MouseEvent<HTMLDivElement>) => onRowContextMenu(r.id, e) } : {})}
+                  data-row-id={r.id}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
                     if (e.key === 'Enter') onSelect?.(r.id);
@@ -237,7 +261,13 @@ export function ModTable({
                         </button>
                       ) : null}
                       <span className={cx('truncate', r.enabled ? 'text-fg' : 'text-fg-dim')}>{r.name}</span>
-                      {r.modId ? <span className="shrink-[2] truncate t-mono text-fg-faint">{r.modId}</span> : null}
+                      {r.declared && r.path ? (
+                        <span className="shrink-[2] truncate t-mono text-fg-faint" title={r.path}>
+                          {r.path}
+                        </span>
+                      ) : r.modId ? (
+                        <span className="shrink-[2] truncate t-mono text-fg-faint">{r.modId}</span>
+                      ) : null}
                       {f.hasChildren && !f.expanded ? (
                         <span className="shrink-0 t-mono text-fg-faint">+{r.children?.length}</span>
                       ) : null}
@@ -258,6 +288,13 @@ export function ModTable({
                   <Cell align="right">
                     <StatusCounts f={r.findings} />
                   </Cell>
+                  {pack ? (
+                    <Cell>
+                      <span className="truncate t-mono text-fg-dim" title={r.envTitle ?? undefined}>
+                        {r.env ?? '—'}
+                      </span>
+                    </Cell>
+                  ) : (
                   <Cell align="center" flush>
                     {f.depth === 0 ? (
                       <span onClick={(e) => e.stopPropagation()} className="flex">
@@ -269,6 +306,7 @@ export function ModTable({
                       </span>
                     )}
                   </Cell>
+                  )}
                 </TableRow>
               );
             })}

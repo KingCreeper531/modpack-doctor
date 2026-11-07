@@ -24,6 +24,14 @@
  *   - `expired`: the first `execute_work_order` answers `notFound` (the order expired).
  *   - `interrupted`: the 2nd op of every fix order with two or more ops fails and reversing the
  *     1st fails too, so the snapshot stays `incomplete` (History offers Recover).
+ *   - `drop`: shortly after start a file "dropped" on the window is refused (`DropRejected`), as
+ *     Rust reports a drop that is not a `.mrpack`.
+ *
+ * `.mrpack` (M7): `pick_mrpack` "opens" `MOCK_PICKED_PACK` (Explorer Kit 2.1); scanning a pack
+ * reports the jars inside its zip (`overrides/…`) plus the files its index declares
+ * (`ScanResult.declared`, mockData.ts `MOCK_DECLARED`), which `modrinth_identify` knows by hash.
+ * `save_report` "saves" to a fake Documents path (no file is written) and answers `null`
+ * (cancelled) for every other call with `?scenario=reportcancel`.
  * - `?order=running` (with the `order` screenshot hook, devHooks.ts): the 2nd op of an executed
  *   order starts running and never finishes.
  *
@@ -58,6 +66,7 @@ import type {
   MrVersion,
   OpStatus,
   ProjectLookup,
+  ReportFormat,
   ScanProgress,
   ScanStarted,
   Instance,
@@ -71,7 +80,7 @@ import type {
 } from '../../bindings';
 import { digestFromText } from '../../core/crash';
 import type { AppCommands, Backend, EventChannel, Result, Unlisten } from './ipc';
-import { mockDiscovery, pickedFolderInstance, seeded } from './mockData';
+import { MOCK_PICKED_PACK, mockDeclared, mockDiscovery, pickedFolderInstance, seeded } from './mockData';
 import { createMockFix, type MockFixEngine } from './mockFix';
 import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from './mockLogs';
 import {
@@ -97,7 +106,9 @@ export type MockScenario =
   | 'gamerunning'
   | 'fixfail'
   | 'expired'
-  | 'interrupted';
+  | 'interrupted'
+  | 'drop'
+  | 'reportcancel';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -130,6 +141,8 @@ const SCENARIOS: readonly MockScenario[] = [
   'fixfail',
   'expired',
   'interrupted',
+  'drop',
+  'reportcancel',
 ];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
@@ -186,6 +199,10 @@ export interface MockBackend extends Backend {
   emitCrashDetected(e: CrashDetected): void;
   /** Test hook: the fix engine (jar lists, stored orders, expiry). */
   fix: MockFixEngine;
+  /** Test hook: every report `save_report` "saved". */
+  reports(): ReadonlyArray<{ name: string; format: ReportFormat; contents: string }>;
+  /** Test hook: emit a `DropRejected` as Rust does for a refused drop. */
+  emitDropRejected(e: DropRejected): void;
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
@@ -211,6 +228,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   /** No network: Modrinth switched off (cache-only, empty cache) or unreachable. */
   const mrOffline = () => !settings.modrinthEnabled || opts.scenario === 'offline';
   const added: Instance[] = [];
+  const reports: Array<{ name: string; format: ReportFormat; contents: string }> = [];
 
   const ev = {
     scanStarted: emitter<ScanStarted>(),
@@ -220,6 +238,10 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     crashDetected: emitter<CrashDetected>(),
     opStatus: emitter<OpStatus>(),
   };
+  if (opts.scenario === 'drop') {
+    // As if a .zip had been dropped on the window a moment after start.
+    setTimeout(() => ev.dropRejected.emit({ name: 'Explorer Kit 2.1.zip', reason: 'only .mrpack files can be opened (this is a .zip)' }), 600);
+  }
 
   const lag = () => sleep(opts.latencyMs);
   const instances = () => [...discovery.instances, ...added];
@@ -305,8 +327,6 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     await lag();
     const inst = instances().find((i) => i.id === instanceId);
     if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
-    // As in Rust (commands/mod.rs): .mrpack scanning arrives in M7.
-    if (inst.launcher === 'mrpack') return notYet('Scanning .mrpack files');
     const first = scans++ === 0;
     if (opts.scenario === 'errors' && instanceId === discovery.instances[0]?.id) {
       return err(
@@ -341,7 +361,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (opts.scanMs > 0) await sleep(tick);
     }
     if (freezeAt < top.length) return new Promise<Result<ScanResult>>(() => undefined);
-    return ok({ instanceId, startedAtMs, durationMs: Date.now() - startedAtMs, jars, declared: [], issues: [] });
+    return ok({ instanceId, startedAtMs, durationMs: Date.now() - startedAtMs, jars, declared: inst.launcher === 'mrpack' ? mockDeclared(instanceId) : [], issues: [] });
   }
 
   function applyPatch(p: SettingsPatch): Settings {
@@ -379,8 +399,16 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     removeManualInstance: async (instanceId: string) => {
       await lag();
       const i = added.findIndex((a) => a.id === instanceId);
-      if (i < 0) return err('notFound', 'Only folders you added yourself can be removed from the list.');
-      added.splice(i, 1);
+      if (i >= 0) {
+        added.splice(i, 1);
+        return ok(null);
+      }
+      // Manual folders and opened packs from the seeded discovery can go too (as in Rust).
+      const seededHit = discovery.instances.find((d) => d.id === instanceId);
+      if (!seededHit || (seededHit.launcher !== 'manual' && seededHit.launcher !== 'mrpack')) {
+        return err('notFound', 'Only folders you added yourself and opened packs can be removed from the list.');
+      }
+      discovery = { ...discovery, instances: discovery.instances.filter((d) => d.id !== instanceId) };
       return ok(null);
     },
     pickLauncherRoot: async (launcher: Launcher) => {
@@ -394,7 +422,12 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       await lag();
       return ok(null);
     },
-    pickMrpack: async () => notYet('Opening .mrpack files'),
+    pickMrpack: async (): Promise<Result<Instance | null>> => {
+      await lag();
+      // Opening the same file again answers the same instance (Rust de-duplicates by path).
+      if (!added.some((a) => a.id === MOCK_PICKED_PACK.id)) added.push(MOCK_PICKED_PACK);
+      return ok(MOCK_PICKED_PACK);
+    },
     scanInstance,
     listLogSources: async (instanceId: string): Promise<Result<LogSource[]>> => {
       await lag();
@@ -511,7 +544,13 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       await lag();
       return ok(applyPatch(patch));
     },
-    saveReport: async () => notYet('Saving reports'),
+    saveReport: async (defaultName: string, format: ReportFormat, contents: string): Promise<Result<string | null>> => {
+      await lag();
+      if (contents.length > 16 * 1024 * 1024) return err('invalid', 'The report is larger than 16 MiB, so it was not saved.');
+      if (opts.scenario === 'reportcancel') return ok(null);
+      reports.push({ name: defaultName, format, contents });
+      return ok(`C:\\Users\\alex\\Documents\\${defaultName}.${format === 'json' ? 'json' : 'md'}`);
+    },
     setWindowTheme: async () => ok(null),
     checkUpdate: async () => notYet('Update checks'),
     installUpdate: async () => notYet('Installing updates'),
@@ -527,5 +566,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     crash,
     emitCrashDetected: (e) => ev.crashDetected.emit(e),
     fix,
+    reports: () => reports,
+    emitDropRejected: (e) => ev.dropRejected.emit(e),
   };
 }

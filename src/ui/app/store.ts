@@ -64,6 +64,7 @@ import type {
   BackupEntry,
   CrashDetected,
   DiscoveryReport,
+  DropRejected,
   FixAction,
   GameStatus,
   GridSort,
@@ -75,6 +76,7 @@ import type {
   OpStatus,
   PackOverride,
   ProjectLookup,
+  ReportFormat,
   ResolvedTheme,
   ScanProgress,
   ScanResult,
@@ -89,6 +91,9 @@ import { runChecks as coreRunChecks } from '../../core/checks';
 import { analyzeCrash as coreAnalyzeCrash, CRASH_ANCHORS, CRASH_ANCHOR_TEXTS } from '../../core/crash';
 import { summarizeCrash } from '../../core/crash/summary';
 import type { CheckInput, CrashInput, Finding, JarIndex, ModrinthContext, PackContext } from '../../core/model';
+// Namespace import, like `coreModrinth`: the frozen report API is implemented in parallel (M7), so
+// a missing function fails that export (an inline error) instead of the whole module graph.
+import * as coreReport from '../../core/report';
 // A namespace import: the module's functions are looked up when called, so a missing one fails
 // that step (and degrades) instead of failing the whole module graph.
 import * as coreModrinth from '../../core/modrinth';
@@ -111,6 +116,8 @@ import {
   type InstanceCrashes,
 } from './crashState';
 import { call, type Backend, type Result, type Unlisten } from './ipc';
+import { moveCursor as nextCursor, visibleList } from './keyboard';
+import type { MenuEntry } from './menus';
 import {
   emptyModrinth,
   isNetworkError,
@@ -120,6 +127,7 @@ import {
   type ModrinthNotice,
 } from './modrinthState';
 import { deniedNotifier, type Notifier } from './notify';
+import { renderReport, reportBlock, reportInput, type ReportCoreApi, type ReportState } from './report';
 import { emptyScan, type InstanceScan } from './scanState';
 
 export type FixOrigin = 'triage' | 'inspector' | 'mods';
@@ -153,6 +161,18 @@ export interface OpenOrder {
   backupId: string | null;
   /** A "Plan again" in flight. */
   replanning: boolean;
+}
+
+/**
+ * The DOM context menu of the browser dev build (Tauri shows native menus, menuHost.ts). `x`/`y`
+ * are viewport coordinates; focus returns to `returnFocus` when it closes.
+ */
+export interface DomMenu {
+  label: string;
+  items: MenuEntry[];
+  x: number;
+  y: number;
+  returnFocus: HTMLElement | null;
 }
 
 /** Backup history of one instance (`list_backups`), newest first. */
@@ -224,7 +244,21 @@ export interface StoreDeps {
    * backend's `?select=` screenshot hook).
    */
   initialSelect?: string | null;
+  /** Report building (`src/core/report`); injectable for tests. */
+  reportCore?: ReportCoreApi;
+  /** Written into reports (`ReportInput.appVersion`). */
+  appVersion?: string;
 }
+
+/** How long a saved report's path stays on screen. */
+export const REPORT_NOTICE_MS = 8000;
+
+/** Packs are read-only (CONTRACTS invariant 15): a fix asked for one is refused here too. */
+const PACK_READ_ONLY: AppError = {
+  kind: 'invalid',
+  message: 'A .mrpack file is opened read-only, so nothing in it can be changed. Fix the pack where it was made, then open it again.',
+  path: null,
+};
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -290,6 +324,18 @@ export interface AppState {
   undoErrors: Readonly<Record<string, AppError>>;
   /** `undoKey`s with a `plan_undo` call in flight. */
   undoPending: Readonly<Record<string, true>>;
+  /** The command palette (Ctrl/Cmd+K) is open. */
+  paletteOpen: boolean;
+  /** The open DOM context menu (browser dev build only). */
+  menu: DomMenu | null;
+  /** Keyboard cursor (J/K): a finding id in the visible findings list. */
+  cursor: string | null;
+  /** Enter on the cursor row: bumped per request; the list showing `id` toggles that row. */
+  cursorToggle: { id: string; n: number } | null;
+  /** The last file drop Rust refused (`DropRejected`), shown inline in the rail. */
+  dropRejected: DropRejected | null;
+  /** The last report export per instance (saving, the saved path, or the refusal). */
+  reports: Readonly<Record<string, ReportState>>;
 
   init(): Promise<void>;
   dispose(): void;
@@ -341,6 +387,24 @@ export interface AppState {
   refreshModrinth(id: string): Promise<void>;
   setModrinthEnabled(on: boolean): Promise<void>;
   setIncludeBeta(on: boolean): Promise<void>;
+  setPaletteOpen(open: boolean): void;
+  openMenu(menu: DomMenu): void;
+  closeMenu(): void;
+  /** J (+1) / K (-1) over the visible findings list. */
+  moveCursor(delta: 1 | -1): void;
+  setCursor(id: string | null): void;
+  /** Enter: expand or collapse (and select) the cursor row. */
+  toggleCursor(): void;
+  /** Palette "Go to finding": FINDINGS legend, expanded, selected, under the cursor. */
+  goToFinding(findingId: string): void;
+  /** `pick_mrpack` (native file dialog); the pack opens like an added folder. */
+  openMrpack(): Promise<void>;
+  /** `remove_manual_instance` (added folders and opened packs). */
+  removeInstance(id: string): Promise<void>;
+  dismissDropRejected(): void;
+  /** Build the report (`src/core/report`) and `save_report`; Cancel in the dialog changes nothing. */
+  exportReport(id: string, format: ReportFormat): Promise<void>;
+  dismissReport(id: string): void;
 }
 
 export type AppStore = StoreApi<AppState>;
@@ -357,6 +421,11 @@ const UNKNOWN_PACK: AppError = {
   path: null,
 };
 
+/** A pack finding keeps its advice (manual steps) but offers nothing to plan. */
+function readOnlyFinding(f: Finding): Finding {
+  return f.fixes.some((x) => x.kind !== 'manual') ? { ...f, fixes: f.fixes.filter((x) => x.kind === 'manual') } : f;
+}
+
 function defaultFrame(cb: () => void) {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => cb());
   else setTimeout(cb, 16);
@@ -372,7 +441,11 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const mr: ModrinthCoreApi = deps.modrinthCore ?? coreModrinth;
   const setTimer = deps.setTimer ?? ((cb: () => void, ms: number) => void setTimeout(cb, ms));
   let initialSelect = deps.initialSelect ?? null;
+  const reportCore: ReportCoreApi = deps.reportCore ?? coreReport;
+  const appVersion = deps.appVersion ?? '0.0.0';
   const cmd = backend.commands;
+  /** Latest export per instance; an older one's answer is dropped. */
+  const reportTokens = new Map<string, number>();
 
   const unlisten: Unlisten[] = [];
   let initOnce: Promise<void> | null = null;
@@ -510,6 +583,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
           }
         }
         findings ??= core.runChecks({ instance: inst, scan: sc.result, pack });
+        // Packs are read-only (invariant 15): whatever a check proposed, nothing can be planned.
+        if (inst.launcher === 'mrpack') findings = findings.map(readOnlyFinding);
         return { pack, detected, findings, checksError: null };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -1214,12 +1289,12 @@ export function createAppStore(deps: StoreDeps): AppStore {
             if (d.instances.some((i) => i.id === instance.id)) return {};
             return { discovery: { ...d, instances: [...d.instances, instance] } };
           });
+          set({ dropRejected: null });
           get().selectInstance(instance.id);
           void rearm();
         }),
-        ev.dropRejected.listen(({ name, reason }) =>
-          set({ railError: { kind: 'invalid', message: `${name} was not added: ${reason}`, path: null } }),
-        ),
+        // Inline in the rail (never a toast); the next drop or open replaces it.
+        ev.dropRejected.listen((d) => set({ dropRejected: { name: d.name, reason: d.reason } })),
         ev.crashDetected.listen((e) => void onCrash(e)),
         // Live op statuses of the executing order only; a late event never overrides the result.
         ev.opStatus.listen((s) =>
@@ -1277,6 +1352,12 @@ export function createAppStore(deps: StoreDeps): AppStore {
       history: {},
       undoErrors: {},
       undoPending: {},
+      paletteOpen: false,
+      menu: null,
+      cursor: null,
+      cursorToggle: null,
+      dropRejected: null,
+      reports: {},
 
       init() {
         initOnce ??= start();
@@ -1292,7 +1373,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       selectInstance(id) {
-        if (get().selectedInstanceId !== id) set({ selectedInstanceId: id, selection: null, revealJarId: null, overrideError: null });
+        if (get().selectedInstanceId !== id) set({ selectedInstanceId: id, selection: null, revealJarId: null, overrideError: null, cursor: null });
         const sc = get().scans[id];
         if (!sc || sc.status === 'idle') void get().scan(id);
         // A settings change since its last lookup applies now; otherwise the cache answers.
@@ -1414,6 +1495,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         const id = get().selectedInstanceId;
         // Manual fixes are advice only: their steps are already on screen, nothing to plan.
         if (!id || action.kind === 'manual') return;
+        const readOnly = instanceById(id)?.launcher === 'mrpack';
         const identity = packIdentity(get().scans[id]?.pack ?? null);
         const setErr = (e: AppError | null) =>
           set((st) => {
@@ -1430,8 +1512,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
             delete fixPending[key];
             return { fixErrors, fixErrorFrom, fixPending };
           });
-        if (!identity) {
-          setErr(UNKNOWN_PACK);
+        if (readOnly || !identity) {
+          setErr(readOnly ? PACK_READ_ONLY : UNKNOWN_PACK);
           return;
         }
         set((st) => ({ fixPending: { ...st.fixPending, [key]: true } }));
@@ -1615,7 +1697,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       setFindingsTab(id, tab) {
-        set((st) => ({ findingsTab: { ...st.findingsTab, [id]: tab } }));
+        set((st) => ({ findingsTab: { ...st.findingsTab, [id]: tab }, cursor: st.findingsTab[id] === tab ? st.cursor : null }));
         if (tab === 'history') {
           const h = get().history[id]?.status;
           if (!h || h === 'idle' || h === 'error') void get().loadBackups(id);
@@ -1685,6 +1767,139 @@ export function createAppStore(deps: StoreDeps): AppStore {
 
       async setIncludeBeta(on) {
         await updateModrinthSettings({ includeBeta: on });
+      },
+
+      setPaletteOpen(open) {
+        set(open ? { paletteOpen: true, menu: null } : { paletteOpen: false });
+      },
+
+      openMenu(menu) {
+        set({ menu });
+      },
+
+      closeMenu() {
+        set({ menu: null });
+      },
+
+      moveCursor(delta) {
+        const list = visibleList(get());
+        if (!list) return;
+        set({ cursor: nextCursor(list.ids, get().cursor, delta) });
+      },
+
+      setCursor(id) {
+        set({ cursor: id });
+      },
+
+      toggleCursor() {
+        const { cursor, cursorToggle } = get();
+        const list = visibleList(get());
+        if (!cursor || !list?.ids.includes(cursor)) return;
+        set({ cursorToggle: { id: cursor, n: (cursorToggle?.n ?? 0) + 1 } });
+      },
+
+      goToFinding(findingId) {
+        const id = get().selectedInstanceId;
+        if (!id) return;
+        set((st) => ({
+          findingsTab: { ...st.findingsTab, [id]: 'findings' },
+          selection: { kind: 'finding', id: findingId },
+          expandFindingId: findingId,
+          cursor: findingId,
+          inspectorOpen: true,
+        }));
+      },
+
+      async openMrpack() {
+        const r = await call(cmd.pickMrpack());
+        if (r.status === 'error') {
+          set({ railError: r.error });
+          return;
+        }
+        set({ railError: null, dropRejected: null });
+        const inst = r.data;
+        if (!inst) return;
+        set((st) => {
+          const d = st.discovery ?? { instances: [], probes: [] };
+          return d.instances.some((i) => i.id === inst.id) ? {} : { discovery: { ...d, instances: [...d.instances, inst] } };
+        });
+        get().selectInstance(inst.id);
+      },
+
+      async removeInstance(id) {
+        const r = await call(cmd.removeManualInstance(id));
+        if (r.status === 'error') {
+          set({ railError: r.error });
+          return;
+        }
+        set((st) => {
+          const d = st.discovery ?? { instances: [], probes: [] };
+          return {
+            railError: null,
+            discovery: { ...d, instances: d.instances.filter((i) => i.id !== id) },
+            settings: { ...st.settings, watched: st.settings.watched.filter((w) => w !== id) },
+          };
+        });
+        armed.delete(id);
+        if (get().selectedInstanceId === id) {
+          const next = get().discovery?.instances[0];
+          if (next) get().selectInstance(next.id);
+          else set({ selectedInstanceId: null, selection: null, cursor: null });
+        }
+      },
+
+      dismissDropRejected() {
+        set({ dropRejected: null });
+      },
+
+      async exportReport(id, format) {
+        const token = bump(reportTokens, id);
+        const put = (r: ReportState | null) =>
+          set((st) => {
+            const reports = { ...st.reports };
+            if (r) reports[id] = r;
+            else delete reports[id];
+            return { reports };
+          });
+        const blocked = reportBlock(get(), id);
+        const input = blocked ? null : reportInput(get(), id, { appVersion, generatedAtMs: now() });
+        if (!input) {
+          put({ status: 'error', format, error: { kind: 'invalid', message: blocked ?? 'Scan the instance before exporting a report.', path: null } });
+          return;
+        }
+        let file: { name: string; contents: string };
+        try {
+          file = renderReport(reportCore, input, format);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          put({ status: 'error', format, error: { kind: 'internal', message: `The report could not be built: ${message}`, path: null } });
+          return;
+        }
+        put({ status: 'saving', format });
+        const r = await call(cmd.saveReport(file.name, format, file.contents));
+        if (reportTokens.get(id) !== token) return;
+        if (r.status === 'error') {
+          put({ status: 'error', format, error: r.error });
+          return;
+        }
+        // Cancelled in the dialog: nothing happened, nothing to say.
+        if (r.data === null) {
+          put(null);
+          return;
+        }
+        put({ status: 'saved', format, path: r.data });
+        setTimer(() => {
+          if (reportTokens.get(id) === token && get().reports[id]?.status === 'saved') put(null);
+        }, REPORT_NOTICE_MS);
+      },
+
+      dismissReport(id) {
+        bump(reportTokens, id);
+        set((st) => {
+          const reports = { ...st.reports };
+          delete reports[id];
+          return { reports };
+        });
       },
     };
   });

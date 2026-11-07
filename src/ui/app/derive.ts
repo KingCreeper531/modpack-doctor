@@ -2,8 +2,8 @@
  * Pure view derivations from the store's scan state: tile states for the scan grid, mod-table
  * rows, rail pips, severity counts and the `PackIdentity` sent with fixes. No React, no IPC.
  */
-import type { GridSort, JarRecord, JarStub, PackIdentity } from '../../bindings';
-import type { Finding, PackContext, Severity } from '../../core/model';
+import type { DeclaredFile, GridSort, JarRecord, JarStub, MrVersion, PackIdentity } from '../../bindings';
+import type { Finding, ModrinthContext, PackContext, Severity } from '../../core/model';
 import type { ScanStatus } from '../components/InstanceRailRow';
 import type { ModRow } from '../components/ModTable';
 import type { Tile } from '../components/TileGrid';
@@ -203,4 +203,75 @@ export function fixBlockReason(scan: Pick<InstanceScan, 'result' | 'pack'> | und
 /** Class-file major version → Java release (`65` → `21`). */
 export function javaRelease(major: number): number {
   return major - 44;
+}
+
+// ---- .mrpack (M7, CONTRACTS invariant 15) ----------------------------------------------------
+
+const ENV_SHORT: Readonly<Record<string, string>> = { required: 'req', optional: 'opt', unsupported: 'no' };
+
+/** `c req · s no` (and the words for a tooltip) from a declared file's `env`; null when absent. */
+export function envLabel(client: string | null, server: string | null): { short: string; words: string } | null {
+  if (client === null && server === null) return null;
+  const s = (v: string | null) => (v === null ? '?' : (ENV_SHORT[v] ?? v));
+  const w = (v: string | null) => v ?? 'not stated';
+  return { short: `c ${s(client)} · s ${s(server)}`, words: `client: ${w(client)}, server: ${w(server)}` };
+}
+
+/** Where an override jar of a pack runs, from its folder in the zip. */
+export function overrideEnv(path: string): { short: string; words: string } {
+  if (path.startsWith('client-overrides/')) return { short: 'client only', words: 'client-overrides/ (client only)' };
+  if (path.startsWith('server-overrides/')) return { short: 'server only', words: 'server-overrides/ (server only)' };
+  return { short: 'both', words: 'overrides/ (client and server)' };
+}
+
+/**
+ * Modrinth match of a declared file by its sha1 (no jar record exists for it). "Not on Modrinth"
+ * only when the hash was part of the completed lookup (`queried`); otherwise unknown.
+ */
+export function declaredMatch(
+  file: DeclaredFile,
+  ctx: ModrinthContext | null,
+  queried?: ReadonlySet<string>,
+): { modrinth: ModRow['modrinth']; version: MrVersion | null; title: string | null } {
+  if (!ctx) return { modrinth: { state: 'offline' }, version: null, title: null };
+  const sha1 = file.sha1.trim().toLowerCase();
+  const v = ctx.versions[sha1];
+  if (v) return { modrinth: { state: 'matched' }, version: v, title: ctx.projects[v.projectId]?.title ?? null };
+  const unknown = !sha1 || ctx.offline || ctx.failed.some((h) => h.toLowerCase() === sha1) || !queried?.has(sha1);
+  return { modrinth: { state: unknown ? 'offline' : 'missing' }, version: null, title: null };
+}
+
+/**
+ * Mod-table rows of a pack: its override jars (`deriveModRows`, with the override folder as env)
+ * followed by the files its index declares (path, Modrinth match, env; never a toggle). A finding
+ * counts on a declared row when it cites the file's path as its jar id.
+ */
+export function derivePackRows(scan: InstanceScan, ctx: ModrinthContext | null, jarView?: ModrinthRowView, queried?: ReadonlySet<string>): ModRow[] {
+  const jars = deriveModRows(scan, jarView).map((r) => {
+    const env = overrideEnv(r.id);
+    return { ...r, env: env.short, envTitle: env.words };
+  });
+  const declared = scan.result?.declared ?? [];
+  if (!declared.length) return jars;
+  const { exact } = findingsByJar(scan.findings);
+  const rows = declared.map((d): ModRow => {
+    const m = declaredMatch(d, ctx, queried);
+    const env = envLabel(d.client, d.server);
+    const file = d.path.slice(d.path.lastIndexOf('/') + 1);
+    return {
+      id: d.path,
+      name: m.title ?? file,
+      modId: null,
+      version: m.version?.versionNumber ?? null,
+      loader: null,
+      modrinth: m.modrinth,
+      findings: exact.get(d.path) ?? zero(),
+      enabled: true,
+      declared: true,
+      path: d.path,
+      env: env?.short ?? null,
+      ...(env ? { envTitle: env.words } : {}),
+    };
+  });
+  return [...jars, ...rows];
 }

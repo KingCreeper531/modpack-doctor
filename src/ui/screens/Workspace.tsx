@@ -2,7 +2,7 @@
  * Workspace (DESIGN.md §5): instance heading + summary strip, then the scan grid, the triage
  * list and the mod table (or an open work order in its place, §6.4).
  */
-import { ArrowClockwise, SidebarSimple } from '@phosphor-icons/react';
+import { ArrowClockwise, CaretDown, Export, SidebarSimple } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import type { Instance } from '../../bindings';
@@ -12,8 +12,11 @@ import { SummaryStrip } from '../components/SummaryStrip';
 import { Toggle } from '../components/Toggle';
 import { WorkOrderPanel } from '../components/WorkOrderPanel';
 import { severityCounts } from '../app/derive';
+import { chord } from '../app/keyboard';
+import { showMenu } from '../app/menuHost';
+import { exportMenu } from '../app/menus';
 import { noticeParts } from '../app/modrinthState';
-import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import { useActions, useApp, useAppShallow, useAppStore } from '../app/StoreContext';
 import { useInspectorIsDrawer } from './drawer';
 import { interruptedCount } from './HistoryView';
 import { useNow } from './hooks';
@@ -72,13 +75,19 @@ function Header({ instance }: { instance: Instance }) {
     <header className="shrink-0 border-b border-line bg-panel px-4 pt-2">
       <div className="flex h-6 min-w-0 items-center gap-4">
         <h1 className="min-w-0 shrink truncate t-head text-fg">{instance.name}</h1>
+        {instance.launcher === 'mrpack' ? (
+          <span className="shrink-0 t-mono text-fg-dim" title="Opened .mrpack files are never changed">
+            PACK · read-only
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1 truncate t-mono text-fg-faint" title={instance.root}>
           {instance.root}
         </span>
         {/* A .mrpack file has no game folder: nothing runs, so there is nothing to watch. */}
         {instance.launcher === 'mrpack' ? null : <WatchToggle instanceId={instance.id} />}
         {/* While a scan runs, a click queues exactly one more (it would otherwise be dropped). */}
-        <Button size={24} icon={<ArrowClockwise size={16} />} disabled={queued} onClick={() => void a.scan(instance.id)}>
+        <ExportButton instanceId={instance.id} />
+        <Button size={24} icon={<ArrowClockwise size={16} />} disabled={queued} onClick={() => void a.scan(instance.id)} title={`Rescan (${chord('r')})`}>
           {queued ? 'Rescan queued' : scanning ? 'Rescan after this' : 'Rescan'}
         </Button>
         {drawer ? (
@@ -114,6 +123,65 @@ function WatchToggle({ instanceId }: { instanceId: string }) {
       onChange={(next) => void a.setWatch(instanceId, next)}
       className="shrink-0"
     />
+  );
+}
+
+/** Export report: a two-item menu (Markdown / JSON), native under Tauri. */
+function ExportButton({ instanceId }: { instanceId: string }) {
+  const store = useAppStore();
+  const kind = useApp((s) => s.backendKind);
+  const scanned = useApp((s) => !!s.scans[instanceId]?.result && !!s.scans[instanceId]?.pack);
+  const saving = useApp((s) => s.reports[instanceId]?.status === 'saving');
+  return (
+    <Button
+      size={24}
+      icon={<Export size={16} />}
+      disabled={!scanned || saving}
+      aria-haspopup="menu"
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const items = exportMenu(scanned, { exportReport: (format) => void store.getState().exportReport(instanceId, format) });
+        showMenu(store, kind, 'Export report', items, { x: r.left, y: r.bottom + 4, origin: e.currentTarget });
+      }}
+    >
+      Export report
+      <CaretDown size={12} aria-hidden />
+    </Button>
+  );
+}
+
+/** The last export: saving, then the saved path for a few seconds, or the refusal inline. */
+function ReportStatus({ instanceId }: { instanceId: string }) {
+  const r = useApp((s) => s.reports[instanceId] ?? null);
+  const a = useActions();
+  if (!r) return null;
+  if (r.status === 'error') {
+    return (
+      <ErrorRow
+        error={r.error}
+        className="shrink-0"
+        action={
+          <Button size={24} onClick={() => a.dismissReport(instanceId)}>
+            Dismiss
+          </Button>
+        }
+      />
+    );
+  }
+  return (
+    <div role="status" className="flex h-8 shrink-0 items-center gap-4 border-b border-line bg-panel px-4">
+      <span className={r.status === 'saved' ? 'shrink-0 t-label text-ok' : 'shrink-0 t-label text-fg-faint'}>{r.status === 'saved' ? 'Report saved' : 'Saving report…'}</span>
+      {r.status === 'saved' ? (
+        <>
+          <span className="min-w-0 flex-1 truncate t-mono text-fg-dim" title={r.path}>
+            {r.path}
+          </span>
+          <Button size={24} onClick={() => a.dismissReport(instanceId)}>
+            Dismiss
+          </Button>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -156,6 +224,7 @@ export function Workspace({ instanceId }: { instanceId: string }) {
   return (
     <>
       <Header instance={instance} />
+      <ReportStatus instanceId={instanceId} />
       <WatchError instanceId={instanceId} />
       <ScanPanel instanceId={instanceId} className="shrink-0 border-b border-line" />
       {/* An open work order is the task at hand: the findings panel gives it room (a third). */}

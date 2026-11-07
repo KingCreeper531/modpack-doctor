@@ -12,6 +12,7 @@
 import { ArrowClockwise } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { FixAction } from '../../bindings';
 import { Button } from '../components/Button';
 import { cx } from '../components/cx';
 import { ErrorRow, isUnavailable } from '../components/ErrorRow';
@@ -23,7 +24,9 @@ import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import type { FindingsTab } from '../app/crashState';
 import { CrashesView } from './CrashesView';
+import { findingMenuFor } from '../app/rowMenus';
 import { useFixBlock } from './fixHooks';
+import { useFindingCursor, useRowMenu } from './hooks';
 import { HistoryView, interruptedCount } from './HistoryView';
 import { useFixVersions } from './modrinthHooks';
 
@@ -49,6 +52,9 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
   const listRef = useRef<HTMLDivElement>(null);
   const versions = useFixVersions(instanceId);
   const blocked = useFixBlock(instanceId);
+  // An opened .mrpack is read-only: its findings never offer a fix (CONTRACTS invariant 15).
+  const pack = useApp((st) => st.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
+  const rowMenu = useRowMenu();
 
   // A finding selected from outside the list (URL hook, later the palette) opens and scrolls in.
   useEffect(() => {
@@ -73,6 +79,13 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
       else next.add(id);
       return next;
     });
+  /** Click or Enter on the keyboard cursor: expand/collapse and show it in the inspector. */
+  const open = (id: string) => {
+    toggle(id);
+    a.select({ kind: 'finding', id });
+  };
+  const ids = useMemo(() => findings.map((f) => f.id), [findings]);
+  const cursor = useFindingCursor(listRef, ids, open);
 
   const topCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : 0;
 
@@ -108,16 +121,18 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
                 finding={f}
                 expanded={expanded.has(f.id)}
                 onToggle={() => {
-                  toggle(f.id);
-                  a.select({ kind: 'finding', id: f.id });
+                  a.setCursor(f.id);
+                  open(f.id);
                 }}
+                focused={cursor === f.id}
+                onContextMenu={(e) => rowMenu(e, `Finding ${f.code}`, (st) => findingMenuFor(st, f.id))}
                 selected={selection?.kind === 'finding' && selection.id === f.id}
                 jarNames={jarNames}
                 fixVersions={versions}
                 selectedJarId={selection?.kind === 'jar' ? selection.id : null}
                 onJarClick={a.revealJar}
-                onFix={(fix) => void a.fix(f.id, fix, 'triage')}
-                fixesDisabled={orderOpen || !!fixPending[f.id] || blocked !== null}
+                {...(pack ? {} : { onFix: (fix: FixAction) => void a.fix(f.id, fix, 'triage') })}
+                fixesDisabled={pack || orderOpen || !!fixPending[f.id] || blocked !== null}
                 fixHint={blocked}
                 // Shown once, next to the button that was pressed (the inspector shows its own).
                 fixError={fixErrorFrom[f.id] === 'triage' ? (fixErrors[f.id] ?? null) : null}
@@ -133,7 +148,11 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
 const TABS: readonly FindingsTab[] = ['findings', 'crashes', 'history'];
 
 export function TriagePanel({ instanceId, className, compact = false }: { instanceId: string; className?: string; compact?: boolean }) {
-  const tab = useApp((st) => st.findingsTab[instanceId] ?? 'findings');
+  const stored = useApp((st) => st.findingsTab[instanceId] ?? 'findings');
+  // A .mrpack is never changed, so it has no backups (no HISTORY legend); CRASHES stays and says
+  // why a pack has no logs.
+  const isPack = useApp((st) => st.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
+  const tab: FindingsTab = isPack && stored === 'history' ? 'findings' : stored;
   const s = useAppShallow((st) => ({ status: st.scans[instanceId]?.status ?? 'idle', findings: st.scans[instanceId]?.findings }));
   const crash = useAppShallow((st) => {
     const c = st.crashes[instanceId];
@@ -156,7 +175,7 @@ export function TriagePanel({ instanceId, className, compact = false }: { instan
   const findingsMeta = s.status === 'done' || s.findings?.length ? `${counts.error} E · ${counts.warning} W · ${counts.info} I` : undefined;
   const historyMeta = history.status === 'done' ? plural(history.count, 'backup') : undefined;
   const crashMeta = crashCounts ? `${crashCounts.error} E · ${crashCounts.warning} W · ${crashCounts.info} I` : undefined;
-  const tabs: PanelTab[] = [
+  const allTabs: PanelTab[] = [
     { id: 'findings', label: 'Findings' },
     {
       id: 'crashes',
@@ -183,6 +202,7 @@ export function TriagePanel({ instanceId, className, compact = false }: { instan
         : {}),
     },
   ];
+  const tabs = isPack ? allTabs.filter((t) => t.id !== 'history') : allTabs;
   const panelId = `findings-panel-${instanceId}`;
   return (
     <Panel

@@ -25,7 +25,7 @@
  * on the server instance.
  */
 import type { HashLookup, JarRecord, MrFile, MrProject, MrVersion, ProjectLookup, SideSupport } from '../../bindings';
-import { MOCK_INSTANCES, mockJars } from './mockData';
+import { MOCK_DECLARED, MOCK_INSTANCES, mockJars } from './mockData';
 
 interface ProjectSpec {
   slug: string;
@@ -238,9 +238,30 @@ function lookup(sha1s: string[], answer: (e: Entry) => MrVersion | null): HashLo
   return { found, failed: [], offline: false };
 }
 
-/** `modrinth_identify`. */
+/** A file a mock `.mrpack` index declares, as Modrinth identifies its hash (or null). */
+function declaredVersion(sha1: string): MrVersion | null {
+  for (const files of Object.values(MOCK_DECLARED)) {
+    for (const d of files) {
+      if (d.file.sha1.toLowerCase() !== sha1.toLowerCase() || !d.project) continue;
+      const p = d.project;
+      const spec: ProjectSpec = { slug: p.slug, title: p.title, ...(p.env ? { env: p.env } : {}) };
+      const name = d.file.path.slice(d.file.path.lastIndexOf('/') + 1);
+      const v = version(spec, p.versionNumber, 'release', p.loaders[0] ?? 'fabric', p.gameVersions[0] ?? '', name, d.file.size, published(120, `${p.slug}:${p.versionNumber}`), d.file.sha1);
+      return { ...v, loaders: [...p.loaders], gameVersions: [...p.gameVersions] };
+    }
+  }
+  return null;
+}
+
+/** `modrinth_identify` (jars of the mock instances, and the files mock packs declare). */
 export function mockIdentify(sha1s: string[]): HashLookup {
-  return lookup(sha1s, identified);
+  const r = lookup(sha1s, identified);
+  for (const h of sha1s) {
+    if (r.found[h]) continue;
+    const v = declaredVersion(h);
+    if (v) r.found[h] = v;
+  }
+  return r;
 }
 
 /** Everything failed and nothing was cached: the network is down. */
@@ -380,6 +401,12 @@ function specById(): Map<string, ProjectSpec> {
   specs = new Map();
   for (const e of entries().values()) specs.set(projectId(e.spec.slug), e.spec);
   for (const r of Object.values(RESOLVABLE)) specs.set(projectId(r.slug), r);
+  for (const files of Object.values(MOCK_DECLARED)) {
+    for (const d of files) {
+      const p = d.project;
+      if (p && !specs.has(projectId(p.slug))) specs.set(projectId(p.slug), { slug: p.slug, title: p.title, ...(p.env ? { env: p.env } : {}) });
+    }
+  }
   return specs;
 }
 

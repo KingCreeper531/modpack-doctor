@@ -109,11 +109,22 @@ describe('mock backend', () => {
     expect(b.settings().theme).toBe('light');
   });
 
-  it('answers later-milestone commands exactly like Rust: a neutral unavailable error', async () => {
-    const b = createMockBackend({ latencyMs: 0 });
-    const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
-    expect(await b.commands.scanInstance(pack.id)).toMatchObject({ error: { kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet." } });
-    expect(await b.commands.saveReport('r', 'markdown', '')).toMatchObject({ error: { kind: 'unavailable' } });
+  it('answers the M7 commands: packs open and scan (with declared files), reports save', async () => {
+    const b = createMockBackend({ latencyMs: 0, scanMs: 0 });
+    const picked = await b.commands.pickMrpack();
+    expect(picked).toMatchObject({ status: 'ok', data: { launcher: 'mrpack', metadataSource: 'mrpack' } });
+    const id = picked.status === 'ok' ? picked.data!.id : '';
+    const scan = await b.commands.scanInstance(id);
+    expect(scan.status).toBe('ok');
+    if (scan.status === 'ok') {
+      expect(scan.data.jars.every((j) => /^(client-|server-)?overrides\//.test(j.path))).toBe(true);
+      expect(scan.data.declared.map((d) => d.path)).toContain('mods/sodium-fabric-0.5.11+mc1.20.1.jar');
+      expect(scan.data.declared.some((d) => d.downloads.some((u) => !u.startsWith('https://cdn.modrinth.com/') && !u.startsWith('https://github.com/')))).toBe(true);
+    }
+    expect(await b.commands.saveReport('r', 'markdown', '# r')).toEqual({ status: 'ok', data: 'C:\\Users\\alex\\Documents\\r.md' });
+    expect(b.reports()).toEqual([{ name: 'r', format: 'markdown', contents: '# r' }]);
+    expect(await createMockBackend({ latencyMs: 0, scenario: 'reportcancel' }).commands.saveReport('r', 'json', '{}')).toEqual({ status: 'ok', data: null });
+    expect(await b.commands.checkUpdate()).toMatchObject({ error: { kind: 'unavailable' } });
   });
 
   it('answers the fix commands (M6) with readable refusals for bad input', async () => {

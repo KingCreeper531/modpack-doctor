@@ -3,7 +3,7 @@
  * then the footer: Add folder, add a launcher's data folder, the Modrinth settings and the theme
  * control.
  */
-import { CaretDown, CaretRight, FolderPlus } from '@phosphor-icons/react';
+import { CaretDown, CaretRight, FilePlus, FolderPlus } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import type { Launcher } from '../../bindings';
@@ -14,7 +14,9 @@ import { InstanceRailRow } from '../components/InstanceRailRow';
 import { LAUNCHER_NAME } from '../components/labels';
 import { Panel } from '../components/Panel';
 import { instanceStatus } from '../app/derive';
+import { instanceMenuFor } from '../app/rowMenus';
 import { useActions, useApp } from '../app/StoreContext';
+import { useRowMenu } from './hooks';
 import { ModrinthControl } from './ModrinthControl';
 import { ThemeControl } from './ThemeControl';
 
@@ -28,8 +30,36 @@ function RailRow({ id }: { id: string }) {
   const crash = useApp((s) => s.crashAlerts[id]?.summary.headline ?? null);
   const watching = useApp((s) => s.settings.watched.includes(id));
   const a = useActions();
+  const rowMenu = useRowMenu();
   if (!instance) return null;
-  return <InstanceRailRow instance={instance} status={status} selected={selected} onSelect={a.selectInstance} crash={crash} watching={watching} />;
+  return (
+    <InstanceRailRow
+      instance={instance}
+      status={status}
+      selected={selected}
+      onSelect={a.selectInstance}
+      crash={crash}
+      watching={watching}
+      onContextMenu={(e) => rowMenu(e, `Instance ${instance.name}`, (st) => instanceMenuFor(st, id))}
+    />
+  );
+}
+
+/** A file dropped on the window that Rust refused (`DropRejected`): inline, never a toast. */
+function DropRejectedRow() {
+  const d = useApp((s) => s.dropRejected);
+  const a = useActions();
+  if (!d) return null;
+  return (
+    <ErrorRow
+      error={{ kind: 'invalid', message: `Not opened: ${d.reason}`, path: d.name }}
+      action={
+        <Button size={24} onClick={a.dismissDropRejected}>
+          Dismiss
+        </Button>
+      }
+    />
+  );
 }
 
 export function InstanceRail({ className }: { className?: string }) {
@@ -75,10 +105,16 @@ export function InstanceRail({ className }: { className?: string }) {
             }
           />
         ) : null}
+        <DropRejectedRow />
         <div className="flex flex-col gap-2 p-2">
-          <Button size={24} icon={<FolderPlus size={16} />} className="w-full justify-start" onClick={() => void a.addFolder()}>
-            Add folder
-          </Button>
+          <div className="flex gap-2">
+            <Button size={24} icon={<FolderPlus size={16} />} className="min-w-0 flex-1 justify-start" onClick={() => void a.addFolder()}>
+              Add folder
+            </Button>
+            <Button size={24} icon={<FilePlus size={16} />} className="min-w-0 flex-1 justify-start" onClick={() => void a.openMrpack()}>
+              Open .mrpack
+            </Button>
+          </div>
           <button
             type="button"
             aria-expanded={rootsOpen}

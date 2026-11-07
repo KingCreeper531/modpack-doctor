@@ -6,6 +6,7 @@
  * the real `src/core` checks fire against them exactly as they would against a Rust scan.
  */
 import type {
+  DeclaredFile,
   Dependency,
   DependencyKind,
   DiscoveryReport,
@@ -599,6 +600,102 @@ function cobblemon(): JarSpec[] {
   ];
 }
 
+// ── The .mrpack "opened" in the browser preview (M7) ─────────────────────────
+
+/**
+ * What `pick_mrpack` answers in the browser preview (no native dialog exists there): a small
+ * Fabric 1.20.1 pack. Two jars ship in the zip (`overrides/`, `client-overrides/`); the index
+ * declares six more by hash (`MOCK_DECLARED`).
+ */
+export const MOCK_PICKED_PACK: Instance = {
+  id: 'a7c3e91f05d24b68',
+  name: 'Explorer Kit 2.1',
+  launcher: 'mrpack',
+  root: `${HOME}\\Downloads\\Explorer Kit 2.1.mrpack`,
+  gameDir: `${HOME}\\Downloads\\Explorer Kit 2.1.mrpack`,
+  mcVersion: '1.20.1',
+  loader: { kind: 'fabric', version: '0.15.11' },
+  side: 'client',
+  metadataSource: 'mrpack',
+  modCount: 8,
+};
+
+function explorerKit(): JarSpec[] {
+  const fab = { loader: 'fabric' as const, mc: '>=1.20 <1.21', loaderRange: '>=0.15.0' };
+  return [
+    {
+      file: 'explorerkit-branding-2.1.0.jar',
+      dir: 'overrides/mods',
+      mods: [{ modId: 'explorerkit_branding', version: '2.1.0', name: 'Explorer Kit Branding', ...fab }],
+      maxClass: 61,
+      sizeKb: 24,
+    },
+    {
+      file: 'menu-tweaks-1.3.0.jar',
+      dir: 'client-overrides/mods',
+      mods: [{ modId: 'menutweaks', version: '1.3.0', name: 'Menu Tweaks', ...fab, env: 'client' }],
+      maxClass: 61,
+      sizeKb: 41,
+    },
+  ];
+}
+
+/**
+ * One file the mock index declares, with what Modrinth knows of its hash: `project` (slug, title,
+ * version, loaders, game versions) when it is identified, else nothing (not on Modrinth).
+ */
+export interface MockDeclared {
+  file: DeclaredFile;
+  project: { slug: string; title: string; versionNumber: string; loaders: string[]; gameVersions: string[]; env?: 'client_only' | 'client_and_server' } | null;
+}
+
+function declared(path: string, client: string | null, server: string | null, url: string, sizeKb: number): DeclaredFile {
+  const r = seeded(hashString(`declared:${path}`));
+  return { path, sha1: hex(r, 40), sha512: hex(r, 128), size: sizeKb * 1024, client, server, downloads: [url] };
+}
+
+const cdn = (pid: string, file: string) => `https://cdn.modrinth.com/data/${pid}/versions/${file}`;
+
+/**
+ * The index of `MOCK_PICKED_PACK`. Deliberately: one download outside Modrinth's allowlist
+ * (Xaero's Minimap from a CurseForge CDN → W-MRPACK-DOWNLOAD), one file Modrinth does not know
+ * (I-NOT-ON-MODRINTH) and one built for another Minecraft version (ImmediatelyFast for 1.21.1 →
+ * E-MC-RANGE).
+ */
+export const MOCK_DECLARED: Readonly<Record<string, readonly MockDeclared[]>> = {
+  [MOCK_PICKED_PACK.id]: [
+    {
+      file: declared('mods/fabric-api-0.92.2+1.20.1.jar', 'required', 'required', cdn('P7dR8mSH', 'fabric-api-0.92.2+1.20.1.jar'), 2140),
+      project: { slug: 'fabric-api', title: 'Fabric API', versionNumber: '0.92.2+1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'] },
+    },
+    {
+      file: declared('mods/sodium-fabric-0.5.11+mc1.20.1.jar', 'required', 'unsupported', cdn('AANobbMI', 'sodium-fabric-0.5.11+mc1.20.1.jar'), 1012),
+      project: { slug: 'sodium', title: 'Sodium', versionNumber: '0.5.11+mc1.20.1', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
+    },
+    {
+      file: declared('mods/lithium-fabric-mc1.20.1-0.11.2.jar', 'optional', 'required', cdn('gvQqBUqZ', 'lithium-fabric-mc1.20.1-0.11.2.jar'), 688),
+      project: { slug: 'lithium', title: 'Lithium', versionNumber: 'mc1.20.1-0.11.2', loaders: ['fabric'], gameVersions: ['1.20.1'] },
+    },
+    {
+      file: declared('mods/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 'required', 'unsupported', 'https://mediafilez.forgecdn.net/files/5395/104/Xaeros_Minimap_24.2.0_Fabric_1.20.jar', 1480),
+      project: { slug: 'xaeros-minimap', title: "Xaero's Minimap", versionNumber: '24.2.0', loaders: ['fabric'], gameVersions: ['1.20.1'], env: 'client_only' },
+    },
+    {
+      file: declared('mods/explorer-waypoints-0.4.jar', 'required', 'optional', 'https://github.com/explorer-kit/waypoints/releases/download/v0.4/explorer-waypoints-0.4.jar', 96),
+      project: null,
+    },
+    {
+      file: declared('mods/ImmediatelyFast-Fabric-1.3.4+1.21.1.jar', 'required', 'unsupported', cdn('5ZwdcRci', 'ImmediatelyFast-Fabric-1.3.4+1.21.1.jar'), 520),
+      project: { slug: 'immediatelyfast', title: 'ImmediatelyFast', versionNumber: '1.3.4+1.21.1', loaders: ['fabric'], gameVersions: ['1.21.1'], env: 'client_only' },
+    },
+  ],
+};
+
+/** `ScanResult.declared` of a mock pack (empty for anything else). */
+export function mockDeclared(instanceId: string): DeclaredFile[] {
+  return (MOCK_DECLARED[instanceId] ?? []).map((d) => d.file);
+}
+
 const SETS: Record<string, () => JarSpec[]> = {
   '3f9c2a71d0b84e15': atm9,
   '8a1e40c6f7d23b90': fabric121,
@@ -606,6 +703,7 @@ const SETS: Record<string, () => JarSpec[]> = {
   'c04d9e2b61a8f735': cabin,
   '51b7e8d02c94a6f3': neo121,
   '2b8f61e4d7a09c53': cobblemon,
+  [MOCK_PICKED_PACK.id]: explorerKit,
 };
 
 const cache = new Map<string, JarRecord[]>();
