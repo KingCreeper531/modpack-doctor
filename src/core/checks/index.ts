@@ -13,6 +13,7 @@ import { loaderRangeCheck } from './loaderRange';
 import { mcRangeCheck } from './mcRange';
 import { missingDepCheck } from './missingDep';
 import { notOnModrinthCheck } from './notOnModrinth';
+import { mrpackDownloadCheck } from './mrpackDownload';
 import { splitPkgCheck } from './splitPkg';
 import { wrongLoaderCheck } from './wrongLoader';
 
@@ -30,6 +31,7 @@ export const CHECKS: readonly Check[] = [
   corruptJarCheck,
   javaClassCheck,
   notOnModrinthCheck,
+  mrpackDownloadCheck,
 ];
 
 const SEVERITY_RANK: Readonly<Record<Severity, number>> = { error: 0, warning: 1, info: 2 };
