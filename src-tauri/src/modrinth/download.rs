@@ -181,14 +181,17 @@ impl ModrinthClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        let Some(ext) = icon_ext(&content_type) else { return Ok(fallback) };
+        // The label only has to claim a raster image; the bytes decide the format, because the CDN
+        // serves some WebP icons as `image/png`. Anything that is not PNG/JPEG/WebP/GIF by its
+        // magic bytes (an SVG or HTML in disguise) is refused.
+        if icon_ext(&content_type).is_none() {
+            return Ok(fallback);
+        }
         let bytes = match http::read_capped(resp, MAX_ICON).await {
             Ok(b) => b,
             Err(_) => return Ok(fallback),
         };
-        if !magic_matches(ext, &bytes) {
-            return Ok(fallback);
-        }
+        let Some(ext) = ICON_EXTS.into_iter().find(|e| magic_matches(e, &bytes)) else { return Ok(fallback) };
         tokio::fs::create_dir_all(icon_dir).await.map_err(|e| Error::io(icon_dir, e))?;
         let dest = icon_dir.join(format!("{project_id}.{ext}"));
         let temp = icon_dir.join(format!(".{project_id}.{ext}.part"));

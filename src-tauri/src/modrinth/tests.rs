@@ -715,6 +715,30 @@ async fn icon_fetch_validates_and_caches() {
 }
 
 #[tokio::test]
+async fn icon_format_comes_from_the_bytes_not_the_label() {
+    // Seen live on cdn.modrinth.com: WebP bytes served as `image/png` (with nosniff).
+    const WEBP: &[u8] = b"RIFF(0  WEBPVP8Lfake";
+    let h = Harness::new().await;
+    Mock::given(method("GET"))
+        .and(path("/data/8BmcQJ2H/icon_96.webp"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(WEBP.to_vec(), "image/png"))
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/P7dR8mSH/page.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(b"<html>not an image</html>".to_vec(), "image/webp"))
+        .mount(&h.server)
+        .await;
+    let c = h.client(true);
+    let icons = TempDir::new().unwrap();
+    let cdn = h.cdn();
+    let p = c.fetch_icon("8BmcQJ2H", &format!("{cdn}/data/8BmcQJ2H/icon_96.webp"), icons.path()).await.unwrap().unwrap();
+    assert_eq!(p, icons.path().join("8BmcQJ2H.webp"));
+    assert_eq!(std::fs::read(&p).unwrap(), WEBP);
+    assert_eq!(c.fetch_icon("P7dR8mSH", &format!("{cdn}/data/P7dR8mSH/page.png"), icons.path()).await.unwrap(), None);
+}
+
+#[tokio::test]
 async fn attach_icons_fills_icon_paths() {
     let h = Harness::new().await;
     let cdn = h.cdn();
