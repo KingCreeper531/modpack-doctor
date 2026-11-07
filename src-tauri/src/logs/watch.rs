@@ -14,7 +14,8 @@
 //!   (in this watcher and in the shared [`CwdLog`]), because the JVM writes
 //!   `hs_err_pid<pid>.log` there and that is not always the game dir. When the process exits,
 //!   `<cwd>/hs_err_pid<pid>.log` is looked for (for `CWD_HS_ERR_WAIT_MS`) and, if the PathGuard
-//!   accepts it, reported as a new hs_err file with the id `@cwd/hs_err_pid<pid>.log`;
+//!   accepts it (inside a root, or directly in a read-only hs_err dir such as CurseForge's
+//!   `Install`), reported as a new hs_err file with the id `@cwd/hs_err_pid<pid>.log`;
 //! - an [`EpisodeMachine`] fed in a fixed order per step: process starts, new crash files,
 //!   new log lines (a replaced `latest.log` first feeds `LogReset`), process exits, tick.
 //!   Processes are listed *before* the log is read, so every line a process wrote before

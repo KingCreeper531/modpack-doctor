@@ -171,6 +171,44 @@ Sources:
 - `<root>/Install/` holds the shared versions, libraries and assets. Each `Instances/<name>/` folder **is the game dir**: `mods/`, `config/`, `logs/`, `crash-reports/`.
 - Linux client article: https://support.curseforge.com/support/solutions/articles/9000265088 (updated 2025-11-16).
 
+### JVM working directory (where `hs_err_pid<pid>.log` lands) — verified 2026-11-07
+
+CurseForge does not start Java itself. It runs Mojang's native launcher (`Install/minecraft.exe`)
+with `<root>/Install` as the launcher's `--workDir`, and that launcher starts the game. Evidence,
+gathered read-only on the owner's Windows 11 machine (CurseForge root
+`%USERPROFILE%\curseforge\minecraft`, 10+ instances, launcher core 3.12.30 in 2025-04 and 3.22.20
+in 2025-11):
+
+1. `Install/launcher_log.txt`, `LauncherMain.cpp(424)`: `workDir: %USERPROFILE%\curseforge\minecraft\Install`.
+   So `Install` is the *launcher's* working dir. It also holds `launcher_accounts.json`,
+   `launcher_msa_credentials.bin`, `launcher_profiles.json` and the `launcher_log*.txt` files,
+   which is why it must never become a PathGuard root.
+2. Every game start in all ten `launcher_log*.txt` files (8 starts, 3 instances, both launcher
+   versions) is logged by `MinecraftJavaRunningContext.cpp(158)` as `Starting game in folder
+   %USERPROFILE%\curseforge\minecraft\Instances\<name> using java executable …`, i.e. the
+   instance folder, the same path the game gets as `--gameDir` and
+   `-Dminecraft.applet.TargetDirectory`.
+3. Independent check through a relative path: Forge's `log4j2.xml` (inside
+   `Install/libraries/net/minecraftforge/fmlloader/1.20.1-47.4.0/fmlloader-1.20.1-47.4.0.jar`)
+   writes `fileName="logs/latest.log"` and `logs/debug.log`, relative to the JVM's working
+   dir. Those files exist in `Instances/<name>/logs/` (e.g. a 1 MB `latest.log` from the
+   2025-11-16 session), and `Install/` has **no** `logs/` or `crash-reports/` folder.
+4. No `hs_err_pid*.log` exists anywhere under the CurseForge root on this machine (no native
+   crash has happened), so the location could not be observed directly.
+
+**Conclusion:** with current CurseForge (vanilla launcher core ≥ 3.12) the JVM runs **in the
+instance folder**, so its hs_err files land in the game dir and are already listed with plain
+`hs_err_pid<pid>.log` ids. The `Install` folder is *not* the JVM's working dir today. The
+read-only PathGuard hs_err rule for `Install` (CONTRACTS invariant 11, owner decision
+2026-11-07) is kept as a defensive measure, for older or future launcher builds or a JVM that
+reports `Install` as its working dir. It reads only `hs_err_pid<pid>.log` files directly in
+`Install`, attributed by the `--gameDir` in their `Command Line:`.
+
+The same launcher binary logs "Starting game in folder <game dir>", so the vanilla launcher
+itself most likely runs a profile with a custom `gameDir` in that folder too, not in
+`.minecraft`. The `.minecraft` launcher logs on this machine contain no game start, so this is
+unverified for vanilla; the `.minecraft` rule stays as it is.
+
 ### `minecraftinstance.json` (community-derived key names)
 
 Key names are confirmed by Modrinth `api/pack/import/curseforge.rs`, NoRisk `curseforge_app.rs` and Pandora `launcher_import/curseforge.rs`. Values in this example are illustrative.

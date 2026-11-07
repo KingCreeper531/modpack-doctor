@@ -224,8 +224,9 @@ pub fn root_changes(old: &[PathBuf], new: &[PathBuf], pinned: &[PathBuf]) -> (Ve
 }
 
 /// Replace `registry` with `next` and sync `guard`: new roots are added first, then roots no
-/// instance needs any more are removed (pinned roots never are). A root that cannot be added
-/// (folder vanished since discovery) is logged and skipped.
+/// instance needs any more are removed (pinned roots never are), then the read-only hs_err
+/// dirs are replaced. A root that cannot be added (folder vanished since discovery) is logged
+/// and skipped.
 pub fn apply_registry(guard: &PathGuard, registry: &mut Registry, next: Registry, pinned: &[PathBuf]) {
     let (add, remove) = root_changes(&registry.roots, &next.roots, pinned);
     for r in &add {
@@ -237,6 +238,9 @@ pub fn apply_registry(guard: &PathGuard, registry: &mut Registry, next: Registry
         guard.remove_root(r);
     }
     *registry = next;
+    // Read-only hs_err rule for CurseForge's shared `Install` folder, only while a CurseForge
+    // instance is discovered (CONTRACTS invariant 11).
+    guard.set_hs_err_dirs(&crate::discovery::curseforge_hs_err_dirs(&registry.instances()));
 }
 
 // ── In-flight scans ──────────────────────────────────────────────────────────

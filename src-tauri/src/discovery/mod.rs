@@ -28,6 +28,7 @@ use crate::model::{DiscoveryReport, Launcher, ProbeResult, Settings};
 
 use common::{canonical, is_dir, location_key, resolve, Outcome};
 
+pub use curseforge::hs_err_dirs as curseforge_hs_err_dirs;
 pub use env::{Env, Os, ENV_VARS};
 pub use manual::locate_game_dir;
 pub use modrinth::DbOptions;

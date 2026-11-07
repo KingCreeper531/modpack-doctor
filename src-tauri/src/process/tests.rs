@@ -146,23 +146,160 @@ fn game_status_reports_pids_and_reason() {
     assert!(busy.reason.expect("reason").contains("pid 51"));
 }
 
+// ── Windows lock probe ───────────────────────────────────────────────────────
+
 #[cfg(windows)]
-#[test]
-fn locked_jar_is_reported_on_windows() {
+mod lock_probe {
+    use std::fs;
     use std::os::windows::fs::OpenOptionsExt;
-    let (_t, game, _other) = setup();
-    fs::create_dir_all(game.join("mods")).expect("mods");
-    fs::write(game.join("mods").join("a.jar"), b"jar").expect("jar");
-    fs::write(game.join("mods").join("b.jar"), b"jar").expect("jar");
-    let guard = PathGuard::new();
-    guard.add_root(&game).expect("root");
-    assert_eq!(locked_mod_jar(&game, &guard), None);
-    // Hold it the way the JVM does (shared read), which blocks an exclusive open.
-    let _held = fs::OpenOptions::new().read(true).share_mode(1).open(game.join("mods").join("a.jar")).expect("open");
-    let reason = locked_mod_jar(&game, &guard).expect("locked");
-    assert!(reason.contains("mods/a.jar"), "{reason}");
-    let status = game_status(&game, &FakeProcesses::default(), &guard);
-    assert!(status.running && status.pids.is_empty());
+    use std::path::{Path, PathBuf};
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    use super::setup;
+    use crate::guard::PathGuard;
+    use crate::process::{game_status, locked_mod_jar, win_probe, FakeProcesses};
+
+    const FILE_SHARE_READ: u32 = 0x1;
+    const FILE_SHARE_WRITE: u32 = 0x2;
+    const FILE_SHARE_DELETE: u32 = 0x4;
+    const DELETE: u32 = 0x0001_0000;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const HOLD_ENV: &str = "MPD_TEST_HOLD_JAR";
+    const MARK_ENV: &str = "MPD_TEST_HOLD_MARKERS";
+
+    /// Open `path` for reading the way the JVM's `ZipFile` does on Windows: `RandomAccessFile`
+    /// → `winFileHandleOpen` (OpenJDK `io_util_md.c`) = `GENERIC_READ`,
+    /// `FILE_SHARE_READ | FILE_SHARE_WRITE`, no `FILE_SHARE_DELETE`.
+    fn open_like_jvm(path: &Path) -> std::io::Result<fs::File> {
+        fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE).open(path)
+    }
+
+    fn sharing_violation(r: std::io::Result<fs::File>) -> bool {
+        matches!(r, Err(e) if e.raw_os_error() == Some(ERROR_SHARING_VIOLATION))
+    }
+
+    /// Child half of [`a_jar_held_by_another_process_is_detected`]: run as a separate process
+    /// (this test binary re-executed with `--exact`), hold the jar like the JVM until released.
+    /// A no-op in normal test runs.
+    #[test]
+    fn hold_jar_child() {
+        let (Ok(jar), Ok(marks)) = (std::env::var(HOLD_ENV), std::env::var(MARK_ENV)) else { return };
+        let marks = PathBuf::from(marks);
+        let _held = open_like_jvm(Path::new(&jar)).expect("child: open the jar");
+        fs::write(marks.join("ready"), b"1").expect("child: ready marker");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !marks.join("release").exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    struct Holder {
+        child: Child,
+        marks: PathBuf,
+    }
+
+    impl Holder {
+        fn spawn(jar: &Path, marks: &Path) -> Self {
+            fs::create_dir_all(marks).expect("markers dir");
+            let exe = std::env::current_exe().expect("test exe");
+            let child = Command::new(exe)
+                .args(["--exact", "process::tests::lock_probe::hold_jar_child", "--test-threads=1"])
+                .env(HOLD_ENV, jar)
+                .env(MARK_ENV, marks)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn the holder");
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !marks.join("ready").exists() {
+                assert!(Instant::now() < deadline, "the holder process never opened the jar");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Self { child, marks: marks.to_path_buf() }
+        }
+
+        fn release(mut self) {
+            fs::write(self.marks.join("release"), b"1").expect("release marker");
+            let _ = self.child.wait();
+        }
+    }
+
+    impl Drop for Holder {
+        fn drop(&mut self) {
+            let _ = fs::write(self.marks.join("release"), b"1");
+        }
+    }
+
+    fn game_with_jars() -> (tempfile::TempDir, PathBuf, PathBuf, PathGuard) {
+        let (t, game, _other) = setup();
+        fs::create_dir_all(game.join("mods")).expect("mods");
+        fs::write(game.join("mods").join("a.jar"), b"jar").expect("jar");
+        fs::write(game.join("mods").join("b.jar"), b"jar").expect("jar");
+        let guard = PathGuard::new();
+        guard.add_root(&game).expect("root");
+        let marks = t.path().join("markers");
+        (t, game, marks, guard)
+    }
+
+    #[test]
+    fn a_jar_held_by_another_process_is_detected() {
+        let (_t, game, marks, guard) = game_with_jars();
+        let jar = game.join("mods").join("a.jar");
+        assert_eq!(locked_mod_jar(&game, &guard), None, "nobody holds it yet");
+        // Our own handles never count (the scanner may have a jar open).
+        let own = open_like_jvm(&jar).expect("own handle");
+        assert_eq!(locked_mod_jar(&game, &guard), None);
+        drop(own);
+
+        let holder = Holder::spawn(&jar, &marks);
+        let pid = holder.child.id();
+        let reason = locked_mod_jar(&game, &guard).expect("detected");
+        assert!(reason.contains("mods/a.jar") && reason.contains(&format!("pid {pid}")), "{reason}");
+        let status = game_status(&game, &FakeProcesses::default(), &guard);
+        assert!(status.running && status.pids.is_empty(), "{status:?}");
+        assert!(status.reason.expect("reason").contains("mods/a.jar"));
+
+        // While the probe's handle is open, nobody is blocked: the JVM-style open, a
+        // read-only-sharing open and an open requesting delete access all succeed.
+        let probe = win_probe::open_probe(&jar).expect("probe handle");
+        assert!(win_probe::holders(&probe).expect("holders").contains(&pid));
+        open_like_jvm(&jar).expect("JVM-style open while probing");
+        fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&jar).expect("FILE_SHARE_READ open while probing");
+        holder.release();
+        assert_eq!(locked_mod_jar(&game, &guard), None, "released");
+        fs::OpenOptions::new().read(true).share_mode(0).open(&jar).expect("exclusive open while probing");
+        fs::OpenOptions::new().access_mode(DELETE).share_mode(0).open(&jar).expect("delete open while probing");
+        drop(probe);
+    }
+
+    #[test]
+    fn the_probe_opens_even_against_an_exclusive_holder() {
+        let (_t, game, _marks, _guard) = game_with_jars();
+        let jar = game.join("mods").join("a.jar");
+        let _exclusive = fs::OpenOptions::new().read(true).share_mode(0).open(&jar).expect("exclusive");
+        let probe = win_probe::open_probe(&jar).expect("attribute-only open is never a sharing violation");
+        assert!(win_probe::holders(&probe).expect("holders").contains(&std::process::id()));
+    }
+
+    /// Why the probe does not request `DELETE` access: such a handle (even with full sharing)
+    /// makes a JVM-style open fail for as long as it is open.
+    #[test]
+    fn a_delete_access_probe_would_block_the_jvm() {
+        let (_t, game, _marks, _guard) = game_with_jars();
+        let jar = game.join("mods").join("a.jar");
+        let share_all = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+        let delete_probe = fs::OpenOptions::new().access_mode(DELETE).share_mode(share_all).open(&jar).expect("probe");
+        assert!(sharing_violation(open_like_jvm(&jar)));
+        assert!(sharing_violation(fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&jar)));
+        // Only openers that themselves share delete (java.nio channels) get through.
+        fs::OpenOptions::new().read(true).share_mode(share_all).open(&jar).expect("nio-style open");
+        drop(delete_probe);
+        // And it detects a JVM-style holder only through the same conflict.
+        let held = open_like_jvm(&jar).expect("held");
+        assert!(sharing_violation(fs::OpenOptions::new().access_mode(DELETE).share_mode(share_all).open(&jar)));
+        drop(held);
+    }
 }
 
 #[test]
