@@ -118,7 +118,7 @@ function toFinding(ctx: Ctx, d: Dep): Finding | null {
 
   if (missing) {
     const culprits = refs(ctx, requesterJars);
-    return finding(ctx, {
+    const f = finding(ctx, {
       code: 'C-MISSING-MANDATORY',
       severity: d.severity,
       title: `${who} need${requesters.length === 1 ? 's' : ''} ${d.depId}, which is not installed`,
@@ -135,6 +135,8 @@ function toFinding(ctx: Ctx, d: Dep): Finding | null {
       discriminator: `missing:${d.depId}`,
       unresolved,
     });
+    // Platform ids (`minecraft`, `forge`, …) cannot be installed from Modrinth.
+    return PLATFORM.has(d.depId.toLowerCase()) ? f : { ...f, missingModIds: [d.depId.toLowerCase()] };
   }
 
   if (PLATFORM.has(d.depId)) {
