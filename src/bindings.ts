@@ -80,7 +80,8 @@ export const commands = {
 	 *  Every `versionId` is re-fetched (`GET /v2/version/{id}`) and re-validated; any failure
 	 *  rejects the whole order with a readable `Invalid` error naming the action:
 	 *  - `pack` must agree with launcher/mrpack metadata and any stored override.
-	 *  - `version.loaders` must contain the pack loader (NeoForge 1.20.1 also accepts `forge`),
+	 *  - `version.loaders` must contain the pack loader (NeoForge 1.20.1 also accepts `forge`,
+	 *    Quilt also accepts `fabric`); the version must be published after the current one (`Replace`),
 	 *    and `version.gameVersions` must contain the pack MC version.
 	 *  - `Replace`: the current jar's sha1 must identify (via `/version_files`) to the same
 	 *    `projectId` as the new version; jars not on Modrinth cannot be replaced.

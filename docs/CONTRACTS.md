@@ -201,6 +201,51 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - `JarRecord.moduleName` comes from `module-info` or `Automatic-Module-Name` only. `src/core`
       derives the JDK automatic name from the file name when it is absent.
 
+14. **Fix execution (M6; safety-critical).** Adds to invariant 8; on any doubt, refuse.
+    - **Plan** (`plan_work_order`) never mutates anything. It resolves every jar id against a
+      fresh stat of the instance's `mods/` (not the UI's scan), records per op its preconditions
+      (source exists with the planned size + mtime + sha1; destination absent), re-validates every
+      Modrinth version per invariant 8 (loader incl. NeoForge-1.20.1→forge and Quilt→fabric, MC
+      version, same project for `Replace`, update published after the current version, download
+      file rule) and fails the whole plan with a readable error naming the action. `Replace` and
+      `InstallDependency` need Modrinth enabled and reachable (else `Offline`). `Manual`
+      actions only add notes. A destination that already exists is refused, never overwritten.
+    - **Orders** live in Rust memory only, are single-use, and expire 15 minutes after planning
+      (`NotFound` "this work order expired — review the fixes again"). `discard_work_order`
+      drops one. At most one order per instance executes at a time, and never while that
+      instance is being scanned (`Conflict`).
+    - **Execute** order: game guard (`game_running` true → `GameRunning`, nothing touched) →
+      write the backup snapshot manifest → ops in plan order, each re-checking its preconditions
+      right before it runs (any mismatch fails the op) → emit `OpStatus` per op (running, then
+      done/failed/skipped). Downloads: CDN URL from the re-fetched version only, streamed to
+      `mods/.<name>.<nonce>.part`, size cap, SHA-512 verified, the jar scanned and required to
+      declare the expected mod id (replaced jar's id, or `InstallDependency.modId` incl.
+      `provides`), then the replaced jar moved into the snapshot, then fsync + rename to `dest`.
+    - **Rollback:** the first failed op stops the order; every completed op of that order is
+      reversed in reverse order (renames back, files moved back out of the snapshot, created
+      files moved *into* the snapshot under `created/`); remaining ops are `skipped`;
+      `rolledBack: true`. A rollback step that fails is reported in its op message and the
+      snapshot is kept so undo can still recover. Temp `.part` files are removed.
+    - **Backups:** `<app data>/backups/<instanceId>/<created ms>/` = `manifest.json`
+      (`BackupEntry` plus, per op, the sha1 of every file before and after) and `files/`
+      (moved-out jars, original relative paths). Written before the first mutation, updated after
+      each op. Nothing under `backups/` is ever deleted automatically. Nothing is deleted
+      anywhere: "remove" and rollback move files into the snapshot.
+    - **Undo** (`plan_undo`) is a work order like any other, per action, planned from the
+      manifest. Each reverse op checks the current file's sha1 against the manifest's "after"
+      value (or absence); a mismatch makes planning fail for that action with a readable error
+      (the user changed the file since), never a silent overwrite. Executed undos are recorded
+      in `undoneActions`.
+    - **Game guard** (`game_running`): Java process match (cwd / `--gameDir`), plus on Windows a
+      lock probe that can never disturb the game: open a mod jar requesting `DELETE` access with
+      full sharing (`FILE_SHARE_READ | WRITE | DELETE`), never `share_mode(0)`. A sharing
+      violation means another process holds it without delete-sharing (the running game).
+    - **Tests run only on temp-dir copies.** No test, smoke tool or manual check mutates a real
+      instance unless the owner asks.
+    - **UI:** every mutation goes through a work order shown in the panel (DESIGN §6.4), including
+      the mod-table enable toggle (a one-op order). After an order executes, the instance is
+      rescanned and Modrinth re-enriched.
+
 ## Commands
 
 | Command | Args | Returns | Events | Milestone |
