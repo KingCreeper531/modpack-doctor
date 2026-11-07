@@ -39,6 +39,8 @@ pub struct AppState {
     pub watchers: Arc<Watchers>,
     /// The shared Modrinth clients (set by `init`; `None` if the cache dirs could not be resolved).
     pub modrinth: Option<ModrinthService>,
+    /// Planned work orders, the per-instance execution lock and the backups root (M6).
+    pub fixes: crate::fix::FixState,
 }
 
 impl std::fmt::Debug for AppState {
@@ -125,6 +127,10 @@ pub fn init<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppState {
             let registered = std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e)).and_then(|()| state.pin_root(&dir));
             if let Err(e) = registered {
                 eprintln!("could not register the app data folder: {e}");
+            }
+            match crate::paths::backups_dir(app) {
+                Ok(backups) => state.fixes.set_backups_root(backups),
+                Err(e) => eprintln!("fixes are off: {e}"),
             }
         }
         Err(e) => eprintln!("could not resolve the app data folder: {e}"),
