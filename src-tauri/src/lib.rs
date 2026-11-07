@@ -99,6 +99,15 @@ pub fn run() {
     }
 
     let result = tauri::Builder::default()
+        // One app process (CONTRACTS.md invariant 14): registered first, so a second launch
+        // exits right away and the running window comes to the front instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -110,6 +119,8 @@ pub fn run() {
             // Settings (store plugin) + PathGuard app data root; managed before any command runs.
             let state = state::init(app.handle());
             let theme_pref = state.settings.get().theme;
+            // Interrupted fix orders (crash, power loss): mark them before any order can run.
+            fix::recover::recover_at_startup(&state);
             app.manage(state);
             // Theme the native title bar before the webview's first `set_window_theme` call:
             // the saved preference, else the system theme.
@@ -126,22 +137,54 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // Never close while fixes are being applied (CONTRACTS.md invariant 14).
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if fixes_running(window.app_handle()) {
+                    api.prevent_close();
+                    refuse_to_close(window.app_handle());
+                }
+            }
+        })
         .build(tauri::generate_context!());
 
     match result {
-        Ok(app) => app.run(|handle, event| {
+        Ok(app) => app.run(|handle, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } if fixes_running(handle) => {
+                api.prevent_exit();
+                refuse_to_close(handle);
+            }
             // Watchers are never persisted as running; stop their threads on the way out.
-            if let tauri::RunEvent::Exit = event {
+            tauri::RunEvent::Exit => {
                 if let Some(state) = handle.try_state::<state::AppState>() {
                     state.watchers.stop_all();
                 }
             }
+            _ => {}
         }),
         Err(e) => {
             eprintln!("Modpack Doctor failed to start: {e}");
             std::process::exit(1);
         }
     }
+}
+
+/// True while a work order executes in any instance.
+fn fixes_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    app.try_state::<state::AppState>().is_some_and(|s| s.fixes.any_executing())
+}
+
+/// Native, non-blocking message explaining why the window stays open.
+fn refuse_to_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    app.dialog()
+        .message(
+            "Modpack Doctor is applying fixes to a mods folder right now. Closing now could leave the folder half changed. \
+             Wait until the fixes are finished, then close the app.",
+        )
+        .title("Fixes are being applied")
+        .kind(MessageDialogKind::Warning)
+        .show(|_| {});
 }
 
 #[cfg(test)]

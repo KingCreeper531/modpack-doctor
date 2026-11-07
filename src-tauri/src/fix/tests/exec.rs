@@ -191,9 +191,10 @@ fn a_download_declaring_the_wrong_mod_id_rolls_back() {
     assert_eq!(h.tree(), before);
     no_part_files(&h);
 
-    // Install: the dependency must declare the requested id.
+    // Install: the dependency must declare the requested id (here a lookalike project that
+    // Modrinth resolves `modmenu` to passes planning; the downloaded jar is still checked).
     let h = H::new();
-    h.install_world();
+    h.install_world_with(true);
     let o = h.plan(vec![install("modmenu", DEP)]).expect("plan");
     let r = h.exec(&o.id).0.expect("execute");
     assert_eq!(states(&r), vec![OpState::Failed]);
@@ -264,6 +265,7 @@ fn a_mid_order_failure_restores_a_byte_identical_tree() {
     h.jar("dup-copy.jar", "d");
     h.jar("off.jar.disabled", "off");
     h.replace_world();
+    h.dep_world();
     // The dependency's download is missing on the CDN (404) — the last op fails.
     let dep = fabric_jar("cloth-config", "11.0.0", &[]);
     h.mount_version(h.version_json(DEP, DEP_PROJECT, "11.0.0", "2024-02-01T00:00:00Z", "cloth-config-11.jar", &dep));

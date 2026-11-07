@@ -2,6 +2,13 @@
 //! its preconditions right before it runs) → on the first failure, every completed op is
 //! reversed in reverse order and the remaining ops are skipped.
 //!
+//! Write-ahead (CONTRACTS.md invariant 14): before an op mutates anything its record is saved
+//! (fsynced) as `running` with every intended move — the files and their sha1s, the `.part`
+//! name, the `created/` name — and after it the actual result. Rollback steps are recorded the
+//! same way (`rollingBack`). Each op and each rollback step is all-or-nothing: when a step and
+//! its own revert both fail, the record says `partial` and names where each file is, and the
+//! backup becomes `incomplete` so `plan_undo` can recover it from the actual locations.
+//!
 //! Nothing is ever deleted: a removed or replaced jar is moved into the snapshot's `files/`, a
 //! file a fix created is moved into `created/` when it is rolled back or undone. The only files
 //! this module removes are its own temporary `.part` downloads.
@@ -11,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::guard::PathGuard;
-use crate::model::{BackupEntry, FileOp, GameStatus, OpState, OpStatus, WorkOrderResult};
+use crate::model::{BackupEntry, BackupStatus, FileOp, GameStatus, OpState, OpStatus, WorkOrderResult};
 use crate::state::AppState;
 
 use super::fsops::{self, existing, is_absent, move_file, new_path};
@@ -55,6 +62,10 @@ pub fn execute_order(st: &AppState, order_id: &str, env: &ExecEnv) -> Result<Wor
     if stored.game_dir != game_dir {
         return Err(Error::Conflict("The instance's folder changed since the fixes were reviewed. Review them again.".into()));
     }
+    // Leftovers of an interrupted earlier order go into its snapshot first (we hold the claim).
+    if let Ok(root) = st.fixes.backups_root() {
+        super::recover::recover_instance(&st.guard, &root, &instance_id, Some(&game_dir));
+    }
     run(&st.guard, env, stored)
 }
 
@@ -74,8 +85,15 @@ impl Journal {
         }
     }
 
-    fn save(&self, guard: &PathGuard) -> Result<()> {
+    fn save(&mut self, guard: &PathGuard) -> Result<()> {
+        self.manifest.entry.status = self.manifest.derive_status();
         manifest::save(guard, &self.dir, &self.manifest)
+    }
+
+    /// Record `rec` as op `i` and save it durably (write-ahead or result).
+    fn put(&mut self, guard: &PathGuard, i: usize, rec: &OpRecord) -> Result<()> {
+        self.records()[i] = rec.clone();
+        self.save(guard)
     }
 }
 
@@ -114,7 +132,7 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                     ops: o.order.ops.clone(),
                     undone_actions: Vec::new(),
                     // Until the order finishes, a manifest on disk means "interrupted".
-                    status: crate::model::BackupStatus::Incomplete,
+                    status: BackupStatus::Incomplete,
                 },
                 order_id: o.order.id.clone(),
                 game_dir: o.game_dir.display().to_string(),
@@ -122,8 +140,9 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                 rolled_back: false,
                 finished: false,
                 undo_log: Vec::new(),
+                interrupted: false,
             };
-            let j = Journal { manifest, session: None, dir: dir.clone() };
+            let mut j = Journal { manifest, session: None, dir: dir.clone() };
             if let Err(e) = j.save(guard) {
                 // Our own empty folder; without a manifest it would only be skipped forever.
                 let _ = fs::remove_dir(&dir);
@@ -140,6 +159,9 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                     i + 1
                 )));
             }
+            if undo.recovery != (m.entry.status == BackupStatus::Incomplete) {
+                return Err(Error::Conflict("This backup changed since the undo was reviewed. Review the undo again.".into()));
+            }
             m.undo_log.push(UndoSession {
                 order_id: o.order.id.clone(),
                 started_at_ms: fsops::now_ms(),
@@ -148,9 +170,11 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                 records,
                 rolled_back: false,
                 finished: false,
+                recovery: undo.recovery,
+                interrupted: false,
             });
             let session = Some(m.undo_log.len() - 1);
-            let j = Journal { manifest: m, session, dir };
+            let mut j = Journal { manifest: m, session, dir };
             j.save(guard)?;
             Ok(j)
         }
@@ -215,7 +239,7 @@ impl Cx<'_> {
     }
 
     /// Move a file between the game dir and the snapshot (either direction), creating the
-    /// destination's parent folders inside the snapshot when needed.
+    /// destination's parent folders inside the snapshot when needed. Never replaces anything.
     fn mv(&self, from: (Loc, &str), to: (Loc, &str)) -> Result<()> {
         let src = existing(self.guard, self.base(from.0), from.1)?;
         if to.0 == Loc::Snapshot {
@@ -223,6 +247,13 @@ impl Cx<'_> {
         }
         let dst = new_path(self.guard, self.base(to.0), to.1)?;
         move_file(&src, &dst)
+    }
+
+    fn shown(&self, loc: Loc, rel: &str) -> String {
+        match loc {
+            Loc::Game => rel.to_string(),
+            Loc::Snapshot => self.snap.join(rel).display().to_string(),
+        }
     }
 }
 
@@ -238,47 +269,84 @@ fn missing_sha(rel: &str) -> Error {
     Error::Internal(format!("the plan for {rel} has no fingerprint"))
 }
 
-/// Run one op (preconditions already verified). On error the op has reverted its own partial
-/// work, unless the error message says where a file was left (and `rec.files` records it).
-fn run_op(cx: &Cx, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> Result<()> {
-    match op {
+/// The record of an op about to run: every intended move with its hashes, the `.part` name and
+/// the `created/` name, all known before anything is touched (write-ahead).
+fn intent(cx: &Cx, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> Result<()> {
+    rec.state = RecState::Running;
+    rec.message = None;
+    rec.files = match op {
         FileOp::Rename { from, to } => {
             let sha = planned_sha(plan, Loc::Game, from).ok_or_else(|| missing_sha(from))?;
-            cx.mv((Loc::Game, from), (Loc::Game, to))?;
-            rec.files = vec![
+            vec![
                 FileChange { path: from.clone(), before: Some(sha.clone()), after: None, backup_path: None },
                 FileChange { path: to.clone(), before: None, after: Some(sha), backup_path: None },
-            ];
-            Ok(())
+            ]
         }
         FileOp::MoveToBackup { path } => {
             let sha = planned_sha(plan, Loc::Game, path).ok_or_else(|| missing_sha(path))?;
-            let backup = format!("files/{path}");
-            cx.mv((Loc::Game, path), (Loc::Snapshot, &backup))?;
-            rec.files = vec![FileChange { path: path.clone(), before: Some(sha), after: None, backup_path: Some(backup) }];
-            Ok(())
+            vec![FileChange { path: path.clone(), before: Some(sha), after: None, backup_path: Some(format!("files/{path}")) }]
         }
-        FileOp::Download { url, sha512, size_bytes, dest, replaces, .. } => download(cx, plan, rec, url, sha512, *size_bytes, dest, replaces.as_deref()),
+        FileOp::Download { dest, replaces, .. } => {
+            let name = fsops::file_name_of(dest);
+            rec.part = Some(format!("mods/.{name}.{}.part", fsops::random_hex(1)));
+            match replaces {
+                Some(r) => {
+                    let sha = planned_sha(plan, Loc::Game, r).ok_or_else(|| missing_sha(r))?;
+                    let backup = Some(format!("files/{r}"));
+                    if fsops::fold(r) == fsops::fold(dest) {
+                        vec![FileChange { path: dest.clone(), before: Some(sha), after: None, backup_path: backup }]
+                    } else {
+                        vec![
+                            FileChange { path: r.clone(), before: Some(sha), after: None, backup_path: backup },
+                            FileChange { path: dest.clone(), before: None, after: None, backup_path: None },
+                        ]
+                    }
+                }
+                None => vec![FileChange { path: dest.clone(), before: None, after: None, backup_path: None }],
+            }
+        }
         FileOp::Restore { backup_path, to, expect_absent_or_sha1 } => {
             if expect_absent_or_sha1.is_some() {
                 return Err(Error::Internal("restoring over an existing file is not supported".into()));
             }
             let sha = planned_sha(plan, Loc::Snapshot, backup_path).ok_or_else(|| missing_sha(backup_path))?;
-            cx.mv((Loc::Snapshot, backup_path), (Loc::Game, to))?;
-            rec.files = vec![FileChange { path: to.clone(), before: None, after: Some(sha), backup_path: Some(backup_path.clone()) }];
-            Ok(())
+            vec![FileChange { path: to.clone(), before: None, after: Some(sha), backup_path: Some(backup_path.clone()) }]
         }
         FileOp::RemoveCreated { path, expect_sha1 } => {
             let created = fsops::unique_rel(cx.snap, &format!("created/{path}"))?;
-            cx.mv((Loc::Game, path), (Loc::Snapshot, &created))?;
-            rec.files = vec![FileChange {
-                path: path.clone(),
-                before: Some(expect_sha1.clone()),
-                after: None,
-                backup_path: Some(created.clone()),
-            }];
-            rec.created_backup = Some(created);
-            Ok(())
+            rec.created_backup = Some(created.clone());
+            vec![FileChange { path: path.clone(), before: Some(expect_sha1.clone()), after: None, backup_path: Some(created) }]
+        }
+    };
+    Ok(())
+}
+
+/// What an op that failed left behind.
+enum Fail {
+    /// Nothing of the op is in place.
+    Clean(Error),
+    /// A step and its own revert both failed; the record names where the files are.
+    Partial(Error),
+}
+
+impl From<Error> for Fail {
+    fn from(e: Error) -> Self {
+        Fail::Clean(e)
+    }
+}
+
+/// Run one op (preconditions verified, intent saved). `Err(Fail::Clean)` = nothing applied.
+fn run_op(cx: &Cx, j: &mut Journal, i: usize, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> std::result::Result<(), Fail> {
+    match op {
+        FileOp::Rename { from, to } => Ok(cx.mv((Loc::Game, from), (Loc::Game, to))?),
+        FileOp::MoveToBackup { path } => Ok(cx.mv((Loc::Game, path), (Loc::Snapshot, &format!("files/{path}")))?),
+        FileOp::Download { url, sha512, size_bytes, dest, replaces, .. } => {
+            download(cx, j, i, plan, rec, url, sha512, *size_bytes, dest, replaces.as_deref())
+        }
+        FileOp::Restore { backup_path, to, .. } => Ok(cx.mv((Loc::Snapshot, backup_path), (Loc::Game, to))?),
+        FileOp::RemoveCreated { path, .. } => {
+            let created = rec.created_backup.clone().ok_or_else(|| missing_sha(path))?;
+            Ok(cx.mv((Loc::Game, path), (Loc::Snapshot, &created))?)
         }
     }
 }
@@ -286,6 +354,8 @@ fn run_op(cx: &Cx, op: &FileOp, plan: &OpPlan, rec: &mut OpRecord) -> Result<()>
 #[allow(clippy::too_many_arguments)]
 fn download(
     cx: &Cx,
+    j: &mut Journal,
+    i: usize,
     plan: &OpPlan,
     rec: &mut OpRecord,
     url: &str,
@@ -293,23 +363,29 @@ fn download(
     size: u64,
     dest: &str,
     replaces: Option<&str>,
-) -> Result<()> {
+) -> std::result::Result<(), Fail> {
     let remote = cx.remote.ok_or(Error::Offline)?;
     let mods = cx.guard.check_existing(&cx.game.join("mods"))?;
-    let dest_name = fsops::file_name_of(dest);
-    let temp_name = format!("{dest_name}.{}", fsops::random_hex(1));
+    let part_rel = rec.part.clone().ok_or_else(|| missing_sha(dest))?;
+    // `mods/.<temp_name>.part`: the client adds the dot and the suffix.
+    let temp_name = part_rel
+        .strip_prefix("mods/.")
+        .and_then(|n| n.strip_suffix(".part"))
+        .ok_or_else(|| Error::Internal("the temporary download name is malformed".into()))?
+        .to_string();
     let part = remote.download(url, sha512, size, &mods, &temp_name)?;
     let expected_part = mods.join(format!(".{temp_name}.part"));
+    // Only ever our own temp file (the client creates it with `create_new`).
     let drop_part = || {
-        if !is_absent(&part) {
-            let _ = fs::remove_file(&part);
+        if !is_absent(&expected_part) {
+            let _ = fs::remove_file(&expected_part);
         }
     };
     if part != expected_part {
-        drop_part();
-        return Err(Error::Internal("the download landed in an unexpected place".into()));
+        return Err(Fail::Clean(Error::Internal("the download landed in an unexpected place".into())));
     }
-    let result = (|| {
+    let dest_name = fsops::file_name_of(dest);
+    let checked = (|| {
         let bytes = fs::read(&part).map_err(|e| Error::io(&part, e))?;
         let new_sha = fsops::sha1_bytes(&bytes);
         let ids = super::plan::jar_mod_ids(&bytes, dest);
@@ -325,88 +401,109 @@ fn download(
         }
         Ok(new_sha)
     })();
-    let new_sha = match result {
+    let new_sha = match checked {
         Ok(v) => v,
         Err(e) => {
             drop_part();
-            return Err(e);
+            return Err(Fail::Clean(e));
         }
     };
+    // Write-ahead: the new jar's sha1, before it can reach `dest`.
+    if let Some(f) = rec.files.iter_mut().find(|f| fsops::fold(&f.path) == fsops::fold(dest)) {
+        f.after = Some(new_sha.clone());
+    }
+    if let Err(e) = j.put(cx.guard, i, rec) {
+        drop_part();
+        return Err(Fail::Clean(e));
+    }
 
     // Move the replaced jar into the snapshot (re-checked right before).
-    let mut moved: Option<(String, String, String)> = None;
     if let Some(r) = replaces {
-        let sha = planned_sha(plan, Loc::Game, r).ok_or_else(|| missing_sha(r));
-        let step = sha.and_then(|sha| {
+        let step = (|| {
             let check = plan.checks.iter().find(|c| c.loc == Loc::Game && c.rel == r).cloned().ok_or_else(|| missing_sha(r))?;
             cx.verify(&check)?;
-            let backup = format!("files/{r}");
-            cx.mv((Loc::Game, r), (Loc::Snapshot, &backup))?;
-            Ok((r.to_string(), backup, sha))
-        });
-        match step {
-            Ok(m) => moved = Some(m),
-            Err(e) => {
-                drop_part();
-                return Err(e);
-            }
+            cx.mv((Loc::Game, r), (Loc::Snapshot, &format!("files/{r}")))
+        })();
+        if let Err(e) = step {
+            drop_part();
+            return Err(Fail::Clean(e));
         }
     }
 
-    // Into place: the destination must still be absent, then rename (same folder).
-    let placed = (|| {
-        let dst = new_path(cx.guard, cx.game, dest)?;
-        if !is_absent(&dst) {
-            return Err(Error::Conflict(format!("{dest} appeared during the download, and it is never overwritten.")));
-        }
-        fs::rename(&part, &dst).map_err(|e| Error::io(&dst, e))
-    })();
+    // Into place: an atomic no-replace rename in the same folder.
+    let placed = new_path(cx.guard, cx.game, dest).and_then(|dst| move_file(&part, &dst));
     if let Err(e) = placed {
         drop_part();
-        if let Some((r, backup, sha)) = &moved {
-            if let Err(back) = cx.mv((Loc::Snapshot, backup), (Loc::Game, r)) {
-                rec.files = vec![FileChange { path: r.clone(), before: Some(sha.clone()), after: None, backup_path: Some(backup.clone()) }];
-                return Err(Error::Conflict(format!(
+        let Some(r) = replaces else { return Err(Fail::Clean(e)) };
+        let backup = format!("files/{r}");
+        return match cx.mv((Loc::Snapshot, &backup), (Loc::Game, r)) {
+            Ok(()) => Err(Fail::Clean(e)),
+            Err(back) => {
+                // The old jar stays in the snapshot (recorded in `files`), the new one was not
+                // placed (its `.part` was removed).
+                for f in &mut rec.files {
+                    f.after = None;
+                }
+                Err(Fail::Partial(Error::Conflict(format!(
                     "{e} Moving {r} back also failed ({back}); it is in the backup at {}.",
-                    cx.snap.join(backup).display()
-                )));
+                    cx.snap.join(&backup).display()
+                ))))
             }
-        }
-        return Err(e);
+        };
     }
-
-    rec.files = match moved {
-        Some((r, backup, sha)) if fsops::fold(&r) == fsops::fold(dest) => {
-            vec![FileChange { path: dest.to_string(), before: Some(sha), after: Some(new_sha), backup_path: Some(backup) }]
-        }
-        Some((r, backup, sha)) => vec![
-            FileChange { path: r, before: Some(sha), after: None, backup_path: Some(backup) },
-            FileChange { path: dest.to_string(), before: None, after: Some(new_sha), backup_path: None },
-        ],
-        None => vec![FileChange { path: dest.to_string(), before: None, after: Some(new_sha), backup_path: None }],
-    };
     Ok(())
 }
 
-/// Reverse one completed op (automatic rollback).
-fn rollback_op(cx: &Cx, op: &FileOp, rec: &mut OpRecord) -> Result<()> {
+/// What a rollback step left behind.
+enum Back {
+    /// Fully reverted.
+    Reverted,
+    /// Not reverted, and still fully applied (consistent).
+    StillApplied(Error),
+    /// Neither (a step and its own revert failed); the record names where the files are.
+    Partial(Error),
+}
+
+/// Reverse one completed op (automatic rollback). All-or-nothing per op.
+fn rollback_op(cx: &Cx, op: &FileOp, rec: &mut OpRecord) -> Back {
+    let one = |r: Result<()>| match r {
+        Ok(()) => Back::Reverted,
+        Err(e) => Back::StillApplied(e),
+    };
     match op {
-        FileOp::Rename { from, to } => cx.mv((Loc::Game, to), (Loc::Game, from)),
-        FileOp::MoveToBackup { path } => cx.mv((Loc::Snapshot, &format!("files/{path}")), (Loc::Game, path)),
+        FileOp::Rename { from, to } => one(cx.mv((Loc::Game, to), (Loc::Game, from))),
+        FileOp::MoveToBackup { path } => one(cx.mv((Loc::Snapshot, &format!("files/{path}")), (Loc::Game, path))),
         FileOp::Download { dest, replaces, .. } => {
-            let created = fsops::unique_rel(cx.snap, &format!("created/{dest}"))?;
-            cx.mv((Loc::Game, dest), (Loc::Snapshot, &created))?;
-            rec.created_backup = Some(created);
-            if let Some(r) = replaces {
-                cx.mv((Loc::Snapshot, &format!("files/{r}")), (Loc::Game, r))?;
+            let Some(created) = rec.created_backup.clone() else {
+                return Back::StillApplied(missing_sha(dest));
+            };
+            if let Err(e) = cx.mv((Loc::Game, dest), (Loc::Snapshot, &created)) {
+                rec.created_backup = None;
+                return Back::StillApplied(e);
             }
-            Ok(())
+            let Some(r) = replaces else { return Back::Reverted };
+            let backup = format!("files/{r}");
+            match cx.mv((Loc::Snapshot, &backup), (Loc::Game, r)) {
+                Ok(()) => Back::Reverted,
+                // Keep the order consistently applied: the new jar goes back to `dest`.
+                Err(e) => match cx.mv((Loc::Snapshot, &created), (Loc::Game, dest)) {
+                    Ok(()) => {
+                        rec.created_backup = None;
+                        Back::StillApplied(e)
+                    }
+                    Err(again) => Back::Partial(Error::Conflict(format!(
+                        "{e} Putting {dest} back also failed ({again}); the old jar is at {} and the new one at {}.",
+                        cx.shown(Loc::Snapshot, &backup),
+                        cx.shown(Loc::Snapshot, &created)
+                    ))),
+                },
+            }
         }
-        FileOp::Restore { backup_path, to, .. } => cx.mv((Loc::Game, to), (Loc::Snapshot, backup_path)),
-        FileOp::RemoveCreated { path, .. } => {
-            let created = rec.created_backup.clone().ok_or_else(|| missing_sha(path))?;
-            cx.mv((Loc::Snapshot, &created), (Loc::Game, path))
-        }
+        FileOp::Restore { backup_path, to, .. } => one(cx.mv((Loc::Game, to), (Loc::Snapshot, backup_path))),
+        FileOp::RemoveCreated { path, .. } => match rec.created_backup.clone() {
+            Some(created) => one(cx.mv((Loc::Snapshot, &created), (Loc::Game, path))),
+            None => Back::StillApplied(missing_sha(path)),
+        },
     }
 }
 
@@ -419,7 +516,8 @@ fn status(order_id: &str, index: usize, state: OpState, message: Option<String>)
 pub(crate) fn run(guard: &PathGuard, env: &ExecEnv, o: StoredOrder) -> Result<WorkOrderResult> {
     let mut journal = open_journal(guard, &o)?;
     let id = o.order.id.as_str();
-    let cx = Cx { guard, game: &o.game_dir, snap: &journal.dir.clone(), remote: env.remote };
+    let snap = journal.dir.clone();
+    let cx = Cx { guard, game: &o.game_dir, snap: &snap, remote: env.remote };
     let n = o.order.ops.len();
     let mut statuses: Vec<OpStatus> = (0..n).map(|i| status(id, i, OpState::Pending, None)).collect();
     let mut failed_at: Option<usize> = None;
@@ -427,79 +525,116 @@ pub(crate) fn run(guard: &PathGuard, env: &ExecEnv, o: StoredOrder) -> Result<Wo
     for i in 0..n {
         let op = &o.order.ops[i].op;
         let plan = &o.plans[i];
-        journal.records()[i].state = RecState::Running;
         statuses[i] = status(id, i, OpState::Running, None);
         (env.emit)(statuses[i].clone());
 
         let mut rec = journal.records()[i].clone();
-        let outcome = cx.verify_all(plan).and_then(|()| run_op(&cx, op, plan, &mut rec));
+        // Preconditions (read-only), then the write-ahead record, then the op.
+        let prepared = cx.verify_all(plan).and_then(|()| intent(&cx, op, plan, &mut rec));
+        let outcome = match prepared {
+            Err(e) => Err(Fail::Clean(e)),
+            Ok(()) => match journal.put(guard, i, &rec) {
+                Err(e) => Err(Fail::Clean(Error::Internal(format!(
+                    "the backup record could not be saved ({e}), so nothing was changed and the fixes were stopped"
+                )))),
+                Ok(()) => run_op(&cx, &mut journal, i, op, plan, &mut rec),
+            },
+        };
         match outcome {
             Ok(()) => {
                 rec.state = RecState::Done;
                 statuses[i] = status(id, i, OpState::Done, None);
             }
-            Err(e) => {
+            Err(Fail::Clean(e)) => {
                 rec.state = RecState::Failed;
                 rec.message = Some(e.to_string());
                 statuses[i] = status(id, i, OpState::Failed, Some(e.to_string()));
                 failed_at = Some(i);
             }
+            Err(Fail::Partial(e)) => {
+                let msg = format!("{e} The backup in {} is kept so this can be recovered with Undo.", journal.dir.display());
+                rec.state = RecState::Partial;
+                rec.message = Some(msg.clone());
+                statuses[i] = status(id, i, OpState::Failed, Some(msg));
+                failed_at = Some(i);
+            }
         }
-        journal.records()[i] = rec;
-        if let Err(e) = journal.save(guard) {
-            // The op may be applied but is not recorded: treat it as failed and roll it back.
+        if let Err(e) = journal.put(guard, i, &rec) {
+            // The op may be applied but its result is not recorded: stop and roll it back.
             let msg = format!("The backup record could not be saved ({e}), so the fixes were stopped.");
             statuses[i] = status(id, i, OpState::Failed, Some(msg.clone()));
             journal.records()[i].message = Some(msg);
             failed_at.get_or_insert(i);
         }
         if failed_at.is_some() {
-            if journal.records()[i].state == RecState::Done {
-                // Reported after the rollback below.
-            } else {
+            if journal.records()[i].state != RecState::Done {
                 (env.emit)(statuses[i].clone());
             }
+            // A `done` op is reported after its rollback below.
             break;
         }
         (env.emit)(statuses[i].clone());
     }
 
     if let Some(fail) = failed_at {
-        for j in fail + 1..n {
-            journal.records()[j].state = RecState::Skipped;
-            statuses[j] = status(id, j, OpState::Skipped, Some("Not started because an earlier step failed.".into()));
-            (env.emit)(statuses[j].clone());
+        for k in fail + 1..n {
+            journal.records()[k].state = RecState::Skipped;
+            statuses[k] = status(id, k, OpState::Skipped, Some("Not started because an earlier step failed.".into()));
+            (env.emit)(statuses[k].clone());
         }
-        for j in (0..=fail).rev() {
-            if journal.records()[j].state != RecState::Done {
+        if let Err(e) = journal.save(guard) {
+            eprintln!("fixes: could not update the backup manifest in {}: {e}", journal.dir.display());
+        }
+        for k in (0..=fail).rev() {
+            if journal.records()[k].state != RecState::Done {
                 continue;
             }
-            let mut rec = journal.records()[j].clone();
-            match rollback_op(&cx, &o.order.ops[j].op, &mut rec) {
-                Ok(()) => {
+            let op = &o.order.ops[k].op;
+            let mut rec = journal.records()[k].clone();
+            // Write-ahead for the rollback step, including where a created file will go.
+            rec.state = RecState::RollingBack;
+            let named = match op {
+                FileOp::Download { dest, .. } => fsops::unique_rel(cx.snap, &format!("created/{dest}")).map(|c| rec.created_backup = Some(c)),
+                _ => Ok(()),
+            };
+            let back = match named.and_then(|()| journal.put(guard, k, &rec)) {
+                // Not recorded: do not touch anything; the op stays applied.
+                Err(e) => Back::StillApplied(e),
+                Ok(()) => rollback_op(&cx, op, &mut rec),
+            };
+            match back {
+                Back::Reverted => {
                     rec.state = RecState::RolledBack;
-                    if j == fail {
-                        let msg = statuses[j].message.clone().unwrap_or_default();
-                        statuses[j] = status(id, j, OpState::Failed, Some(format!("{msg} This step was rolled back.")));
+                    if k == fail {
+                        let msg = statuses[k].message.clone().unwrap_or_default();
+                        statuses[k] = status(id, k, OpState::Failed, Some(format!("{msg} This step was rolled back.")));
                     } else {
-                        statuses[j] = status(id, j, OpState::Skipped, Some(format!("Rolled back because step {} failed.", fail + 1)));
+                        statuses[k] = status(id, k, OpState::Skipped, Some(format!("Rolled back because step {} failed.", fail + 1)));
                     }
                 }
-                Err(e) => {
+                Back::StillApplied(e) => {
                     let msg = format!(
                         "Done, but the automatic rollback failed: {e} The backup in {} is kept so this can still be undone.",
                         journal.dir.display()
                     );
                     rec.state = RecState::RollbackFailed;
                     rec.message = Some(msg.clone());
-                    statuses[j] = status(id, j, OpState::Failed, Some(msg));
+                    statuses[k] = status(id, k, OpState::Failed, Some(msg));
+                }
+                Back::Partial(e) => {
+                    let msg = format!(
+                        "The automatic rollback failed halfway: {e} The backup in {} is kept so this can be recovered with Undo.",
+                        journal.dir.display()
+                    );
+                    rec.state = RecState::Partial;
+                    rec.message = Some(msg.clone());
+                    statuses[k] = status(id, k, OpState::Failed, Some(msg));
                 }
             }
-            journal.records()[j] = rec;
-            if let Err(e) = journal.save(guard) {
+            if let Err(e) = journal.put(guard, k, &rec) {
                 eprintln!("fixes: could not update the backup manifest in {}: {e}", journal.dir.display());
             }
-            (env.emit)(statuses[j].clone());
+            (env.emit)(statuses[k].clone());
         }
     }
 

@@ -7,12 +7,16 @@
 //!   every destination must be absent, and every Modrinth version is re-fetched and re-validated.
 //!   Planning never mutates anything.
 //! - [`undo`] plans the reverse of a backup snapshot, per action, as a `kind: undo` order. It
-//!   checks every file against the manifest's "after" state first.
+//!   checks every file against the manifest's "after" state first. For an `incomplete` backup
+//!   it plans a recovery from the files' actual recorded locations instead.
 //! - [`exec`] runs a stored order: game guard → manifest → ops (re-checking each op's
-//!   preconditions right before it runs) → rollback of every completed op on the first failure.
+//!   preconditions right before it runs, each recorded write-ahead) → all-or-nothing rollback
+//!   of every completed op on the first failure.
 //! - [`manifest`] is the on-disk snapshot record: `<backups>/<instanceId>/<ms>/manifest.json`
 //!   plus `files/` (moved-out jars) and `created/` (files a fix created, moved out by rollback or
 //!   undo). Nothing is ever deleted: "remove" and rollback move files into the snapshot.
+//! - [`recover`] runs at startup and before listing or executing: interrupted manifests are
+//!   marked, and their leftover `.part` downloads are moved into their snapshots.
 //!
 //! Orders live only in memory ([`FixState`]), are single-use and expire after
 //! [`ORDER_TTL`]. At most one order per instance executes at a time.
@@ -21,6 +25,7 @@ pub mod exec;
 pub(crate) mod fsops;
 pub mod manifest;
 pub mod plan;
+pub mod recover;
 pub mod remote;
 pub mod undo;
 
@@ -82,6 +87,8 @@ pub(crate) struct OpPlan {
 pub(crate) struct UndoOf {
     /// `order.actions[i]` is the original order's action `original_actions[i]`.
     pub original_actions: Vec<u32>,
+    /// Planned as a recovery of an `incomplete` backup (from the actual file locations).
+    pub recovery: bool,
 }
 
 /// A planned order with its private preconditions.
@@ -234,10 +241,15 @@ impl FixState {
     pub fn is_executing(&self, instance_id: &str) -> bool {
         lock(&self.inner.executing).contains(instance_id)
     }
+
+    /// True while any order (or a recovery pass) holds an instance; the window refuses to close.
+    pub fn any_executing(&self) -> bool {
+        !lock(&self.inner.executing).is_empty()
+    }
 }
 
 /// `^[0-9a-f]{16}$`.
-pub(crate) fn is_instance_id(s: &str) -> bool {
+pub fn is_instance_id(s: &str) -> bool {
     s.len() == 16 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 

@@ -4,6 +4,7 @@
 mod exec;
 mod live;
 mod plan;
+mod safety;
 mod undo;
 
 use std::collections::BTreeMap;
@@ -237,11 +238,49 @@ impl H {
     /// The standard install world: DEP ships `cloth-config-11.jar` declaring `cloth-config`
     /// and providing `cloth_config`. Returns its bytes.
     pub fn install_world(&self) -> Vec<u8> {
+        self.install_world_with(false)
+    }
+
+    pub fn install_world_with(&self, modmenu_too: bool) -> Vec<u8> {
+        self.dep_world_with(modmenu_too);
         let dep = fabric_jar("cloth-config", "11.0.0", &["cloth_config"]);
         self.mount_version(self.version_json(DEP, DEP_PROJECT, "11.0.0", "2024-02-01T00:00:00Z", "cloth-config-11.jar", &dep));
         self.mount_cdn("cloth-config-11.jar", dep.clone());
         dep
     }
+
+    /// What binds an InstallDependency: `mods/needs-deps.jar` (enabled) requires `cloth-config`,
+    /// `cloth_config` and `modmenu`, and Modrinth's projects resolve `cloth-config` /
+    /// `cloth_config` to DEP_PROJECT. With `modmenu_too`, `modmenu` resolves to DEP_PROJECT as
+    /// well (a lookalike that only the post-download mod id check catches).
+    pub fn dep_world_with(&self, modmenu_too: bool) {
+        self.write("needs-deps.jar", &fabric_jar_requiring("needs-deps", &["cloth-config", "cloth_config", "modmenu"]));
+        let mut projects = vec![project_json(DEP_PROJECT, "cloth-config", "Cloth Config")];
+        if modmenu_too {
+            projects.push(project_json(DEP_PROJECT, "modmenu", "Cloth Config"));
+        }
+        self.mount(Mock::given(method("GET")).and(path("/v2/projects")).respond_with(ResponseTemplate::new(200).set_body_json(json!(projects))));
+    }
+
+    pub fn dep_world(&self) {
+        self.dep_world_with(false);
+    }
+}
+
+/// A Fabric jar declaring `mod_id` that requires every id in `deps` (any version).
+pub(super) fn fabric_jar_requiring(mod_id: &str, deps: &[&str]) -> Vec<u8> {
+    let depends: serde_json::Map<String, Value> = deps.iter().map(|d| (d.to_string(), json!("*"))).collect();
+    let json = json!({"schemaVersion": 1, "id": mod_id, "version": "1.0.0", "depends": depends});
+    JarBuilder::new().fabric_mod_json(&json.to_string()).build()
+}
+
+/// `GET /v2/projects` record of a Fabric mod for 1.20.1.
+pub(super) fn project_json(id: &str, slug: &str, title: &str) -> Value {
+    json!({
+        "id": id, "slug": slug, "title": title, "project_type": "mod",
+        "loaders": ["fabric"], "game_versions": ["1.20.1"],
+        "client_side": "required", "server_side": "optional"
+    })
 }
 
 pub(super) fn tree_of(dir: &Path) -> BTreeMap<String, String> {

@@ -128,7 +128,13 @@ impl ModrinthClient {
             return Err(too_big());
         }
 
-        let mut file = tokio::fs::File::create(&temp).await.map_err(|e| Error::io(&temp, e))?;
+        // `create_new`: never truncate or reuse a file that is already there (it is not ours).
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .await
+            .map_err(|e| Error::io(&temp, e))?;
         let mut hasher = Sha512::new();
         let mut received: u64 = 0;
         let streamed: Result<()> = async {
