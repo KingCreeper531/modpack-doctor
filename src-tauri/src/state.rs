@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::guard::PathGuard;
 use crate::logs::watch::Watchers;
 use crate::model::{DiscoveryReport, Instance};
+use crate::modrinth::ModrinthService;
 use crate::process::Processes;
 use crate::scan::ScanCache;
 use crate::settings::SettingsService;
@@ -36,6 +37,8 @@ pub struct AppState {
     pub processes: Processes,
     /// Live crash watchers by instance id (started only by `set_watch`).
     pub watchers: Arc<Watchers>,
+    /// The shared Modrinth clients (set by `init`; `None` if the cache dirs could not be resolved).
+    pub modrinth: Option<ModrinthService>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -112,7 +115,11 @@ pub fn init<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppState {
             SettingsService::default()
         }
     };
-    let state = AppState::new(settings);
+    let mut state = AppState::new(settings);
+    match ModrinthService::for_app(app) {
+        Ok(m) => state.modrinth = Some(m),
+        Err(e) => eprintln!("Modrinth features are off: {e}"),
+    }
     match app.path().app_data_dir() {
         Ok(dir) => {
             let registered = std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e)).and_then(|()| state.pin_root(&dir));

@@ -6,6 +6,7 @@
 
 mod instances;
 mod logs;
+mod modrinth;
 mod scanning;
 
 #[cfg(test)]
@@ -25,6 +26,7 @@ pub use scanning::{scan_registered, EventSink, ScanSink};
 
 use instances::{blocking, discover_blocking, pick_folder};
 pub use logs::{disable_watch, enable_watch, forget_instance, remove_manual_and_forget};
+pub use modrinth::*;
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -196,66 +198,10 @@ pub async fn set_watch(
 }
 
 // ── Modrinth ─────────────────────────────────────────────────────────────────
-
-/// `POST /v2/version_files` (sha1), batched + cached. `refresh` bypasses the disk cache.
-#[tauri::command]
-#[specta::specta]
-pub async fn modrinth_identify(_state: State<'_, AppState>, _sha1s: Vec<String>, _refresh: bool) -> Cmd<HashLookup> {
-    not_yet("Modrinth lookups" /* M5 */)
-}
-
-/// `POST /v2/version_files/update` with loaders + game versions + version types.
-/// Callers always pass loaders and game versions (an unfiltered call returns betas of
-/// other MC versions); `version_types` defaults in the UI to `["release"]`.
-#[tauri::command]
-#[specta::specta]
-pub async fn modrinth_find_updates(
-    _state: State<'_, AppState>,
-    _sha1s: Vec<String>,
-    _loaders: Vec<String>,
-    _game_versions: Vec<String>,
-    _version_types: Vec<String>,
-    _refresh: bool,
-) -> Cmd<HashLookup> {
-    not_yet("Modrinth update suggestions" /* M5 */)
-}
-
-/// `GET /v2/projects?ids=[…]` (ids or slugs, ≤100 per request); caches icons into
-/// `paths::icon_cache_dir`. Used by src/core to resolve a missing dependency's mod id
-/// (validated slug guess) to a project.
-#[tauri::command]
-#[specta::specta]
-pub async fn modrinth_projects(_state: State<'_, AppState>, _ids: Vec<String>, _refresh: bool) -> Cmd<ProjectLookup> {
-    not_yet("Modrinth project details" /* M5 */)
-}
-
-/// `GET /v2/project/{id}/version?loaders=…&game_versions=…` newest first, filtered by
-/// `version_types`. Lets src/core choose the version for `InstallDependency`.
-#[tauri::command]
-#[specta::specta]
-pub async fn modrinth_project_versions(
-    _state: State<'_, AppState>,
-    _project_id: String,
-    _loaders: Vec<String>,
-    _game_versions: Vec<String>,
-    _version_types: Vec<String>,
-) -> Cmd<Vec<MrVersion>> {
-    not_yet("Modrinth version lookups" /* M5 */)
-}
-
-/// Maps a loader mod id (`cloth_config`) to its Modrinth project: alias table and validated slug
-/// guesses, then `/v2/search` (`modrinth::resolve`). `None` = not on Modrinth or a
-/// pseudo-dependency (`minecraft`, `java`, loaders). Used by src/core for `InstallDependency`.
-#[tauri::command]
-#[specta::specta]
-pub async fn modrinth_resolve_mod_id(
-    _state: State<'_, AppState>,
-    _mod_id: String,
-    _loaders: Vec<String>,
-    _game_versions: Vec<String>,
-) -> Cmd<Option<MrProject>> {
-    not_yet("Modrinth lookups" /* M5 */)
-}
+//
+// `modrinth_identify`, `modrinth_find_updates`, `modrinth_projects`, `modrinth_project_versions`
+// and `modrinth_resolve_mod_id` live in `modrinth.rs` (glob re-export below, so the command macros
+// `collect_commands!` needs come along).
 
 // ── Fixes ────────────────────────────────────────────────────────────────────
 

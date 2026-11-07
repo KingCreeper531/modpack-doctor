@@ -239,6 +239,54 @@ mod tests {
         assert!(!is_pseudo_dependency("fabric-api"));
     }
 
+    /// Live check of `ALIASES` against the real API (read-only, two requests, app User-Agent):
+    /// every target slug must exist, be a `mod`, and its newest files must name the mod.
+    ///   cargo test --lib modrinth::resolve::tests::live_alias_table -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "real network: api.modrinth.com"]
+    async fn live_alias_table() {
+        use std::sync::Arc;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let c = ModrinthClient::new(crate::modrinth::ClientConfig::new(dir.path().to_path_buf(), true)).unwrap();
+        let get = |url: reqwest::Url| {
+            let inner = Arc::clone(&c.inner);
+            async move {
+                let http = inner.http.clone();
+                let build = move || http.get(url.clone()).timeout(API_TIMEOUT);
+                inner.json(&build, None).await.expect("Modrinth answered")
+            }
+        };
+        let slugs: Vec<&str> = ALIASES.iter().map(|(_, to)| *to).collect();
+        let mut url = c.inner.endpoint("/v2/projects").unwrap();
+        url.query_pairs_mut().append_pair("ids", &json!(slugs).to_string());
+        let projects = get(url).await;
+        let projects = projects.as_array().expect("project list");
+
+        let mut newest = Vec::new();
+        for (from, to) in ALIASES {
+            let p = projects.iter().find(|p| p["slug"].as_str() == Some(to));
+            let p = p.unwrap_or_else(|| panic!("alias {from} -> {to}: no such project"));
+            assert_eq!(p["project_type"], "mod", "alias {from} -> {to}");
+            let versions = p["versions"].as_array().cloned().unwrap_or_default();
+            // `versions` is oldest first.
+            if let Some(v) = versions.last().and_then(Value::as_str) {
+                newest.push(v.to_string());
+            }
+            println!(
+                "{from} -> {to}: id {} title {:?} type {} loaders {} | {}",
+                p["id"], p["title"], p["project_type"], p["loaders"], p["description"]
+            );
+        }
+        let mut url = c.inner.endpoint("/v2/versions").unwrap();
+        url.query_pairs_mut().append_pair("ids", &json!(newest).to_string());
+        let versions = get(url).await;
+        for v in versions.as_array().expect("version list") {
+            let files: Vec<&str> = v["files"].as_array().unwrap().iter().filter_map(|f| f["filename"].as_str()).collect();
+            println!("  newest of {}: {} {:?} {} files {files:?}", v["project_id"], v["version_number"], v["name"], v["loaders"]);
+        }
+    }
+
     #[test]
     fn facets_validated() {
         assert!(check_facet("categories:fabric").is_ok());
