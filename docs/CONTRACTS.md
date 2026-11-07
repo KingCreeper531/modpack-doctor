@@ -350,7 +350,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 18. **Release and updates (M8).**
     - The updater (`tauri-plugin-updater`, Rust-side only, no JS permission) is the one network
       access besides Modrinth: `https://github.com/KingCreeper531/modpack-doctor/releases/latest/download/latest.json`
-      and the release assets it names on `github.com` / `objects.githubusercontent.com`. It runs only
+      and the release assets it names on `github.com` (GitHub redirects downloads to its asset hosts,
+      `objects.githubusercontent.com` / `release-assets.githubusercontent.com`). `latest.json` URLs are
+      rewritten by the workflow's finalize job to `github.com/…/releases/download/<tag>/<asset>`;
+      `requireSignedVersion` is on, so an older signed release can't be re-served as newer. It runs only
       when the user asks (About → "Check for updates", or the palette); never automatically.
     - `check_update` → `UpdateInfo | null`; `install_update` downloads, verifies the minisign
       signature against the public key in `tauri.conf.json` (`plugins.updater.pubkey`), installs and
