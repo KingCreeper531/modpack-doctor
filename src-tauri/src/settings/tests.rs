@@ -171,7 +171,7 @@ fn persistence_round_trip() {
         grid_sort: Some(GridSort::Severity),
         inspector_width: Some(500),
     };
-    let (saved, ()) = svc.update(|s| apply_patch(s, patch, &known(&[ID]))).expect("update");
+    let (saved, ()) = svc.update(|s| apply_patch(s, patch, &known(&[ID]), &HashSet::new())).expect("update");
     let (reloaded, log) = SettingsService::load(Box::new(FileStore::new(&path)));
     assert!(log.is_empty(), "{log:?}");
     assert_eq!(reloaded.get(), saved);
@@ -184,11 +184,11 @@ fn persistence_round_trip() {
 fn apply_patch_clamps_inspector_width() {
     let mut s = Settings::default();
     let none = HashSet::new();
-    apply_patch(&mut s, SettingsPatch { inspector_width: Some(100), ..Default::default() }, &none).expect("ok");
+    apply_patch(&mut s, SettingsPatch { inspector_width: Some(100), ..Default::default() }, &none, &HashSet::new()).expect("ok");
     assert_eq!(s.inspector_width, 280);
-    apply_patch(&mut s, SettingsPatch { inspector_width: Some(10_000), ..Default::default() }, &none).expect("ok");
+    apply_patch(&mut s, SettingsPatch { inspector_width: Some(10_000), ..Default::default() }, &none, &HashSet::new()).expect("ok");
     assert_eq!(s.inspector_width, 640);
-    apply_patch(&mut s, SettingsPatch { inspector_width: Some(420), ..Default::default() }, &none).expect("ok");
+    apply_patch(&mut s, SettingsPatch { inspector_width: Some(420), ..Default::default() }, &none, &HashSet::new()).expect("ok");
     assert_eq!(s.inspector_width, 420);
 }
 
@@ -200,9 +200,33 @@ fn apply_patch_rejects_overrides_for_unknown_instances_atomically() {
         overrides: Some([(ID.to_string(), Some(ov("1.20.1"))), (OTHER_ID.to_string(), Some(ov("1.21")))].into_iter().collect()),
         ..Default::default()
     };
-    let err = apply_patch(&mut s, patch, &known(&[ID])).expect_err("unknown id");
+    let err = apply_patch(&mut s, patch, &known(&[ID]), &HashSet::new()).expect_err("unknown id");
     assert!(matches!(err, Error::Invalid(ref m) if m.contains(OTHER_ID)), "{err}");
     assert_eq!(s, Settings::default(), "nothing applied on error");
+}
+
+#[test]
+fn apply_patch_refuses_overrides_for_opened_packs_atomically() {
+    let mut s = Settings::default();
+    s.overrides.insert(OTHER_ID.into(), ov("1.20.1"));
+    let before = s.clone();
+    let patch = SettingsPatch {
+        theme: Some(ThemePref::Dark),
+        overrides: Some([(ID.to_string(), Some(ov("1.21")))].into_iter().collect()),
+        ..Default::default()
+    };
+    // Known (opened packs are in the registry) but session-only.
+    let err = apply_patch(&mut s, patch, &known(&[ID, OTHER_ID]), &known(&[OTHER_ID, ID])).expect_err("pack");
+    assert!(matches!(err, Error::Invalid(ref m) if m.starts_with("Pack identity overrides for an opened .mrpack are not saved")), "{err}");
+    assert_eq!(s, before, "nothing applied on error");
+    // Removing one (e.g. an override saved by an older build) is still allowed.
+    let patch = SettingsPatch { overrides: Some([(OTHER_ID.to_string(), None)].into_iter().collect()), ..Default::default() };
+    apply_patch(&mut s, patch, &known(&[OTHER_ID]), &known(&[OTHER_ID])).expect("removal");
+    assert!(s.overrides.is_empty());
+    // Other instances are unaffected.
+    let patch = SettingsPatch { overrides: Some([(ID.to_string(), Some(ov("1.21")))].into_iter().collect()), ..Default::default() };
+    apply_patch(&mut s, patch, &known(&[ID, OTHER_ID]), &known(&[OTHER_ID])).expect("folder instance");
+    assert!(s.overrides.contains_key(ID));
 }
 
 #[test]
@@ -211,7 +235,7 @@ fn apply_patch_null_removes_override_even_for_unknown_instance() {
     s.overrides.insert(ID.into(), ov("1.20.1"));
     s.overrides.insert(OTHER_ID.into(), ov("1.21"));
     let patch = SettingsPatch { overrides: Some([(ID.to_string(), None)].into_iter().collect()), ..Default::default() };
-    apply_patch(&mut s, patch, &HashSet::new()).expect("removal needs no known id");
+    apply_patch(&mut s, patch, &HashSet::new(), &HashSet::new()).expect("removal needs no known id");
     assert!(!s.overrides.contains_key(ID));
     assert!(s.overrides.contains_key(OTHER_ID), "other overrides untouched");
 }
@@ -226,13 +250,13 @@ fn apply_patch_normalises_and_bounds_override_versions() {
         side: None,
     };
     let patch = SettingsPatch { overrides: Some([(ID.to_string(), Some(blank))].into_iter().collect()), ..Default::default() };
-    apply_patch(&mut s, patch, &k).expect("ok");
+    apply_patch(&mut s, patch, &k, &HashSet::new()).expect("ok");
     assert_eq!(s.overrides[ID].mc_version, None);
     assert_eq!(s.overrides[ID].loader.as_ref().and_then(|l| l.version.as_deref()), Some("21.1.5"));
 
     let long = ov(&"9".repeat(200));
     let patch = SettingsPatch { overrides: Some([(ID.to_string(), Some(long))].into_iter().collect()), ..Default::default() };
-    assert!(matches!(apply_patch(&mut s, patch, &k), Err(Error::Invalid(_))));
+    assert!(matches!(apply_patch(&mut s, patch, &k, &HashSet::new()), Err(Error::Invalid(_))));
 }
 
 /// A store whose writes always fail.

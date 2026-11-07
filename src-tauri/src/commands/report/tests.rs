@@ -47,12 +47,50 @@ fn default_names_are_at_most_120_characters() {
 #[test]
 fn extension_is_enforced() {
     let p = |s: &str| PathBuf::from(s);
-    assert_eq!(enforce_extension(p("/d/report.md"), MD), p("/d/report.md"));
-    assert_eq!(enforce_extension(p("/d/report.MD"), MD), p("/d/report.MD"));
-    assert_eq!(enforce_extension(p("/d/report"), MD), p("/d/report.md"));
-    assert_eq!(enforce_extension(p("/d/report.txt"), MD), p("/d/report.txt.md"));
-    assert_eq!(enforce_extension(p("/d/report.md"), JSON), p("/d/report.md.json"));
-    assert_eq!(enforce_extension(p("/d/report.json"), JSON), p("/d/report.json"));
+    let e = |s: &str, f| enforce_extension(p(s), f).expect(s);
+    assert_eq!(e("/d/report.md", MD), p("/d/report.md"));
+    assert_eq!(e("/d/report.MD", MD), p("/d/report.MD"));
+    assert_eq!(e("/d/report", MD), p("/d/report.md"));
+    assert_eq!(e("/d/report.txt", MD), p("/d/report.txt.md"));
+    assert_eq!(e("/d/report.md", JSON), p("/d/report.md.json"));
+    assert_eq!(e("/d/report.json", JSON), p("/d/report.json"));
+}
+
+#[test]
+fn alternate_data_streams_are_refused() {
+    // `notes.md:evil` would otherwise become the stream `evil.md` inside notes.md.
+    for bad in ["/d/notes.md:evil", "/d/notes.md:evil.md", "/d/notes:x.json", "/d/a:b/report.md"] {
+        let err = enforce_extension(PathBuf::from(bad), MD).expect_err(bad);
+        assert!(matches!(err, Error::Invalid(ref m) if m.contains("\":\"")), "{bad}: {err}");
+    }
+    #[cfg(windows)]
+    {
+        // The drive prefix (also the verbatim form) is not a name.
+        assert!(enforce_extension(PathBuf::from(r"C:\Users\me\report.md"), MD).is_ok());
+        assert!(enforce_extension(PathBuf::from(r"\\?\C:\Users\me\report.md"), MD).is_ok());
+        assert!(enforce_extension(PathBuf::from(r"C:\Users\me\notes.md:evil"), MD).is_err());
+    }
+    // The default name offered never has one.
+    assert_eq!(default_file_name("notes.md:evil", MD), "notes.md-evil.md");
+}
+
+#[test]
+fn unconfirmed_move_never_replaces() {
+    let t = tempfile::tempdir().expect("tempdir");
+    let (temp, dest) = (t.path().join("t.tmp"), t.path().join("report.md"));
+    fs::write(&temp, b"new").expect("write");
+    // A file that appeared after the existence check is not overwritten.
+    fs::write(&dest, b"theirs").expect("write");
+    assert!(matches!(move_into_place(&temp, &dest, false), Err(Error::Conflict(_))));
+    assert_eq!(fs::read(&dest).expect("read"), b"theirs");
+    assert!(temp.is_file(), "the caller removes the temp file");
+    // Confirmed: replaced.
+    move_into_place(&temp, &dest, true).expect("replace");
+    assert_eq!(fs::read(&dest).expect("read"), b"new");
+    // Unconfirmed into a free name: fine.
+    fs::write(&temp, b"other").expect("write");
+    move_into_place(&temp, &t.path().join("free.md"), false).expect("free");
+    assert_eq!(entries(t.path()), vec!["free.md", "report.md"]);
 }
 
 fn entries(dir: &Path) -> Vec<String> {

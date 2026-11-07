@@ -356,13 +356,25 @@ fn normalise_override(mut o: PackOverride) -> std::result::Result<PackOverride, 
 ///
 /// - `inspector_width` is clamped to 280..=640.
 /// - `overrides`: `{id: override}` sets/replaces and is accepted only for an instance id in
-///   `known_instance_ids` (the last discovery); `{id: null}` removes (any id).
-pub fn apply_patch(settings: &mut Settings, patch: SettingsPatch, known_instance_ids: &HashSet<String>) -> Result<()> {
+///   `known_instance_ids` (the last discovery) that is not in `session_only_ids` (opened
+///   `.mrpack`s: they live for the session only, so an override saved for one would outlive it;
+///   refused with a readable `Invalid`); `{id: null}` removes (any id).
+pub fn apply_patch(
+    settings: &mut Settings,
+    patch: SettingsPatch,
+    known_instance_ids: &HashSet<String>,
+    session_only_ids: &HashSet<String>,
+) -> Result<()> {
     let mut overrides: BTreeMap<String, Option<PackOverride>> = BTreeMap::new();
     for (id, o) in patch.overrides.unwrap_or_default() {
         let o = match o {
             None => None,
             Some(o) => {
+                if session_only_ids.contains(&id) {
+                    return Err(Error::Invalid(
+                        "Pack identity overrides for an opened .mrpack are not saved; the pack is only open for this session. Its Minecraft version and loader come from its modrinth.index.json".into(),
+                    ));
+                }
                 if !known_instance_ids.contains(&id) {
                     return Err(Error::Invalid(format!(
                         "there is no instance with id \"{id}\"; refresh the instance list and try again"

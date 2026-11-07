@@ -5,7 +5,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, Runtime};
@@ -79,20 +79,32 @@ pub fn default_file_name(requested: &str, format: ReportFormat) -> String {
 }
 
 /// `path` with the format's extension: kept when it already has it (any case), else appended
-/// (`notes.txt` → `notes.txt.md`).
-pub fn enforce_extension(path: PathBuf, format: ReportFormat) -> PathBuf {
+/// (`notes.txt` → `notes.txt.md`). Invalid when a name of the path (after the drive or `\\?\`
+/// prefix) contains `:`: on Windows `notes.md:evil` names a hidden stream inside `notes.md`, and
+/// appending the extension would write into it.
+pub fn enforce_extension(path: PathBuf, format: ReportFormat) -> Result<PathBuf> {
+    if let Some(bad) = path.components().find_map(|c| match c {
+        Component::Normal(n) if n.to_string_lossy().contains(':') => Some(n.to_string_lossy().into_owned()),
+        _ => None,
+    }) {
+        return Err(Error::Invalid(format!(
+            "the name \"{bad}\" contains \":\", which is not allowed in a report file name; save again and choose another name"
+        )));
+    }
     let ext = extension(format);
     if path.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case(ext)) {
-        return path;
+        return Ok(path);
     }
     let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     name.push(format!(".{ext}"));
-    path.with_file_name(name)
+    Ok(path.with_file_name(name))
 }
 
-/// Write `contents` to `dest`: a new temp file in the same folder, fsync, then rename onto
-/// `dest`. An existing `dest` is replaced only when `may_replace` (the user confirmed it in the
-/// save dialog); a folder never is. The temp file is removed on any failure.
+/// Write `contents` to `dest`: a new temp file in the same folder, fsync, then move it onto
+/// `dest`. An existing `dest` is replaced only when `may_replace` (the user confirmed that exact
+/// path in the save dialog); otherwise the move is an atomic no-replace rename
+/// (`fix::fsops::rename_noreplace`), so a file that appears at `dest` meanwhile is never
+/// overwritten (`Conflict`). A folder is never replaced. The temp file is removed on any failure.
 pub fn write_report(dest: &Path, contents: &[u8], may_replace: bool) -> Result<PathBuf> {
     if contents.len() > MAX_REPORT_BYTES {
         return Err(Error::Invalid(format!("the report is larger than {} MiB", MAX_REPORT_BYTES / (1024 * 1024))));
@@ -104,9 +116,7 @@ pub fn write_report(dest: &Path, contents: &[u8], may_replace: bool) -> Result<P
     };
     match fs::symlink_metadata(dest) {
         Ok(m) if m.is_dir() => return Err(Error::Invalid(format!("{shown} is a folder; choose a file name"))),
-        Ok(_) if !may_replace => {
-            return Err(Error::Conflict(format!("{shown} already exists. Save the report again and choose another name.")))
-        }
+        Ok(_) if !may_replace => return Err(exists(&shown)),
         _ => {}
     }
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
@@ -127,11 +137,26 @@ pub fn write_report(dest: &Path, contents: &[u8], may_replace: bool) -> Result<P
     };
     let written = file.write_all(contents).and_then(|()| file.sync_all());
     drop(file);
-    if let Err(e) = written.and_then(|()| fs::rename(&temp_path, dest)) {
+    if let Err(e) = written.map_err(|e| Error::io(dest, e)).and_then(|()| move_into_place(&temp_path, dest, may_replace)) {
         let _ = fs::remove_file(&temp_path);
-        return Err(Error::io(dest, e));
+        return Err(e);
     }
     Ok(dest.to_path_buf())
+}
+
+/// Move the finished temp file onto `dest`: a plain rename (replacing) only when `may_replace`,
+/// else an atomic no-replace rename, where an existing `dest` is a `Conflict` and stays untouched.
+fn move_into_place(temp: &Path, dest: &Path, may_replace: bool) -> Result<()> {
+    let moved = if may_replace { fs::rename(temp, dest) } else { crate::fix::fsops::rename_noreplace(temp, dest) };
+    match moved {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(exists(&dest.display().to_string())),
+        Err(e) => Err(Error::io(dest, e)),
+    }
+}
+
+fn exists(shown: &str) -> Error {
+    Error::Conflict(format!("{shown} already exists. Save the report again and choose another name."))
 }
 
 /// Native save dialog, async-safe (callback + oneshot). None = cancelled.
@@ -176,7 +201,7 @@ pub async fn save_report(
         return Ok(None);
     };
     // The dialog confirmed replacing `picked` itself; a name we had to extend was not confirmed.
-    let dest = enforce_extension(picked.clone(), format);
+    let dest = enforce_extension(picked.clone(), format)?;
     let may_replace = dest == picked;
     let saved = blocking(move || write_report(&dest, contents.as_bytes(), may_replace)).await?;
     Ok(Some(saved.display().to_string()))

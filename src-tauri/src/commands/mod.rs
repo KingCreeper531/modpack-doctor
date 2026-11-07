@@ -238,7 +238,8 @@ pub async fn get_settings(state: State<'_, AppState>) -> Cmd<Settings> {
 pub async fn set_settings(_app: AppHandle, state: State<'_, AppState>, patch: SettingsPatch) -> Cmd<Settings> {
     let st = AppState::clone(&state);
     let known = st.known_ids();
-    let (settings, ()) = blocking(move || st.settings.update(|s| crate::settings::apply_patch(s, patch, &known))).await?;
+    let packs = st.opened_pack_ids();
+    let (settings, ()) = blocking(move || st.settings.update(|s| crate::settings::apply_patch(s, patch, &known, &packs))).await?;
     Ok(settings)
 }
 

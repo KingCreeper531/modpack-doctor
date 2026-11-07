@@ -174,6 +174,72 @@ fn drops_open_packs_and_reject_everything_else() {
     assert!(out[MAX_DROPPED_FILES].as_ref().expect_err("over the cap").reason.contains("at most 32"));
 }
 
+#[test]
+fn a_big_drop_emits_a_handful_of_rejections_and_one_summary() {
+    let t = tmp();
+    let pack = write_pack(t.path(), "good.mrpack");
+    let st = AppState::default();
+    let mut paths: Vec<PathBuf> = (0..40).map(|i| t.path().join(format!("junk{i}.txt"))).collect();
+    paths.insert(10, pack.clone());
+    let (added, rejected) = drop_events(open_dropped(&st, &paths));
+    assert_eq!(added.len(), 1);
+    assert_eq!(PathBuf::from(&added[0].instance.root), pack);
+    assert_eq!(rejected.len(), MAX_DROP_REJECTIONS + 1);
+    assert_eq!(rejected[0].name, "junk0.txt");
+    let summary = rejected.last().expect("summary");
+    assert_eq!(summary.name, "The rest of this drop");
+    assert!(summary.reason.starts_with("37 more files were refused as well"), "{}", summary.reason);
+    assert!(summary.reason.ends_with('.'));
+
+    // Few rejections: no summary.
+    let (added, rejected) = drop_events(open_dropped(&st, &paths[..2]));
+    assert!(added.is_empty());
+    assert_eq!(rejected.len(), 2);
+    assert!(rejected.iter().all(|r| r.name != "The rest of this drop"));
+    let (_, rejected) = drop_events(open_dropped(&st, &paths[..MAX_DROP_REJECTIONS + 1]));
+    assert!(rejected.last().expect("summary").reason.starts_with("1 more file was refused"));
+}
+
+#[test]
+fn pack_ids_are_session_only_for_settings() {
+    let t = tmp();
+    let pack = write_pack(t.path(), "p.mrpack");
+    let st = AppState::default();
+    let inst = open_pack(&st, &pack).expect("open");
+    assert_eq!(st.opened_pack_ids(), [inst.id.clone()].into_iter().collect());
+    let patch = crate::model::SettingsPatch {
+        overrides: Some(
+            [(inst.id.clone(), Some(PackOverride { mc_version: Some("1.21.1".into()), loader: None, side: None }))]
+                .into_iter()
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let (known, packs) = (st.known_ids(), st.opened_pack_ids());
+    let err = st.settings.update(|s| crate::settings::apply_patch(s, patch, &known, &packs)).expect_err("refused");
+    assert!(err.to_string().contains("not saved"), "{err}");
+    assert!(st.settings.get().overrides.is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn alternate_data_streams_are_never_packs() {
+    let t = tmp();
+    let host = t.path().join("notes.txt");
+    std::fs::write(&host, b"x").expect("write");
+    let pack_bytes = std::fs::read(write_pack(&t.path().join("src"), "p.mrpack")).expect("read");
+    // A real stream holding a valid pack, named like one.
+    let stream = PathBuf::from(format!("{}:hidden.mrpack", host.display()));
+    if std::fs::write(&stream, &pack_bytes).is_err() {
+        eprintln!("skipped: this filesystem has no alternate data streams");
+        return;
+    }
+    let st = AppState::default();
+    let err = open_pack(&st, &stream).expect_err("stream");
+    assert!(err.contains("\":\""), "{err}");
+    assert!(st.opened_packs().is_empty());
+}
+
 #[derive(Default)]
 struct Recorder {
     started: Mutex<Vec<ScanStarted>>,

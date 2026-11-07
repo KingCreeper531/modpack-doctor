@@ -547,3 +547,342 @@ fn scanning_writes_nothing_and_needs_the_guard_rule() {
     let err = scan_pack(&PathGuard::new(), &pack, "pack", |_| {}, |_| {}).expect_err("unregistered");
     assert!(matches!(err, Error::OutsideScope { .. }));
 }
+
+// ── Download links (never dropped silently) ──────────────────────────────────
+
+fn downloads_of(json_downloads: &str) -> (Vec<String>, Vec<ScanIssue>) {
+    let file = format!(
+        r#"{{"path":"mods/a.jar","hashes":{{"sha1":"{SHA1}","sha512":"{}"}},"downloads":{json_downloads}}}"#,
+        sha512()
+    );
+    let (idx, issues) = index_issues(index_json(r#"{"minecraft":"1.20.1"}"#, &[file]).as_bytes());
+    let mut files = idx.expect("index").files;
+    assert_eq!(files.len(), 1);
+    (files.remove(0).downloads, issues)
+}
+
+#[test]
+fn an_overlong_url_becomes_a_sentinel_not_nothing() {
+    // Before: a > 4 KiB URL was dropped, so a file whose only link pointed elsewhere had no
+    // link at all and no W-MRPACK-DOWNLOAD.
+    let long = format!("https://evil.example/{}", "a".repeat(5000));
+    let (dl, issues) = downloads_of(&format!(r#"["{long}"]"#));
+    assert_eq!(dl, vec![index::TOO_LONG]);
+    assert!(issues.iter().any(|i| i.message.contains("longer than 4096 bytes")), "{issues:?}");
+    // A long allowlisted-looking one is not kept either (no truncated "https://cdn.modrinth.com/…").
+    let long_cdn = format!("https://cdn.modrinth.com/{}", "a".repeat(5000));
+    let (dl, _) = downloads_of(&format!(r#"["https://cdn.modrinth.com/data/x/a.jar","{long_cdn}"]"#));
+    assert_eq!(dl, vec!["https://cdn.modrinth.com/data/x/a.jar", index::TOO_LONG]);
+    // Exactly 4096 bytes is kept verbatim.
+    let edge = format!("https://cdn.modrinth.com/{}", "b".repeat(4096 - "https://cdn.modrinth.com/".len()));
+    let (dl, issues) = downloads_of(&format!(r#"["{edge}"]"#));
+    assert_eq!(dl, vec![edge]);
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn non_string_links_become_sentinels() {
+    // Before: `[{"url":"https://evil"}]` or `[42]` vanished, leaving an empty list.
+    let (dl, issues) = downloads_of(r#"[{"url":"https://evil.example/a.jar"}, 42, null, "https://cdn.modrinth.com/x.jar"]"#);
+    assert_eq!(dl, vec![index::NOT_A_STRING, index::NOT_A_STRING, index::NOT_A_STRING, "https://cdn.modrinth.com/x.jar"]);
+    assert!(issues.iter().any(|i| i.message.contains("3 download link(s)") && i.message.contains("not text")), "{issues:?}");
+    // `downloads` that is not a list at all.
+    let (dl, issues) = downloads_of(r#""https://evil.example/a.jar""#);
+    assert_eq!(dl, vec![index::NOT_A_LIST]);
+    assert!(issues.iter().any(|i| i.message.contains("not a list")));
+    let (dl, _) = downloads_of(r#"{"0":"https://evil.example/a.jar"}"#);
+    assert_eq!(dl, vec![index::NOT_A_LIST]);
+    // Absent or null: no links, no note.
+    let (dl, issues) = downloads_of("null");
+    assert!(dl.is_empty() && issues.is_empty());
+}
+
+#[test]
+fn links_past_the_cap_end_in_a_sentinel() {
+    // Before: 16 allowlisted links hid a 17th that pointed elsewhere.
+    let mut urls: Vec<String> = (0..70).map(|i| format!("\"https://cdn.modrinth.com/{i}.jar\"")).collect();
+    urls.push("\"https://evil.example/x.jar\"".into());
+    let (dl, issues) = downloads_of(&format!("[{}]", urls.join(",")));
+    assert_eq!(dl.len(), index::MAX_DOWNLOADS);
+    assert_eq!(dl.last().map(String::as_str), Some(index::MORE_URLS));
+    assert_eq!(dl[0], "https://cdn.modrinth.com/0.jar");
+    assert!(issues.iter().any(|i| i.message.contains("71 download links")), "{issues:?}");
+    // Up to the cap, everything is kept as-is.
+    let urls: Vec<String> = (0..index::MAX_DOWNLOADS).map(|i| format!("\"https://cdn.modrinth.com/{i}.jar\"")).collect();
+    let (dl, issues) = downloads_of(&format!("[{}]", urls.join(",")));
+    assert_eq!(dl.len(), index::MAX_DOWNLOADS);
+    assert!(!dl.iter().any(|u| u.starts_with("invalid:")));
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn sentinels_are_not_urls() {
+    for s in [index::TOO_LONG, index::NOT_A_STRING, index::MORE_URLS, index::NOT_A_LIST] {
+        assert!(!s.contains("://"), "{s} must not parse as an absolute URL in src/core");
+    }
+}
+
+#[test]
+fn duplicate_index_paths_keep_the_last() {
+    let second = file_json("mods/a.jar").replace(SHA1, "ffffffffffffffffffffffffffffffffffffffff");
+    let files = [file_json("mods/a.jar"), file_json("mods/b.jar"), second, file_json("mods/B.jar")];
+    let (idx, issues) = index_issues(index_json(r#"{"minecraft":"1.20.1"}"#, &files).as_bytes());
+    let idx = idx.expect("index");
+    let got: Vec<(&str, &str)> = idx.files.iter().map(|f| (f.path.as_str(), f.sha1.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![("mods/b.jar", SHA1), ("mods/a.jar", "ffffffffffffffffffffffffffffffffffffffff"), ("mods/B.jar", SHA1)],
+        "the later mods/a.jar wins, in its own position"
+    );
+    assert!(issues.iter().any(|i| i.message.contains("files[0] and files[2]") && i.message.contains("only files[2]")), "{issues:?}");
+    assert!(issues.iter().any(|i| i.message.contains("differ only in letter case")), "{issues:?}");
+    assert_eq!(issues.len(), 2);
+}
+
+// ── Duplicate entries, header consistency, central-directory limits ─────────
+
+/// Replace every occurrence of `from` by `to` (same length) in the raw zip bytes, or only the
+/// first one (the local header, which precedes the central directory).
+fn patch_name(mut bytes: Vec<u8>, from: &str, to: &str, all: bool) -> Vec<u8> {
+    assert_eq!(from.len(), to.len());
+    let (f, t) = (from.as_bytes(), to.as_bytes());
+    let mut hits = 0;
+    let mut i = 0;
+    while i + f.len() <= bytes.len() {
+        if &bytes[i..i + f.len()] == f {
+            bytes[i..i + f.len()].copy_from_slice(t);
+            hits += 1;
+            if !all {
+                break;
+            }
+            i += f.len();
+        } else {
+            i += 1;
+        }
+    }
+    assert!(hits > 0, "{from} not found");
+    bytes
+}
+
+fn write_bytes(dir: &Path, name: &str, bytes: Vec<u8>) -> PathBuf {
+    let p = dir.join(name);
+    std::fs::write(&p, bytes).expect("write");
+    dunce::canonicalize(&p).expect("canon")
+}
+
+fn refused_as_duplicate(res: &ScanResult) {
+    assert!(res.declared.is_empty() && res.jars.is_empty(), "nothing is read: {:?}", res.jars);
+    assert!(has_issue(res, "tools disagree about which copy counts"), "{:?}", res.issues);
+}
+
+#[test]
+fn duplicate_index_entry_refuses_the_pack() {
+    let t = tmp();
+    let a = index_json(r#"{"minecraft":"1.20.1","fabric-loader":"0.16.10"}"#, &[file_json("mods/a.jar")]);
+    let b = index_json(r#"{"minecraft":"1.20.1","forge":"47.2.0"}"#, &[file_json("mods/evil.jar")]);
+    let raw = Pack::new().stored(INDEX_NAME, a.as_bytes()).stored("modrinth.index.jsoX", b.as_bytes()).build();
+    let pack = write_bytes(t.path(), "p.mrpack", patch_name(raw, "modrinth.index.jsoX", INDEX_NAME, true));
+    let mut started = None;
+    let res = scan_pack(&guard_for(&pack), &pack, "pack", |s| started = Some(s.len()), |_| {}).expect("scan");
+    refused_as_duplicate(&res);
+    assert_eq!(started, Some(0));
+    assert_eq!(describe_pack(&pack).metadata_source, MetadataSource::Inferred, "no index is trusted");
+}
+
+#[test]
+fn duplicate_jar_entry_refuses_the_pack() {
+    let t = tmp();
+    let raw = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .stored("overrides/mods/a.jar", &fabric_jar("good"))
+        .stored("overrides/mods/X.jar", &fabric_jar("evil"))
+        .build();
+    let pack = write_bytes(t.path(), "p.mrpack", patch_name(raw, "overrides/mods/X.jar", "overrides/mods/a.jar", true));
+    refused_as_duplicate(&scan(&pack));
+}
+
+#[test]
+fn case_insensitive_duplicate_refuses_the_pack_but_folders_may_differ() {
+    let t = tmp();
+    let pack = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .stored("overrides/mods/Sodium.jar", &fabric_jar("good"))
+        .stored("overrides/mods/sodium.jar", &fabric_jar("evil"))
+        .write(t.path(), "p.mrpack");
+    let res = scan(&pack);
+    refused_as_duplicate(&res);
+    assert!(has_issue(&res, "same file on Windows"));
+
+    let mut ok = Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]));
+    ok.zip.add_directory("overrides/Config/", SimpleFileOptions::default()).expect("dir");
+    ok.zip.add_directory("overrides/config/", SimpleFileOptions::default()).expect("dir");
+    let res = scan(&ok.stored("overrides/mods/a.jar", &fabric_jar("a")).write(t.path(), "ok.mrpack"));
+    assert_eq!(res.jars.len(), 1, "two folder entries differing in case are harmless: {:?}", res.issues);
+}
+
+#[test]
+fn local_header_name_mismatch_skips_that_entry() {
+    let t = tmp();
+    let raw = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .stored("overrides/mods/aaa.jar", &fabric_jar("hidden"))
+        .stored("overrides/mods/bbb.jar", &fabric_jar("fine"))
+        .build();
+    // Only the local header says `zzz.jar`; the central directory still says `aaa.jar`.
+    let pack = write_bytes(t.path(), "p.mrpack", patch_name(raw, "overrides/mods/aaa.jar", "overrides/mods/zzz.jar", false));
+    let res = scan(&pack);
+    assert_eq!(res.jars.iter().map(|j| j.id.as_str()).collect::<Vec<_>>(), vec!["overrides/mods/bbb.jar"]);
+    let hits = issue_for(&res, "overrides/mods/aaa.jar");
+    assert_eq!(hits.len(), 1, "{:?}", res.issues);
+    assert!(hits[0].message.contains("local header does not match"), "{}", hits[0].message);
+
+    // The index too: its entry is skipped, so the pack has no usable index.
+    let raw = Pack::new().stored(INDEX_NAME, index_json(r#"{"minecraft":"1.20.1"}"#, &[]).as_bytes()).build();
+    let pack = write_bytes(t.path(), "q.mrpack", patch_name(raw, INDEX_NAME, "modrinth.index.jsoX", false));
+    let res = scan(&pack);
+    assert!(issue_for(&res, INDEX_NAME).iter().any(|i| i.message.contains("local header does not match")), "{:?}", res.issues);
+    assert_eq!(describe_pack(&pack).metadata_source, MetadataSource::Inferred);
+}
+
+/// A valid small zip with its (comment-less) EOCD patched by `f`.
+fn patched_eocd(f: impl FnOnce(&mut [u8])) -> Vec<u8> {
+    let mut bytes = Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[])).build();
+    let at = bytes.len() - 22;
+    assert_eq!(bytes[at..at + 4], [0x50, 0x4b, 0x05, 0x06]);
+    f(&mut bytes[at..]);
+    bytes
+}
+
+#[test]
+fn oversized_central_directory_is_refused_before_parsing() {
+    let t = tmp();
+    // Entry count (both fields) far over the limit.
+    let many = patched_eocd(|e| {
+        e[8..10].copy_from_slice(&30_000u16.to_le_bytes());
+        e[10..12].copy_from_slice(&30_000u16.to_le_bytes());
+    });
+    let res = scan(&write_bytes(t.path(), "many.mrpack", many.clone()));
+    assert!(has_issue(&res, "30000 entries, more than the 20000"), "{:?}", res.issues);
+    assert!(archive::check_central_directory(&mut Cursor::new(many)).is_err());
+    // Central directory size over 20 000 × 600 bytes.
+    let big = patched_eocd(|e| e[12..16].copy_from_slice(&(MAX_CD_BYTES as u32 + 1).to_le_bytes()));
+    let err = archive::check_central_directory(&mut Cursor::new(big)).expect_err("cd size");
+    assert!(err.contains("table of contents"), "{err}");
+    // A normal pack passes.
+    assert!(archive::check_central_directory(&mut Cursor::new(patched_eocd(|_| {}))).is_ok());
+}
+
+/// A ZIP64 tail (record + locator + EOCD with the ZIP64 markers) announcing `entries` and
+/// `cd_size`; `gap` bytes of padding sit between the record the locator points at and the
+/// locator.
+fn zip64_tail(entries: u64, cd_size: u64, gap: usize) -> Vec<u8> {
+    let mut bytes = Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[])).build();
+    let eocd_at = bytes.len() - 22;
+    let cd_offset = u64::from(u32::from_le_bytes(bytes[eocd_at + 16..eocd_at + 20].try_into().expect("4")));
+    bytes.truncate(eocd_at);
+    let rec_at = bytes.len() as u64;
+    bytes.extend([0x50, 0x4b, 0x06, 0x06]);
+    bytes.extend(44u64.to_le_bytes());
+    bytes.extend(45u16.to_le_bytes());
+    bytes.extend(45u16.to_le_bytes());
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend(entries.to_le_bytes());
+    bytes.extend(entries.to_le_bytes());
+    bytes.extend(cd_size.to_le_bytes());
+    bytes.extend(cd_offset.to_le_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, gap));
+    bytes.extend([0x50, 0x4b, 0x06, 0x07]);
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend(rec_at.to_le_bytes());
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0]);
+    bytes
+}
+
+#[test]
+fn zip64_end_records_are_checked_too() {
+    let err = archive::check_central_directory(&mut Cursor::new(zip64_tail(5_000_000, 100, 0))).expect_err("count");
+    assert!(err.contains("5000000 entries"), "{err}");
+    let err = archive::check_central_directory(&mut Cursor::new(zip64_tail(1, 1 << 40, 0))).expect_err("size");
+    assert!(err.contains("table of contents"), "{err}");
+    let err = archive::check_central_directory(&mut Cursor::new(zip64_tail(1, 100, 2 * MIB as usize))).expect_err("gap");
+    assert!(err.contains("ZIP64"), "{err}");
+    // Plausible values pass the hand check (the zip library judges the rest).
+    assert!(archive::check_central_directory(&mut Cursor::new(zip64_tail(1, 100, 0))).is_ok());
+}
+
+// ── Only mods/ jars are scanned ──────────────────────────────────────────────
+
+#[test]
+fn only_jars_directly_in_override_mods_are_scanned() {
+    let t = tmp();
+    let pack = Pack::new()
+        .index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[]))
+        .file("overrides/mods/a.jar", &fabric_jar("a"))
+        .file("client-overrides/mods/b.JAR", &fabric_jar("b"))
+        .file("server-overrides/mods/c.jar", &fabric_jar("c"))
+        .file("overrides/mods/sub/nested.jar", &fabric_jar("nested"))
+        .file("overrides/config/lib.jar", &fabric_jar("lib"))
+        .file("client-overrides/loose.jar", &fabric_jar("loose"))
+        .file("overrides/resourcepacks/x.zip", b"zip")
+        .file("mods/outside.jar", &fabric_jar("outside"))
+        .write(t.path(), "p.mrpack");
+    let res = scan(&pack);
+    let ids: Vec<&str> = res.jars.iter().filter(|j| j.depth == 0).map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["client-overrides/mods/b.JAR", "overrides/mods/a.jar", "server-overrides/mods/c.jar"]);
+    for ignored in ["overrides/mods/sub/nested.jar", "overrides/config/lib.jar", "client-overrides/loose.jar"] {
+        let hits = issue_for(&res, ignored);
+        assert_eq!(hits.len(), 1, "{ignored}: {:?}", res.issues);
+        assert!(hits[0].message.contains("not directly in a mods/ folder, so loaders ignore it"), "{}", hits[0].message);
+    }
+    assert_eq!(res.issues.len(), 3, "nothing about non-jars or jars outside the override folders: {:?}", res.issues);
+    assert_eq!(describe_pack(&pack).mod_count, 3);
+}
+
+// ── Names, streams, resolved names ───────────────────────────────────────────
+
+#[test]
+fn display_names_drop_bidi_and_invisible_characters() {
+    let t = tmp();
+    let json = r#"{"formatVersion":1,"game":"minecraft","name":"\u202ekcap\u202c Good\u200b\u2066Pack\u2069\ufeff\u200f\u0007","files":[],"dependencies":{"minecraft":"1.20.1\u200e"}}"#;
+    let pack = Pack::new().index(json).write(t.path(), "p.mrpack");
+    let inst = describe_pack(&pack);
+    assert_eq!(inst.name, "kcap GoodPack");
+    assert_eq!(inst.mc_version, None, "a version with a format character is not trusted");
+    // Only invisible characters: the file name is used instead.
+    let json = r#"{"formatVersion":1,"game":"minecraft","name":"\u200b\u202e","files":[],"dependencies":{}}"#;
+    let pack = Pack::new().index(json).write(t.path(), "Fallback.mrpack");
+    assert_eq!(describe_pack(&pack).name, "Fallback");
+    // Paths in issue subjects show them as `?`.
+    assert_eq!(display_name("mods/\u{202E}raj.exe"), "mods/?raj.exe");
+    assert_eq!(strip_hidden("a\u{00AD}b\u{E0041}c\u{2066}"), "abc");
+}
+
+#[test]
+fn stream_names_are_never_packs() {
+    assert!(check_pack_meta("notes.txt:hidden.mrpack", false, true, 1).expect_err("ads").contains("\":\""));
+    assert!(has_stream_colon(Path::new("dir/notes.txt:x.mrpack")));
+    assert!(!has_stream_colon(Path::new("dir/pack.mrpack")));
+    #[cfg(windows)]
+    {
+        assert!(!has_stream_colon(Path::new(r"C:\Users\me\pack.mrpack")));
+        assert!(!has_stream_colon(Path::new(r"\\?\C:\Users\me\pack.mrpack")));
+        assert!(has_stream_colon(Path::new(r"C:\Users\me\notes.txt:x.mrpack")));
+        assert!(has_stream_colon(Path::new(r"\\?\C:\Users\me\notes.txt:x.mrpack")));
+    }
+    let t = tmp();
+    assert!(check_pack_file(&t.path().join("notes.txt:x.mrpack")).expect_err("ads").contains("\":\""));
+}
+
+#[test]
+fn scan_rechecks_the_resolved_name() {
+    // A registered file that is (no longer) named *.mrpack is not scanned.
+    let t = tmp();
+    let bytes =
+        Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[])).file("overrides/mods/a.jar", &fabric_jar("a")).build();
+    let renamed = write_bytes(t.path(), "pack.zip", bytes);
+    let res = scan(&renamed);
+    assert!(res.jars.is_empty() && res.declared.is_empty());
+    assert!(has_issue(&res, "The pack was not scanned: only Modrinth modpacks"), "{:?}", res.issues);
+}

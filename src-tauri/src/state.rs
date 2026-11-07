@@ -113,6 +113,12 @@ impl AppState {
         self.opened_packs.read().map(|p| p.clone()).unwrap_or_default()
     }
 
+    /// The ids of the `.mrpack`s opened this session (their identity overrides are refused by
+    /// `settings::apply_patch`: packs are session-only).
+    pub fn opened_pack_ids(&self) -> HashSet<String> {
+        self.opened_packs.read().map(|p| p.iter().map(|i| i.id.clone()).collect()).unwrap_or_default()
+    }
+
     /// Register an opened `.mrpack` (session only): remembered for rediscovery, put in the
     /// registry (no PathGuard root) and given the read-only exact-file rule. Opening the same
     /// pack again refreshes its entry. Callers hold `scope_lock` for writing.

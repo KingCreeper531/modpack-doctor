@@ -19,11 +19,15 @@
 //!
 //! **Read-only files** (exact-file rule; CONTRACTS invariant 15, opened `.mrpack`s). A file
 //! registered with [`PathGuard::set_read_only_files`] is *not* a root and makes nothing around it
-//! reachable. [`PathGuard::check_existing`] additionally accepts a path that resolves (symlinks
-//! followed) to exactly one of those files while it is a regular file: not its folder, not a
-//! sibling, nothing below it. [`PathGuard::check_new`] never accepts it, so it cannot be
-//! created, renamed onto or written, even when it happens to sit inside a registered root.
-//! The list is replaced as a whole (the registry's opened packs, on every change).
+//! reachable. The registered paths are the canonical paths captured when each pack was opened,
+//! and they are never resolved again into a new target: a registered path that no longer is its
+//! own canonical form (it was swapped for a symlink or junction since) is skipped, so nothing it
+//! now points to becomes readable; the pack must be opened again. [`PathGuard::check_existing`]
+//! additionally accepts a path whose canonical form is exactly one of those paths while it is a
+//! regular file: not its folder, not a sibling, nothing below it. [`PathGuard::check_new`] never
+//! accepts it, so it cannot be created, renamed onto or written, even when it happens to sit
+//! inside a registered root. The list is replaced as a whole (the registry's opened packs, on
+//! every change).
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
@@ -93,13 +97,18 @@ impl PathGuard {
         self.hs_err_dirs.read().map(|d| d.clone()).unwrap_or_default()
     }
 
-    /// Replace the read-only exact files (see the module docs). Paths that do not resolve to an
-    /// existing regular file are skipped; an empty list switches the rule off.
+    /// Replace the read-only exact files (see the module docs). Each path must be the canonical
+    /// path captured when the file was opened and is kept as given, never re-resolved: a path that
+    /// does not canonicalise to itself any more (a symlink or junction was swapped in, or it is
+    /// gone), or that is not a regular file, is skipped. An empty list switches the rule off.
     pub fn set_read_only_files(&self, files: &[PathBuf]) {
         let mut canon: Vec<PathBuf> = Vec::new();
         for f in files {
             match canonical(f) {
-                Ok(c) if c.is_file() && !canon.contains(&c) => canon.push(c),
+                Ok(c) if c == *f && c.is_file() && !canon.contains(&c) => canon.push(c),
+                Ok(c) if c != *f => {
+                    eprintln!("path guard: not reading {}: it now resolves to another file; open it again", f.display());
+                }
                 Ok(_) => {}
                 Err(e) => eprintln!("path guard: not reading {}: {e}", f.display()),
             }
@@ -126,10 +135,12 @@ impl PathGuard {
     }
 
     /// Whether the canonical path `canon` is exactly one of the read-only files and is still a
-    /// regular file.
+    /// regular file. A registered path that was swapped for a link resolves elsewhere, so no
+    /// `canon` equals it and nothing is allowed through it.
     fn read_only_file_allows(&self, canon: &Path) -> Result<bool> {
         let files = self.read_only_files.read().map_err(|_| poisoned())?;
-        Ok(files.iter().any(|f| f == canon) && std::fs::metadata(canon).map(|m| m.is_file()).unwrap_or(false))
+        Ok(files.iter().any(|f| f == canon)
+            && std::fs::symlink_metadata(canon).map(|m| m.is_file()).unwrap_or(false))
     }
 
     /// Whether the canonical path `canon` is a regular `hs_err_pid<pid>.log` file directly in
@@ -515,6 +526,58 @@ mod tests {
         fs::remove_file(&pack).expect("rm");
         fs::create_dir_all(&pack).expect("mkdir");
         assert!(g.check_existing(&pack).is_err());
+    }
+
+    /// The registered path is never re-resolved: after its folder is swapped for a junction (no
+    /// privilege needed) to a folder holding a file of the same name, neither reading nor
+    /// re-registering (as every discovery does) reaches the new target.
+    #[test]
+    fn read_only_file_swapped_folder_is_not_followed() {
+        let t = tempfile::tempdir().expect("tempdir");
+        let base = dunce::canonicalize(t.path()).expect("canon");
+        let (a, b) = (base.join("Downloads"), base.join("Private"));
+        fs::create_dir_all(&a).expect("mkdir");
+        fs::create_dir_all(&b).expect("mkdir");
+        fs::write(a.join("pack.mrpack"), b"pack").expect("write");
+        fs::write(b.join("pack.mrpack"), b"secret").expect("write");
+        let pack = a.join("pack.mrpack");
+        let g = PathGuard::new();
+        g.set_read_only_files(std::slice::from_ref(&pack));
+        assert!(g.check_existing(&pack).is_ok());
+
+        fs::rename(&a, base.join("Downloads.old")).expect("move away");
+        link_dir(&b, &a);
+        assert!(matches!(g.check_existing(&pack), Err(Error::OutsideScope { .. })), "the swapped path is refused");
+        assert!(g.check_existing(&b.join("pack.mrpack")).is_err(), "and so is its new target");
+        // Registering the same stored path again (rediscovery) does not adopt the new target.
+        g.set_read_only_files(std::slice::from_ref(&pack));
+        assert!(g.read_only_files().is_empty());
+        assert!(g.check_existing(&pack).is_err());
+        assert!(g.check_existing(&b.join("pack.mrpack")).is_err());
+    }
+
+    /// Same with the pack file itself replaced by a file symlink (needs a privilege on Windows;
+    /// skipped when it cannot be created).
+    #[test]
+    fn read_only_file_swapped_for_a_symlink_is_not_followed() {
+        let (t, g, dir, pack) = read_only_setup();
+        let secret = dunce::canonicalize(t.path()).expect("canon").join("secret.mrpack");
+        fs::write(&secret, b"secret").expect("write");
+        fs::remove_file(&pack).expect("rm");
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&secret, &pack);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&secret, &pack);
+        if made.is_err() {
+            eprintln!("skipped: creating symlinks needs a privilege here");
+            return;
+        }
+        assert!(g.check_existing(&pack).is_err());
+        g.set_read_only_files(std::slice::from_ref(&pack));
+        assert!(g.read_only_files().is_empty(), "not re-resolved into the link target");
+        assert!(g.check_existing(&pack).is_err());
+        assert!(g.check_existing(&secret).is_err());
+        assert!(g.check_existing(&dir.join("other.mrpack")).is_err());
     }
 
     #[test]
