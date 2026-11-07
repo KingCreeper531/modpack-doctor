@@ -17,7 +17,7 @@ import { jarMatch } from '../../../core/modrinth';
 import { crashFindingsCiting, sourceName } from '../../app/crashState';
 import { javaRelease } from '../../app/derive';
 import { openExternal } from '../../app/external';
-import { matchProject, projectUrl, sideSupport, viewContext } from '../../app/modrinthState';
+import { matchProject, projectUrl, sideSupport, updateWords, viewContext } from '../../app/modrinthState';
 import { useActions, useApp } from '../../app/StoreContext';
 import { Plate, PlateRow, rangeText, SubLegend } from './Plate';
 
@@ -129,11 +129,15 @@ function CitingCrashes({ instanceId, jarId }: { instanceId: string; jarId: strin
 }
 
 /** Why a jar's Modrinth state is unknown, in words. */
-function unknownReason(enabled: boolean, status: string | undefined): string {
+function unknownReason(enabled: boolean, status: string | undefined, notice: string | undefined): string {
   if (!enabled) return 'unknown (Modrinth off)';
-  if (status === 'loading' || status === 'idle' || status === undefined) return 'looking up…';
-  return 'unknown (Modrinth unreachable)';
+  if (status === 'loading') return 'looking up…';
+  if (status === 'idle' || status === undefined) return 'not looked up yet';
+  if (notice === 'offline') return 'unknown (Modrinth unreachable)';
+  return 'unknown (Modrinth lookup failed)';
 }
+
+const UPDATE_TONE = { ok: 'text-ok', dim: 'text-fg-dim', faint: 'text-fg-faint' } as const;
 
 /**
  * The jar's Modrinth project: title with a link to its page (opened in the browser), the
@@ -141,6 +145,7 @@ function unknownReason(enabled: boolean, status: string | undefined): string {
  */
 function ModrinthFacts({ instanceId, jar }: { instanceId: string; jar: JarRecord }) {
   const result = useApp((s) => s.scans[instanceId]?.result ?? null);
+  const pack = useApp((s) => s.scans[instanceId]?.pack ?? null);
   const m = useApp((s) => s.modrinth[instanceId]);
   const enabled = useApp((s) => s.settings.modrinthEnabled);
   const backendKind = useApp((s) => s.backendKind);
@@ -153,6 +158,10 @@ function ModrinthFacts({ instanceId, jar }: { instanceId: string; jar: JarRecord
     }
   }, [jar, ctx]);
   const project = matchProject(match);
+  const words = updateWords(ctx?.updateStatus?.[jar.sha1.trim().toLowerCase()], m?.filters ?? null, {
+    loaderName: pack?.loader ? LOADER_NAME[pack.loader.kind] : null,
+    mcVersion: pack?.mcVersion ?? null,
+  });
   return (
     <Plate label="Modrinth">
       {match.state === 'missing' ? (
@@ -161,7 +170,7 @@ function ModrinthFacts({ instanceId, jar }: { instanceId: string; jar: JarRecord
         </PlateRow>
       ) : match.state === 'unknown' ? (
         <PlateRow label="Project">
-          <span className="text-fg-faint">{unknownReason(enabled, m?.status)}</span>
+          <span className="text-fg-faint">{unknownReason(enabled, m?.status, m?.notice?.kind)}</span>
         </PlateRow>
       ) : (
         <>
@@ -193,12 +202,8 @@ function ModrinthFacts({ instanceId, jar }: { instanceId: string; jar: JarRecord
                 {match.update.versionNumber}
                 {match.beta ? <span className="pl-2 t-small">beta</span> : null}
               </span>
-            ) : m?.updatesChecked ? (
-              <span className="text-ok">up to date</span>
-            ) : m?.filters ? (
-              <span className="text-fg-faint">unknown (update lookup failed)</span>
             ) : (
-              <span className="text-fg-faint">not checked (pack MC version or loader unknown)</span>
+              <span className={UPDATE_TONE[words.tone]}>{words.text}</span>
             )}
           </PlateRow>
           <PlateRow label="Runs on">{sideSupport(match.version, project)}</PlateRow>

@@ -39,6 +39,13 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
     return n;
   }, [result]);
 
+  // Missing mod ids whose Modrinth lookup failed for a non-network reason: skipped, said here.
+  const unresolvedAll = useApp((s) => s.modrinth[instanceId]?.unresolved);
+  const unresolved = (finding.missingModIds ?? []).flatMap((modId) => {
+    const e = unresolvedAll?.[modId];
+    return e ? [{ modId, message: e.message }] : [];
+  });
+
   const label = (id: string) => names[id] ?? id;
   const steps = finding.fixes.flatMap((f) => (f.kind === 'manual' ? f.steps : []));
   const plannable = finding.fixes.filter((f) => f.kind !== 'manual');
@@ -98,6 +105,15 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
             </ol>
           ) : null}
         </>
+      ) : null}
+      {unresolved.length ? (
+        <ul className="flex flex-col gap-1 border-t border-line px-4 py-2 t-small text-fg-dim" aria-label="Unresolved on Modrinth">
+          {unresolved.map((u) => (
+            <li key={u.modId}>
+              <span className="t-mono text-fg">{u.modId}</span> could not be looked up on Modrinth: {u.message}
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );

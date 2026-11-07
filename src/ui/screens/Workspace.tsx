@@ -12,7 +12,7 @@ import { SummaryStrip } from '../components/SummaryStrip';
 import { Toggle } from '../components/Toggle';
 import { WorkOrderPanel } from '../components/WorkOrderPanel';
 import { severityCounts } from '../app/derive';
-import { noticeText } from '../app/modrinthState';
+import { noticeParts } from '../app/modrinthState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { useInspectorIsDrawer } from './drawer';
 import { useNow } from './hooks';
@@ -39,7 +39,7 @@ function Summary({ instance }: { instance: Instance }) {
   const notice = useApp((st) => st.modrinth[instance.id]?.notice ?? null);
   const retryAt = notice?.kind === 'rateLimited' ? notice.retryAt : null;
   const now = useNow(1000, s.status === 'done' || retryAt !== null, retryAt);
-  const noticeLine = modrinthEnabled ? noticeText(notice, now) : null;
+  const noticeLine = modrinthEnabled ? noticeParts(notice, now) : null;
   const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
   const modCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : s.stubCount || instance.modCount;
   return (

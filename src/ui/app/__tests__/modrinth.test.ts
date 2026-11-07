@@ -93,15 +93,20 @@ describe('Modrinth flow after a scan', () => {
   it('feeds the mod table: update, beta-only update, not on Modrinth, icons', async () => {
     const m = mockStore({}, checks);
     await enriched(m);
+    await until(() => Object.keys(mr(m)?.icons ?? {}).length > 0);
     const sc = m.store.getState().scans[ATM.id]!;
     const ctx = viewContext(mr(m), sc.result);
     expect(ctx).not.toBeNull();
-    const rows = deriveModRows(sc, modrinthRowView({ jarMatch }, ctx, null));
+    // `modrinth_projects` attached no icon (none cached yet): they all came from the second pass.
+    expect(Object.values(ctx!.projects).every((p) => p.iconPath === null)).toBe(true);
+    const rows = deriveModRows(sc, modrinthRowView({ jarMatch }, ctx, null, mr(m)!.icons));
     const row = (id: string) => rows.find((r) => r.id === id)!;
     expect(row(CREATE).modrinth).toEqual({ state: 'update', version: '0.5.1.j', beta: false });
     expect(row(OPTIFINE).modrinth).toEqual({ state: 'missing' });
     expect(row(CREATE).iconUrl).toMatch(/^data:image\/svg\+xml,/);
     expect(row('mods/ftb-library-forge-2001.2.1.jar').iconUrl).toBeNull();
+    // A newer than the latest release beta: no downgrade offered.
+    expect(row('mods/jade-1.20.1-forge-11.8.0.jar').modrinth).toEqual({ state: 'matched' });
     // Nested jars are unknown unless identified.
     expect(row(CREATE).children?.[0]?.modrinth).toEqual({ state: 'offline' });
 
@@ -151,19 +156,40 @@ describe('Modrinth flow after a scan', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it('degrades on partial failures: updates fail → no update states, a notice, matches kept', async () => {
+  it('degrades on partial failures: updates fail → unknown update states, the quiet notice, matches kept', async () => {
     const m = mockStore({}, checks);
     vi.spyOn(m.backend.commands, 'modrinthFindUpdates').mockResolvedValue({ status: 'error', error: { kind: 'network', message: 'Modrinth did not answer.', path: null } });
     vi.spyOn(m.backend.commands, 'modrinthProjects').mockResolvedValue({ status: 'error', error: { kind: 'internal', message: 'boom', path: null } });
+    const icons = vi.spyOn(m.backend.commands, 'modrinthIcons');
     await enriched(m);
     const st = mr(m)!;
-    expect(st.notice).toEqual({ kind: 'offline' });
-    expect(st.updatesChecked).toBe(false);
+    // Identification worked: Modrinth is reachable, only part of the lookup failed.
+    expect(st.notice).toEqual({ kind: 'partial' });
+    expect(Object.values(st.ctx!.updateStatus ?? {}).every((s) => s === 'unknown')).toBe(true);
     const sc = m.store.getState().scans[ATM.id]!;
-    const rows = deriveModRows(sc, modrinthRowView({ jarMatch }, viewContext(st, sc.result), null));
+    const rows = deriveModRows(sc, modrinthRowView({ jarMatch }, viewContext(st, sc.result), null, st.icons));
     expect(rows.find((r) => r.id === CREATE)!.modrinth).toEqual({ state: 'matched' });
     expect(rows.find((r) => r.id === CREATE)!.iconUrl).toBeNull();
-    expect(noticeText(st.notice, 0)).toBe('Modrinth unreachable — static checks only');
+    // No projects → no icon pass.
+    expect(icons).not.toHaveBeenCalled();
+    expect(noticeText(st.notice, 0)).toBe('Modrinth: some lookups failed');
+  });
+
+  it('a failed beta-fallback call leaves those jars unknown, never "no compatible version"', async () => {
+    const m = mockStore({}, checks);
+    const real = m.backend.commands.modrinthFindUpdates;
+    vi.spyOn(m.backend.commands, 'modrinthFindUpdates').mockImplementation(async (...a) =>
+      a[3].includes('beta') ? { status: 'error', error: { kind: 'network', message: 'Modrinth did not answer.', path: null } } : real(...a),
+    );
+    await enriched(m);
+    const st = mr(m)!;
+    const sc = m.store.getState().scans[ATM.id]!;
+    const sha1 = (prefix: string) => sc.result!.jars.find((j) => j.fileName.startsWith(prefix))!.sha1;
+    // Sodium (Fabric jar, no Forge build) and Jade (a beta past the last release) need the fallback.
+    expect(st.ctx!.updateStatus![sha1('sodium')]).toBe('unknown');
+    expect(st.ctx!.updateStatus![sha1('jade')]).toBe('unknown');
+    expect(st.ctx!.updateStatus![sha1('create')]).toBe('update');
+    expect(st.notice).toEqual({ kind: 'partial' });
   });
 
   it('offline: every jar unknown, the unreachable notice, static findings only', async () => {
@@ -187,7 +213,7 @@ describe('Modrinth flow after a scan', () => {
     expect(timers[0]!.ms).toBe(5000);
     const n = mr(m)!.notice!;
     expect(n.kind === 'rateLimited' && n.retryAt !== null).toBe(true);
-    if (n.kind === 'rateLimited' && n.retryAt !== null) expect(noticeText(n, n.retryAt - 4200)).toBe('Modrinth rate limit — retrying in 5 s');
+    if (n.kind === 'rateLimited' && n.retryAt !== null) expect(noticeText(n, n.retryAt - 4200)).toBe('Modrinth rate limit · retrying in 5 s');
     timers[0]!.cb();
     await until(() => mr(m)?.status === 'done' && mr(m)?.notice === null);
     expect(findings(m).map((f) => f.id)).toContain('notmr');

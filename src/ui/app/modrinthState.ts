@@ -19,6 +19,7 @@ export type ModrinthCoreApi = Pick<
   typeof ModrinthCore,
   | 'planQueries'
   | 'updateVersionTypes'
+  | 'betaFallbackHashes'
   | 'projectIdsOf'
   | 'buildModrinthContext'
   | 'jarMatch'
@@ -28,10 +29,27 @@ export type ModrinthCoreApi = Pick<
 >;
 
 export type ModrinthNotice =
-  /** A lookup was offline, failed, or errored: static checks only (DESIGN.md §10). */
+  /**
+   * Modrinth could not be reached at all: the identify call failed for a network reason
+   * (`network` / `offline`), answered `offline`, or every one of its batches failed. Static
+   * checks only (DESIGN.md §10). Only network conditions ever say "unreachable".
+   */
   | { kind: 'offline' }
+  /**
+   * Modrinth answered, but part of the lookup did not: some hashes `failed`, or the update,
+   * project or dependency step failed for a network reason, or the update / project step failed
+   * outright. What is shown is right; some of it is unknown. Quieter than "unreachable".
+   */
+  | { kind: 'partial' }
+  /** Identification stopped with a non-network error (`internal`, `invalid`…): no context. */
+  | { kind: 'failed' }
   /** Modrinth answered `rateLimited`. `retryAt` (UI clock) while the one automatic retry waits. */
   | { kind: 'rateLimited'; retryAt: number | null };
+
+/** Error kinds that mean "the network": the only ones that may say "Modrinth unreachable". */
+export function isNetworkError(e: Pick<AppError, 'kind'>): boolean {
+  return e.kind === 'network' || e.kind === 'offline';
+}
 
 export interface InstanceModrinth {
   /**
@@ -46,17 +64,31 @@ export interface InstanceModrinth {
   scanRef: ScanResult | null;
   /** Update filters of the lookup (dependency resolution reuses them). */
   filters: UpdateFilters | null;
-  /** The update lookup answered (no update for a jar then means "up to date"). */
-  updatesChecked: boolean;
   /** Missing mod id → chosen Modrinth version. */
   resolutions: Readonly<Record<string, DependencyResolution>>;
+  /**
+   * Missing mod ids whose Modrinth lookup failed for a non-network reason (`invalid`,
+   * `internal`…): that dependency is skipped and its finding says so; no global notice.
+   */
+  unresolved: Readonly<Record<string, AppError>>;
+  /**
+   * Project id → cached icon path from the `modrinth_icons` second pass. Rendering prefers it
+   * over `MrProject.iconPath`; the checks never see it (icons never re-run them).
+   */
+  icons: Readonly<Record<string, string>>;
   notice: ModrinthNotice | null;
   /** The first step error, if any (kept for the tooltip of the notice). */
   error: AppError | null;
+  /**
+   * Query key of the last finished lookup (`done` or `error`), kept even when it failed or was
+   * degraded. Opening the instance again answers from this state; only Refresh, a settings
+   * change, an override, a rescan or the rate-limit timer look a degraded lookup up again.
+   */
+  lookupKey: string | null;
 }
 
 export function emptyModrinth(): InstanceModrinth {
-  return { status: 'idle', ctx: null, key: null, scanRef: null, filters: null, updatesChecked: false, resolutions: {}, notice: null, error: null };
+  return { status: 'idle', ctx: null, key: null, scanRef: null, filters: null, resolutions: {}, unresolved: {}, icons: {}, notice: null, error: null, lookupKey: null };
 }
 
 /** Cache key of a lookup: the identified hashes, the update filters and the beta preference. */
@@ -70,12 +102,42 @@ export function viewContext(m: InstanceModrinth | undefined, result: ScanResult 
   return m.ctx;
 }
 
-/** Summary-strip notice text (DESIGN.md §10), or null. `now` is the UI clock. */
-export function noticeText(n: ModrinthNotice | null, now: number): string | null {
+/**
+ * One piece of a summary-strip notice. `optional` pieces are dropped first when the strip is
+ * narrow (a container query); the others are always visible.
+ */
+export interface NoticePart {
+  text: string;
+  optional?: boolean;
+}
+
+/**
+ * Summary-strip notice (DESIGN.md §10) as parts, or null. `now` is the UI clock. The rate-limit
+ * countdown is never optional: a narrow strip (1280×800) shows `Modrinth · retrying in 42 s`,
+ * a wide one `Modrinth rate limit · retrying in 42 s`.
+ */
+export function noticeParts(n: ModrinthNotice | null, now: number): NoticePart[] | null {
   if (!n) return null;
-  if (n.kind === 'offline') return 'Modrinth unreachable — static checks only';
-  if (n.retryAt === null) return 'Modrinth rate limit — static checks only';
-  return `Modrinth rate limit — retrying in ${Math.max(0, Math.ceil((n.retryAt - now) / 1000))} s`;
+  switch (n.kind) {
+    case 'offline':
+      return [{ text: 'Modrinth unreachable' }, { text: ' — static checks only', optional: true }];
+    case 'partial':
+      return [{ text: 'Modrinth: some lookups failed' }];
+    case 'failed':
+      return [{ text: 'Modrinth lookup failed' }, { text: ' — static checks only', optional: true }];
+    case 'rateLimited':
+      if (n.retryAt === null) return [{ text: 'Modrinth rate limit' }, { text: ' — static checks only', optional: true }];
+      return [
+        { text: 'Modrinth' },
+        { text: ' rate limit', optional: true },
+        { text: ` · retrying in ${Math.max(0, Math.ceil((n.retryAt - now) / 1000))} s` },
+      ];
+  }
+}
+
+/** The whole notice on one line (tooltip, tests), or null. */
+export function noticeText(n: ModrinthNotice | null, now: number): string | null {
+  return noticeParts(n, now)?.map((p) => p.text).join('') ?? null;
 }
 
 /** `JarMatch` → the mod-table column state. */
@@ -109,6 +171,12 @@ export function matchProject(m: JarMatch): MrProject | null {
   return m.state === 'matched' || m.state === 'update' ? m.project : null;
 }
 
+/** Cached icon path of a project: the `modrinth_icons` pass first, else what the lookup had. */
+export function iconPathOf(project: MrProject | null, icons: Readonly<Record<string, string>> | undefined): string | null {
+  if (!project) return null;
+  return icons?.[project.id] ?? project.iconPath ?? null;
+}
+
 /**
  * A per-jar view for `deriveModRows`: the Modrinth column and the icon. Without a context every
  * jar is unknown (`—`). A throwing core never breaks the table.
@@ -117,12 +185,13 @@ export function modrinthRowView(
   core: Pick<ModrinthCoreApi, 'jarMatch'>,
   ctx: ModrinthContext | null,
   convert: ((p: string) => string) | null,
+  icons?: Readonly<Record<string, string>>,
 ): (jar: JarRecord) => Pick<ModRow, 'modrinth' | 'iconUrl'> {
   return (jar) => {
     if (!ctx) return { modrinth: { state: 'offline' }, iconUrl: null };
     try {
       const m = core.jarMatch(jar, ctx);
-      return { modrinth: matchCell(m), iconUrl: iconSrc(matchProject(m)?.iconPath, convert) };
+      return { modrinth: matchCell(m), iconUrl: iconSrc(iconPathOf(matchProject(m), icons), convert) };
     } catch {
       return { modrinth: { state: 'offline' }, iconUrl: null };
     }
@@ -162,6 +231,27 @@ const ENVIRONMENT: Readonly<Record<string, string>> = {
 };
 
 const envWords = (e: string) => ENVIRONMENT[e] ?? e.replace(/_/g, ' ');
+
+export type UpdateStatus = NonNullable<ModrinthContext['updateStatus']>[string];
+
+/**
+ * The inspector's "Update" line for an identified jar with no update to offer (CONTRACTS
+ * invariant 8, `ModrinthContext.updateStatus`): "up to date" only when the lookup established
+ * it; never inferred from a missing update.
+ */
+export function updateWords(
+  status: UpdateStatus | undefined,
+  filters: UpdateFilters | null,
+  target: { loaderName: string | null; mcVersion: string | null },
+): { tone: 'ok' | 'dim' | 'faint'; text: string } {
+  if (!filters) return { tone: 'faint', text: 'not checked (pack MC version or loader unknown)' };
+  if (status === 'upToDate') return { tone: 'ok', text: 'up to date' };
+  if (status === 'noCompatible') {
+    const words = [target.loaderName, target.mcVersion ?? filters.gameVersions[0] ?? null].filter((w): w is string => !!w).join(' ');
+    return { tone: 'dim', text: words ? `no version for ${words} on Modrinth` : 'no compatible version on Modrinth' };
+  }
+  return { tone: 'faint', text: 'update check unavailable' };
+}
 
 /**
  * Where a mod runs, preferring the version's v3 `environment`, then the project's, then the

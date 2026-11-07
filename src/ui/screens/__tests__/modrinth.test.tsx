@@ -181,7 +181,7 @@ describe('Modrinth in the app', () => {
     await act(async () => {
       await until(() => m.store.getState().modrinth[ATM.id]?.notice?.kind === 'rateLimited');
     });
-    expect(screen.getByTitle(/^Modrinth rate limit — retrying in [3-5] s$/)).toBeTruthy();
+    expect(screen.getByTitle(/^Modrinth rate limit · retrying in [3-5] s$/)).toBeTruthy();
   });
 
   it('rail settings switch Modrinth off (a quiet segment) and betas on', async () => {
@@ -200,6 +200,91 @@ describe('Modrinth in the app', () => {
     expect(screen.getByText('Modrinth off')).toBeTruthy();
     expect((within(group).getByRole('button', { name: 'Beta update suggestions enabled' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: 'Refresh Modrinth' })).toBeNull();
+  });
+});
+
+describe('Modrinth review fixes in the app', () => {
+  withLayout();
+  const jarOf = (m: ReturnType<typeof mockStore>, prefix: string) => m.store.getState().scans[ATM.id]!.result!.jars.find((j) => j.fileName.startsWith(prefix))!;
+  const inspector = () => within(screen.getByRole('complementary', { name: 'Inspector' }));
+
+  it('inspector update line: up to date only when established; no compatible version; unavailable', async () => {
+    const m = await renderApp();
+    await enriched(m);
+    // Jade runs a beta newer than the newest release: no downgrade, "up to date", version labelled beta.
+    act(() => m.store.getState().select({ kind: 'jar', id: jarOf(m, 'jade').id }));
+    expect(inspector().getByText('up to date').className).toContain('text-ok');
+    expect(inspector().getByText('beta')).toBeTruthy();
+    // Sodium (a Fabric jar) has no Forge 1.20.1 build.
+    act(() => m.store.getState().select({ kind: 'jar', id: jarOf(m, 'sodium').id }));
+    expect(inspector().getByText('no version for Forge 1.20.1 on Modrinth')).toBeTruthy();
+    expect(inspector().queryByText('up to date')).toBeNull();
+  });
+
+  it('inspector update line: "update check unavailable" when the update lookup failed', async () => {
+    const m = mockStore({}, checks);
+    vi.spyOn(m.backend.commands, 'modrinthFindUpdates').mockResolvedValue({ status: 'error', error: { kind: 'network', message: 'x', path: null } });
+    render(<App store={m.store} />);
+    await act(async () => {
+      await m.store.getState().init();
+      await until(() => m.store.getState().modrinth[ATM.id]?.status === 'done');
+    });
+    act(() => m.store.getState().select({ kind: 'jar', id: CREATE }));
+    expect(inspector().getByText('update check unavailable')).toBeTruthy();
+    expect(inspector().queryByText('up to date')).toBeNull();
+    // Reachable, partly failed: the quiet notice, never "unreachable".
+    expect(screen.getByTitle('Modrinth: some lookups failed')).toBeTruthy();
+    expect(screen.queryByText(/Modrinth unreachable/)).toBeNull();
+  });
+
+  it('Refresh Modrinth stays enabled while a lookup runs, and restarts it', async () => {
+    const m = mockStore({}, checks);
+    let release: () => void = () => undefined;
+    const real = m.backend.commands.modrinthIdentify;
+    const identify = vi.spyOn(m.backend.commands, 'modrinthIdentify').mockImplementationOnce(async (s, r) => {
+      await new Promise<void>((res) => (release = res));
+      return real(s, r);
+    });
+    render(<App store={m.store} />);
+    await act(async () => {
+      await m.store.getState().init();
+      await until(() => m.store.getState().modrinth[ATM.id]?.status === 'loading');
+    });
+    const button = screen.getByRole('button', { name: 'Refresh Modrinth' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText('looking up…')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(button);
+      await until(() => m.store.getState().modrinth[ATM.id]?.status === 'done');
+    });
+    expect(identify).toHaveBeenCalledTimes(2);
+    release();
+  });
+
+  it('the rate-limit countdown is never in the part a narrow strip hides', async () => {
+    const m = await renderApp({ scenario: 'ratelimit' }, { setTimer: () => undefined, now: () => Date.now() });
+    await act(async () => {
+      await until(() => m.store.getState().modrinth[ATM.id]?.notice?.kind === 'rateLimited');
+    });
+    const notice = screen.getByTitle(/^Modrinth rate limit · retrying in [3-5] s$/);
+    const hidden = [...notice.querySelectorAll('.hidden')].map((e) => e.textContent);
+    expect(hidden).toEqual([' rate limit']);
+    expect(notice.textContent).toMatch(/retrying in [3-5] s$/);
+  });
+
+  it('a dependency Modrinth could not look up (invalid) is noted on its finding, without a notice', async () => {
+    const m = mockStore({}, checks);
+    vi.spyOn(m.backend.commands, 'modrinthResolveModId').mockResolvedValue({ status: 'error', error: { kind: 'invalid', message: 'Modrinth rejected the query.', path: null } });
+    render(<App store={m.store} />);
+    await act(async () => {
+      await m.store.getState().init();
+      await until(() => !!m.store.getState().modrinth[ATM.id]?.unresolved.botarium);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /E-MISSING-DEP/ }));
+    const note = within(inspector().getByRole('list', { name: 'Unresolved on Modrinth' }));
+    expect(note.getByText('botarium')).toBeTruthy();
+    expect(note.getByText(/could not be looked up on Modrinth: Modrinth rejected the query\./)).toBeTruthy();
+    expect(screen.queryByText(/Modrinth unreachable|some lookups failed/)).toBeNull();
   });
 });
 

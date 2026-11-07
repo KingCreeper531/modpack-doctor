@@ -9,9 +9,17 @@
  * 1. `planQueries(scan, pack)` → sha1s to identify, and the update filters (null when the pack's
  *    loader or MC version is unknown: an unfiltered update call returns other MC versions).
  * 2. `modrinth_identify(sha1s)`, then `modrinth_find_updates(sha1s, loaders, gameVersions,
- *    updateVersionTypes(includeBeta))`, and if `includeBeta` is false a second call with
- *    `["release","beta"]` for the sha1s that got no release (beta-only fallback,
- *    CONTRACTS invariant 8).
+ *    updateVersionTypes(includeBeta))` for the identified sha1s, then — only when
+ *    `betaFallbackHashes(identify, updates, includeBeta)` is non-empty — a second call with
+ *    `updateVersionTypes(true)` (`["release","beta"]`) for exactly those sha1s (CONTRACTS
+ *    invariant 8). They are the identified sha1s that, with `includeBeta` off:
+ *    - got no answer from the release lookup (not failed, and the lookup was not cache-only:
+ *      offline, an absent hash means "not cached", not "no release") — no compatible release; or
+ *    - got a release **older** than the identified version (`datePublished`): the user runs a
+ *      pre-release newer than the last release, so only a newer beta can be an update. The UI
+ *      must include these too, or such jars never see a newer beta.
+ *    An update is only ever offered when it was published strictly after the identified version
+ *    (both dates present); anything else would be a downgrade.
  * 3. `modrinth_projects(projectIdsOf(identify))` for titles, sides and icons.
  * 4. `buildModrinthContext(…)` → `ModrinthContext`; run the checks with it.
  * 5. `missingModIds(findings)` → `modrinth_resolve_mod_id` per id → `modrinth_project_versions`
@@ -85,6 +93,52 @@ function wantsReplace(code: FindingCode): boolean {
   return REPLACE_CODES.has(code) || code.startsWith('C-');
 }
 
+/** ISO 8601 with a time and an explicit zone, as Modrinth sends `date_published` (µs precision). */
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d{1,9})\d*)?(?:([Zz])|([+-])(\d{2}):?(\d{2}))$/;
+
+/**
+ * `datePublished` as `[epoch ms at whole seconds, nanoseconds within the second]`, compared
+ * lexicographically (a single double cannot hold µs since 1970 exactly). Null when missing or
+ * not a valid ISO 8601 date-time with a zone: an unknown date never makes a version "newer".
+ */
+function publishedKey(v: MrVersion): readonly [number, number] | null {
+  const m = ISO_DATE.exec(typeof v.datePublished === 'string' ? v.datePublished.trim() : '');
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  if (mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return null;
+  const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  // Rejects 2024-02-30 and friends (Date.UTC would roll them over).
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
+  let ms = date.getTime();
+  if (!m[8]) {
+    const oh = Number(m[10]);
+    const om = Number(m[11]);
+    if (oh > 23 || om > 59) return null;
+    ms -= (m[9] === '-' ? -1 : 1) * (oh * 60 + om) * 60_000;
+  }
+  const nanos = Number((m[7] ?? '').padEnd(9, '0'));
+  return Number.isFinite(ms) ? [ms, nanos] : null;
+}
+
+/** -1 / 0 / 1 by `datePublished`; null when either date is missing or unparseable. */
+function comparePublished(a: MrVersion, b: MrVersion): -1 | 0 | 1 | null {
+  const ka = publishedKey(a);
+  const kb = publishedKey(b);
+  if (!ka || !kb) return null;
+  if (ka[0] !== kb[0]) return ka[0] < kb[0] ? -1 : 1;
+  if (ka[1] !== kb[1]) return ka[1] < kb[1] ? -1 : 1;
+  return 0;
+}
+
+/**
+ * True only when `candidate` is another version published strictly after `current` (both dates
+ * parseable) — CONTRACTS invariant 8: Modrinth's "newest matching" version can be older than a
+ * beta the user runs, and a downgrade is never offered.
+ */
+export function isNewerVersion(candidate: MrVersion, current: MrVersion): boolean {
+  return candidate.id !== current.id && comparePublished(candidate, current) === 1;
+}
+
 // ---- queries -----------------------------------------------------------------------------------
 
 /**
@@ -134,11 +188,93 @@ export function projectIdsOf(identify: HashLookup): string[] {
 
 // ---- context -----------------------------------------------------------------------------------
 
+type UpdateStatus = NonNullable<ModrinthContext['updateStatus']>[string];
+
+/** One update lookup (`modrinth_find_updates` result), keys and `failed` lower-cased. */
+interface UpdateAnswers {
+  found: Map<string, MrVersion>;
+  failed: ReadonlySet<string>;
+  offline: boolean;
+}
+
+function updateAnswers(lookup: HashLookup | null | undefined): UpdateAnswers | null {
+  if (!lookup) return null;
+  return { found: lowerKeys(lookup.found), failed: new Set(lookup.failed.map((s) => s.toLowerCase())), offline: lookup.offline };
+}
+
 /**
- * Merge the lookups. `updates` keeps, per sha1, the release update if any, else the beta-fallback
- * update; an "update" equal to the identified version (same version id) is dropped, as is any
- * alpha. `failed` = union of failed sha1s of `identify` only (a failed update lookup is not a
- * failed identification). `offline` = `identify.offline`. Keys are lower-case sha1s.
+ * An update answer that may be suggested for `current` at all: same project (the Rust planner
+ * refuses a `replace` across projects), and never alpha.
+ */
+function usableFor(current: MrVersion, candidate: MrVersion | undefined): MrVersion | undefined {
+  if (!candidate || !isSuggestible(candidate)) return undefined;
+  return candidate.projectId === current.projectId ? candidate : undefined;
+}
+
+/**
+ * What the release lookup (`primary`) established for one identified version:
+ * - `decided`: it settles the jar (newer release → update; same version or same date → up to
+ *   date; dates missing → unknown), the beta fallback does not apply;
+ * - `fallback`: no usable release answer, or a release **older** than the current version (a
+ *   pre-release newer than the last release) — the beta fallback decides;
+ * - `unknown`: no lookup, the hash failed, or offline without a cached answer.
+ */
+type PrimaryVerdict =
+  | { kind: 'decided'; status: UpdateStatus; update?: MrVersion }
+  | { kind: 'fallback'; olderRelease: boolean }
+  | { kind: 'unknown' };
+
+function primaryVerdict(sha1: string, current: MrVersion, primary: UpdateAnswers | null): PrimaryVerdict {
+  if (!primary || primary.failed.has(sha1)) return { kind: 'unknown' };
+  const raw = primary.found.get(sha1);
+  const answer = usableFor(current, raw);
+  if (!answer) {
+    // Absent while cache-only means "not cached", not "no compatible release".
+    if (raw === undefined && primary.offline) return { kind: 'unknown' };
+    return { kind: 'fallback', olderRelease: false };
+  }
+  if (answer.id === current.id) return { kind: 'decided', status: 'upToDate' };
+  const order = comparePublished(answer, current);
+  if (order === 1) return { kind: 'decided', status: 'update', update: answer };
+  if (order === 0) return { kind: 'decided', status: 'upToDate' };
+  if (order === -1) return { kind: 'fallback', olderRelease: true };
+  return { kind: 'decided', status: 'unknown' };
+}
+
+/**
+ * sha1s for the beta-only fallback call (`modrinth_find_updates` with `updateVersionTypes(true)`):
+ * the identified sha1s (lower-case, sorted) whose release lookup in `updates` got no usable answer
+ * (absent — but not failed, and not merely uncached in an offline lookup — or alpha / another
+ * project), or a release published **before** the identified version (the user runs a newer
+ * pre-release; only a newer beta can be an update). `[]` when `includeBeta` (the first call
+ * already covered betas) or when no update lookup ran (`updates` null). CONTRACTS invariant 8.
+ */
+export function betaFallbackHashes(identify: HashLookup, updates: HashLookup | null | undefined, includeBeta: boolean): string[] {
+  const primary = updateAnswers(updates);
+  if (includeBeta || !primary) return [];
+  const out: string[] = [];
+  for (const [sha1, current] of lowerKeys(identify.found)) {
+    if (primaryVerdict(sha1, current, primary).kind === 'fallback') out.push(sha1);
+  }
+  return sortedUnique(out);
+}
+
+/**
+ * Merge the lookups. Per identified sha1 (lower-case keys):
+ * - `updates`: the release lookup's answer if it was published strictly after the identified
+ *   version; else, when the release lookup got no usable answer or an **older** release (see
+ *   `betaFallbackHashes`), the beta-fallback answer if it is strictly newer. Never alpha, never
+ *   another project, never the same version, never an older or undated one (CONTRACTS
+ *   invariant 8: no downgrades; missing dates → not offered).
+ * - `updateStatus` (every identified sha1): `update` when `updates` has an entry; `upToDate` when
+ *   the answer is this version or not newer (same date, or older with no newer beta);
+ *   `noCompatible` when the release lookup ran and had no usable answer (not failed, not
+ *   cache-only-absent) and the fallback, if run, had none either; `unknown` when no update lookup
+ *   ran (`updates` null), the hash failed in a lookup that decides it, the lookup was cache-only
+ *   without an answer, or a date needed to order the versions is missing.
+ *   `betaFallback` null means no fallback was needed (or `includeBeta` was on).
+ * - `failed` = union of failed sha1s of `identify` only (a failed update lookup is not a failed
+ *   identification). `offline` = `identify.offline`.
  */
 export function buildModrinthContext(args: {
   identify: HashLookup;
@@ -150,21 +286,32 @@ export function buildModrinthContext(args: {
   const versions: Record<string, MrVersion> = {};
   for (const [sha1, v] of identified) versions[sha1] = v;
 
-  // An update is kept only for an identified jar, in the same project (the Rust planner refuses a
-  // `replace` across projects or for a jar it cannot identify by hash), and never alpha.
-  const usable = (sha1: string, candidate: MrVersion | undefined): MrVersion | undefined => {
-    const current = identified.get(sha1);
-    if (!candidate || !current || !isSuggestible(candidate)) return undefined;
-    return candidate.projectId === current.projectId ? candidate : undefined;
-  };
-  const primary = lowerKeys(args.updates?.found);
-  const fallback = lowerKeys(args.betaFallback?.found);
+  const primary = updateAnswers(args.updates);
+  const fallback = updateAnswers(args.betaFallback);
   const updates: Record<string, MrVersion> = {};
-  for (const sha1 of sortedUnique([...primary.keys(), ...fallback.keys()])) {
-    // The primary lookup decides whenever it returned something usable, even "already newest":
-    // a compatible release exists then, so the beta-only fallback does not apply.
-    const chosen = usable(sha1, primary.get(sha1)) ?? usable(sha1, fallback.get(sha1));
-    if (chosen && chosen.id !== identified.get(sha1)?.id) updates[sha1] = chosen;
+  const updateStatus: Record<string, UpdateStatus> = {};
+  for (const [sha1, current] of identified) {
+    const verdict = primaryVerdict(sha1, current, primary);
+    let status: UpdateStatus;
+    let update: MrVersion | undefined;
+    if (verdict.kind === 'unknown') status = 'unknown';
+    else if (verdict.kind === 'decided') ({ status, update } = verdict);
+    else {
+      // The release lookup did not settle it: the beta-only fallback decides.
+      const raw = fallback?.found.get(sha1);
+      const answer = usableFor(current, raw);
+      const order = answer ? (answer.id === current.id ? 0 : comparePublished(answer, current)) : undefined;
+      if (answer && order === 1) {
+        status = 'update';
+        update = answer;
+      } else if (order === 0 || order === -1) status = 'upToDate';
+      else if (order === null) status = 'unknown';
+      else if (fallback && raw === undefined && (fallback.failed.has(sha1) || fallback.offline)) status = 'unknown';
+      // Nothing newer: on a pre-release past the last release that is "up to date".
+      else status = verdict.olderRelease ? 'upToDate' : 'noCompatible';
+    }
+    updateStatus[sha1] = status;
+    if (update) updates[sha1] = update;
   }
 
   const projects: Record<string, MrProject> = {};
@@ -179,10 +326,15 @@ export function buildModrinthContext(args: {
     updates,
     failed: sortedUnique(args.identify.failed.map((s) => s.toLowerCase())),
     offline: args.identify.offline,
+    updateStatus,
   };
 }
 
-/** State of one jar (nested jars: `unknown` unless their sha1 was identified). */
+/**
+ * State of one jar (nested jars: `unknown` unless their sha1 was identified). `update` only for
+ * an update published strictly after the identified version (`isNewerVersion`), same project,
+ * never alpha — also for hand-built contexts.
+ */
 export function jarMatch(jar: JarRecord, ctx: ModrinthContext | null | undefined): JarMatch {
   if (!ctx) return { state: 'unknown' };
   const sha1 = jar.sha1.trim().toLowerCase();
@@ -191,7 +343,8 @@ export function jarMatch(jar: JarRecord, ctx: ModrinthContext | null | undefined
   if (version) {
     const project = ctx.projects[version.projectId] ?? null;
     const update = ctx.updates[sha1];
-    if (update && update.id !== version.id && isSuggestible(update)) {
+    // Defence in depth for hand-built contexts: never a downgrade, alpha or other project.
+    if (update && isSuggestible(update) && update.projectId === version.projectId && isNewerVersion(update, version)) {
       return { state: 'update', version, project, update, beta: update.versionType !== 'release' };
     }
     return { state: 'matched', version, project };
@@ -206,13 +359,17 @@ export function jarMatch(jar: JarRecord, ctx: ModrinthContext | null | undefined
 /**
  * The file a download would use — CONTRACTS invariant 8, identical to the Rust planner: skip
  * `sources-jar`, `dev-jar`, `javadoc-jar`, `signature`; then the `primary` file, else the sole
- * file; null when several remain and none is primary, or when `version.primaryDropped`.
+ * file; null when several remain and none is primary, when none is primary and the client
+ * dropped any file (`droppedFiles > 0`: the sole remaining file is not the API's sole file), or
+ * when `version.primaryDropped`.
  */
 export function downloadFile(version: MrVersion): MrFile | null {
   if (version.primaryDropped) return null;
   const candidates = version.files.filter((f) => f.fileType === null || !EXCLUDED_FILE_TYPES.has(f.fileType));
   const primary = candidates.find((f) => f.primary);
   if (primary) return primary;
+  // "Sole file" counts the API's whole list: a dropped file might have been the real one.
+  if (version.droppedFiles > 0) return null;
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }
 
@@ -248,7 +405,8 @@ function fixKey(fix: FixAction): string | null {
 
 /**
  * Returns new findings (inputs untouched; ids unchanged) with Modrinth fixes:
- * - `replace` for each culprit jar with an update in `ctx.updates` whose `downloadFile` is not
+ * - `replace` for each culprit jar with an update in `ctx.updates` that is published strictly
+ *   after the identified version (same project, never alpha) and whose `downloadFile` is not
  *   null, on E-WRONG-LOADER, E-MC-RANGE, E-LOADER-RANGE and every C-* crash finding. Replace fixes
  *   go first (recommended), before existing fixes; no duplicates.
  * - `installDependency` for each of `finding.missingModIds` that has a resolution, first — after
@@ -277,7 +435,7 @@ export function enrichFindings(
     const sha1 = jar.sha1.trim().toLowerCase();
     const current = ctx.versions[sha1];
     const update = ctx.updates[sha1];
-    if (!current || !update || update.id === current.id || update.projectId !== current.projectId) return null;
+    if (!current || !update || update.projectId !== current.projectId || !isNewerVersion(update, current)) return null;
     if (!isSuggestible(update) || downloadFile(update) === null) return null;
     return { kind: 'replace', jarId: jar.id, versionId: update.id };
   };
