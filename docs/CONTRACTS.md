@@ -322,7 +322,8 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       `invalid:more-urls`) plus a `ScanIssue`, so W-MRPACK-DOWNLOAD always sees it. URLs of index
       entries that were skipped (bad hash, unsafe or folder path) or shadowed by a later entry with
       the same path go to `ScanResult.unverifiedDownloads` and are checked too (a launcher may still
-      install them). `mods/` matches case-insensitively in override paths. The read-only rule
+      install them); an index over 10 000 files declares nothing but still has every entry's links
+      checked this way. `mods/` matches case-insensitively in override paths. The read-only rule
       pins the canonical path captured at open; if it later resolves elsewhere the pack is unreadable
       until reopened. A `:` in a file name (alternate data stream) is never a pack or a report name.
       Pack identity overrides are refused (`Invalid`): packs are session-only. Display names strip
@@ -358,9 +359,14 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       rewritten by the workflow's finalize job to `github.com/…/releases/download/<tag>/<asset>`;
       `requireSignedVersion` is on, so an older signed release can't be re-served as newer. It runs only
       when the user asks (About → "Check for updates", or the palette); never automatically.
-    - `check_update` → `UpdateInfo | null`; `install_update` downloads, verifies the minisign
-      signature against the public key in `tauri.conf.json` (`plugins.updater.pubkey`), installs and
-      restarts. It is refused while a work order executes. Nothing is installed without the user
+    - `check_update` → `UpdateInfo | null` and remembers the version it showed; `install_update`
+      refuses unless that exact version is still the one offered ("check again" otherwise),
+      downloads, verifies the minisign signature against the public key in `tauri.conf.json`
+      (`plugins.updater.pubkey`), installs and restarts. It takes an "update installing" state
+      atomically with the work-order claim (refused while an order executes; while installing —
+      including the download — no order can start; a second install is refused); after a successful
+      install the state is never released, so nothing starts before the restart. The release
+      workflow's finalize job verifies every updater signature (incl. `version:`) against that key. Nothing is installed without the user
       clicking Install for the version shown.
     - Signing: the private key lives outside the repo (`%USERPROFILE%/.tauri/modpack-doctor.key`);
       CI reads it from the GitHub secret `TAURI_SIGNING_PRIVATE_KEY` (and
