@@ -15,7 +15,8 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://modrinth.com/*" },
-        { "url": "https://github.com/KingCreeper531/modpack-doctor*" }
+        { "url": "https://github.com/KingCreeper531/modpack-doctor" },
+        { "url": "https://github.com/KingCreeper531/modpack-doctor/*" }
       ]
     }
   ]

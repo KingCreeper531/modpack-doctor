@@ -8,7 +8,7 @@ import { finding, mockStore, until } from '../../app/__tests__/helpers';
 import { MOCK_INSTANCES } from '../../app/mockData';
 import type { MockOptions } from '../../app/mockIpc';
 import { DISCLAIMER, releaseDate } from '../../components/AboutPlate';
-import { aboutInfo, isRepoUrl } from '../AboutDialog';
+import { aboutInfo, isRepoUrl, loadAppInfo } from '../AboutDialog';
 
 afterEach(cleanup);
 
@@ -122,6 +122,57 @@ describe('About dialog', () => {
     press('Escape', {}, d);
     expect(dialog()).toBeNull();
     expect(document.activeElement).toBe(rescan);
+  });
+
+  it('shows the Tauri version, data folder and cache folder from app_info, mono and truncated with a title', async () => {
+    await renderApp();
+    await click(aboutButton());
+    const d = dialog()!;
+    await act(async () => {
+      await until(() => !!within(d).queryByText('Cache directory'));
+    });
+    const value = (label: string) => within(d).getByText(label).closest('tr')!.querySelector('td')!;
+    const expected: Array<[string, string]> = [
+      ['Tauri version', '2.12.5'],
+      ['Data directory', String.raw`C:\Users\alex\AppData\Roaming\io.github.kingcreeper531.modpackdoctor`],
+      ['Cache directory', String.raw`C:\Users\alex\AppData\Local\io.github.kingcreeper531.modpackdoctor`],
+    ];
+    for (const [label, text] of expected) {
+      const td = value(label);
+      expect(td.textContent).toBe(text);
+      expect(td.getAttribute('title')).toBe(text);
+      expect(td.className).toContain('t-mono');
+      expect(td.className).toContain('truncate');
+    }
+    // Plate order (DESIGN §6.8): version, commit, Tauri, data, cache, licence.
+    const labels = Array.from(d.querySelectorAll('th[scope="row"]'), (th) => th.textContent);
+    expect(labels.slice(0, 6)).toEqual(['Version', 'Build commit', 'Tauri version', 'Data directory', 'Cache directory', 'Licence']);
+  });
+
+  it('app_info: asked under Tauri, skipped without a backend, rows left off when it fails', async () => {
+    const info = { tauriVersion: '2.12.5', dataDir: '/home/a/.local/share/x', cacheDir: '/home/a/.cache/x' };
+    const ok = vi.fn(async () => ({ status: 'ok' as const, data: info }));
+    expect(await loadAppInfo('tauri', { appInfo: ok })).toEqual(info);
+    expect(ok).toHaveBeenCalledTimes(1);
+
+    const unused = vi.fn(async () => ({ status: 'ok' as const, data: info }));
+    expect(await loadAppInfo('none', { appInfo: unused })).toBeNull();
+    expect(unused).not.toHaveBeenCalled();
+
+    const failed = vi.fn(async () => ({ status: 'error' as const, error: { kind: 'internal' as const, message: 'x', path: null } }));
+    expect(await loadAppInfo('tauri', { appInfo: failed })).toBeNull();
+    const thrown = vi.fn(async () => {
+      throw new Error('bridge gone');
+    });
+    expect(await loadAppInfo('tauri', { appInfo: thrown })).toBeNull();
+
+    // The browser mock answers with fixed values.
+    expect((await loadAppInfo('mock'))?.tauriVersion).toBe('2.12.5');
+
+    // Unknown or blank values never reach the plate.
+    expect(aboutInfo({ DEV: false }, null)).toMatchObject({ tauri: null, dataDir: null, cacheDir: null });
+    expect(aboutInfo({ DEV: false }, { tauriVersion: ' ', dataDir: '', cacheDir: '/c' })).toMatchObject({ tauri: null, dataDir: null, cacheDir: '/c' });
+    expect(aboutInfo({ DEV: false }, info)).toMatchObject({ tauri: '2.12.5', dataDir: info.dataDir, cacheDir: info.cacheDir });
   });
 
   it('build info: a CI commit when given, nothing guessed otherwise', () => {

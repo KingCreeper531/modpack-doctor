@@ -5,16 +5,21 @@ name: Release
 # until the owner publishes the draft: `releases/latest/download/latest.json` only resolves for a
 # published, non-prerelease release.
 #
-# Release steps: bump the version in src-tauri/tauri.conf.json (+ Cargo.toml, package.json),
-# commit, push the tag `v<version>`, wait for this workflow, check the draft, publish it.
+# Release steps: bump the version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml and
+# package.json, commit, push the tag `v<version>`, wait for this workflow, check the draft, publish it.
 #
 # Secrets:
 #   TAURI_SIGNING_PRIVATE_KEY           required: content of %USERPROFILE%/.tauri/modpack-doctor.key
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  required to exist; empty for this key
+#   Both are passed only to the tauri-action step that signs the updater bundles.
 #   Optional code signing; each block is skipped while its secrets are unset:
-#   WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
+#   WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD (may be empty)
 #   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
 #   APPLE_ID, APPLE_PASSWORD (app-specific password), APPLE_TEAM_ID (notarization)
+#
+# Supply chain: every third-party action is pinned to a full commit SHA (the comment names the
+# release it was resolved from), checkouts keep no credentials, and each job gets only the token
+# permissions it needs.
 
 on:
   push:
@@ -22,21 +27,29 @@ on:
   # Run it from a tag ("Use workflow from" → Tags), e.g. to rebuild after a failed job.
   workflow_dispatch:
 
-permissions:
-  contents: write
+# Nothing by default; each job asks for what it needs.
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # The repository the app's updater endpoint and latest.json URLs point at (tauri.conf.json).
+  APP_REPO: KingCreeper531/modpack-doctor
+
 jobs:
   draft:
     name: draft release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the draft release
     outputs:
       release_id: ${{ steps.draft.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Tag matches the app version
         env:
@@ -47,22 +60,43 @@ jobs:
             echo "::error::Run the release workflow from a v* tag, not a branch."
             exit 1
           fi
-          version="$(jq -r .version src-tauri/tauri.conf.json)"
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::Tag $TAG does not match version $version in src-tauri/tauri.conf.json."
+          if [ "$GITHUB_REPOSITORY" != "$APP_REPO" ]; then
+            echo "::error::This workflow releases $APP_REPO (the updater endpoint), not $GITHUB_REPOSITORY."
             exit 1
           fi
+          conf="$(jq -r .version src-tauri/tauri.conf.json)"
+          npm_version="$(jq -r .version package.json)"
+          cargo_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' src-tauri/Cargo.toml)"
+          status=0
+          for pair in "src-tauri/tauri.conf.json=$conf" "package.json=$npm_version" "src-tauri/Cargo.toml=$cargo_version"; do
+            file="${pair%%=*}"
+            version="${pair#*=}"
+            if [ "$TAG" != "v$version" ]; then
+              echo "::error::Tag $TAG does not match version $version in $file."
+              status=1
+            fi
+          done
+          exit "$status"
 
       # One draft for all three build jobs (parallel jobs creating it by tag could race and make
-      # duplicates). A re-run reuses the draft that is already there.
+      # duplicates). A re-run reuses the draft that is already there. Once the release for this
+      # tag is published, a re-run stops here instead of creating a second draft.
       - name: Create or reuse the draft release
         id: draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          id="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '[.[] | select(.tag_name == env.TAG and .draft)][0].id // empty')"
+          releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | "\(.id) \(.draft)"')"
+          if printf '%s\n' "$releases" | grep -q ' false$'; then
+            echo "::error::The release for $TAG is already published. Nothing was rebuilt; to ship a fix, bump the version and push a new tag."
+            exit 1
+          fi
+          id="$(printf '%s\n' "$releases" | awk '$2 == "true" { print $1; exit }')"
+          if [ "$(printf '%s\n' "$releases" | grep -c ' true$')" -gt 1 ]; then
+            echo "::warning::More than one draft release exists for $TAG; using $id. Delete the others."
+          fi
           if [ -z "$id" ]; then
             id="$(gh api "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$TAG" \
@@ -78,6 +112,8 @@ jobs:
     name: build (${{ matrix.platform }})
     needs: draft
     timeout-minutes: 90
+    permissions:
+      contents: write # tauri-action uploads the installers, signatures and latest.json
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +130,9 @@ jobs:
             rust_targets: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Linux system deps
         if: runner.os == 'Linux'
@@ -103,16 +141,17 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
             build-essential libssl-dev libxdo-dev file xdg-utils
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # No release tags in this repo: pinned to the head of its `stable` branch (2026-10-16).
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.rust_targets }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri -> target
           key: release-${{ matrix.platform }}
@@ -134,10 +173,25 @@ jobs:
             exit 0
           }
           $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
-          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
-          Remove-Item $pfx
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+              # A .pfx exported without a password.
+              $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My
+            } else {
+              $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+              $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            }
+          } finally {
+            Remove-Item $pfx -ErrorAction SilentlyContinue
+          }
+          # A .pfx can carry the chain (intermediate and root certificates) too: sign with the one
+          # whose private key came along.
+          $cert = $imported | Where-Object HasPrivateKey | Select-Object -First 1
+          if (-not $cert) {
+            Write-Output "::error::WINDOWS_CERTIFICATE contains no certificate with a private key."
+            exit 1
+          }
           $conf = Join-Path $env:RUNNER_TEMP "tauri.windows-signing.conf.json"
           @{ bundle = @{ windows = @{
             certificateThumbprint = $cert.Thumbprint
@@ -174,8 +228,8 @@ jobs:
           done
 
       # tauri.release.conf.json turns on `createUpdaterArtifacts`; local builds leave it off so
-      # they work without the signing key.
-      - uses: tauri-apps/tauri-action@v1
+      # they work without the signing key. The updater key is in this step's env only.
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Shown as "Build commit" in About.
@@ -193,75 +247,176 @@ jobs:
           uploadUpdaterJson: true
           args: --config src-tauri/tauri.release.conf.json ${{ matrix.args }} ${{ steps.winsign.outputs.args }}
 
-  # Each build job merges its platforms into latest.json. This job checks that none was lost and
-  # every entry is signed, and points the download URLs at github.com release downloads
-  # (tauri-action writes api.github.com asset URLs; CONTRACTS.md invariant 18 allows only
-  # github.com and its download redirect). Signatures cover the file bytes, not the URL.
+  # Each build job merges its platforms into latest.json. This job checks the result before the
+  # owner publishes the draft:
+  # - every platform the app ships is present, and every entry has a signature;
+  # - every URL is exactly https://github.com/<repo>/releases/download/<tag>/<asset> for an asset
+  #   of this release (tauri-action writes api.github.com asset URLs; CONTRACTS.md invariant 18
+  #   allows only github.com and its download redirect), rewriting api.github.com URLs to that form;
+  # - every signature verifies against plugins.updater.pubkey and is bound to this version (what
+  #   the app checks with requireSignedVersion), using examples/verify_update_sig.rs.
   finalize:
     name: finalize latest.json
     needs: [draft, build]
+    # Also runs when a build job failed, to say so; it never finalizes a partial release.
+    if: ${{ !cancelled() && needs.draft.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write # read draft assets, replace latest.json
     steps:
-      - name: Download latest.json and the asset list
-        id: fetch
+      - name: All build jobs succeeded
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          if [ "$BUILD_RESULT" != "success" ]; then
+            echo "::error::A build job did not succeed (result: $BUILD_RESULT), so latest.json was not finalized. Fix it, then use \"Re-run failed jobs\"; this job runs again afterwards."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The verifier is an example of the app crate, so the crate (and its tauri dependency) has
+      # to compile: the same system deps and frontend build as CI.
+      - name: Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf build-essential libssl-dev libxdo-dev
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri -> target
+          key: release-finalize
+
+      # Release profile without LTO: the verifier only needs to be fast, not small.
+      - name: Build the signature verifier
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+        run: |
+          npm ci
+          npx vite build
+          cd src-tauri
+          cargo build --release --locked --example verify_update_sig
+
+      - name: Check latest.json, rewrite its URLs and verify every signature
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" > assets.json
-          asset_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" \
-            --jq '.[] | select(.name == "latest.json") | .id')"
-          if [ -z "$asset_id" ]; then
-            echo "::error::latest.json was not uploaded to the draft release."
-            exit 1
-          fi
-          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > latest.json
-          echo "asset_id=$asset_id" >> "$GITHUB_OUTPUT"
-
-      - name: Check every platform and rewrite the download URLs
-        env:
           TAG: ${{ github.ref_name }}
         run: |
-          python3 - <<'PY'
-          import json, os, re, sys, urllib.parse
+          python3 -I - <<'PY'
+          import json, os, subprocess, sys, tempfile, urllib.parse
 
-          tag, repo = os.environ["TAG"], os.environ["GITHUB_REPOSITORY"]
+          repo, tag, release_id = os.environ["APP_REPO"], os.environ["TAG"], os.environ["RELEASE_ID"]
+          verifier = os.path.abspath("src-tauri/target/release/examples/verify_update_sig")
+          pubkey = json.load(open("src-tauri/tauri.conf.json"))["plugins"]["updater"]["pubkey"]
           base = f"https://github.com/{repo}/releases/download/{tag}/"
-          names = {str(a["id"]): a["name"] for a in json.load(open("assets.json"))}
-          latest = json.load(open("latest.json"))
+          api_base = f"https://api.github.com/repos/{repo}/releases/assets/"
+          # Every platform the app ships; tauri-action also adds installer-specific keys
+          # (windows-x86_64-msi, linux-x86_64-deb, …), which are checked the same way.
+          required = ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64"]
+
+          def gh(*args, **kw):
+              return subprocess.run(["gh", "api", *args], check=True, stdout=subprocess.PIPE, **kw).stdout
+
+          lines = gh("--paginate", f"repos/{repo}/releases/{release_id}/assets?per_page=100", "--jq", ".[]").decode().splitlines()
+          assets = [json.loads(line) for line in lines if line.strip()]
+          by_id = {str(a["id"]): a for a in assets}
+          by_name = {a["name"]: a for a in assets}
+
+          # A previous run may have stopped between deleting the old latest.json and renaming its
+          # uploaded copy (latest.json.run-*); that copy is then the newest complete one.
+          pending = sorted((a for a in assets if a["name"].startswith("latest.json.run-")), key=lambda a: a["created_at"])
+          source = by_name.get("latest.json") or (pending[-1] if pending else None)
+          if not source:
+              print("::error::latest.json is not on the draft release, although every build job succeeded. Re-run all jobs.")
+              sys.exit(1)
+          latest = json.loads(gh("-H", "Accept: application/octet-stream", f"repos/{repo}/releases/assets/{source['id']}"))
+
           errors = []
-          if "v" + latest.get("version", "") != tag:
-              errors.append(f"latest.json announces version {latest.get('version')}, not {tag}.")
-          api = re.compile(r"^https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/(\d+)$")
-          for platform, entry in latest.get("platforms", {}).items():
-              m = api.match(entry.get("url", ""))
-              if m and m.group(1) in names:
-                  entry["url"] = base + urllib.parse.quote(names[m.group(1)])
-          for platform in ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64"]:
-              entry = latest.get("platforms", {}).get(platform)
-              if not entry or not entry.get("signature"):
-                  errors.append(f"latest.json has no signed {platform} entry. Re-run the failed build job.")
-          for platform, entry in latest.get("platforms", {}).items():
-              if not entry.get("url", "").startswith(base):
-                  errors.append(f"latest.json's {platform} URL is not a release download of {tag}: {entry.get('url')}")
+          version = str(latest.get("version", ""))
+          if "v" + version.removeprefix("v") != tag:
+              errors.append(f"latest.json announces version {version!r}, not {tag}.")
+          platforms = latest.get("platforms") or {}
+          for name in required:
+              if name not in platforms:
+                  # Every build job succeeded (checked above), so the entry was overwritten when
+                  # the parallel jobs merged their latest.json.
+                  errors.append(f"latest.json has no {name} entry: it was lost when the parallel build jobs merged latest.json. Re-run the build job for that platform (its assets are replaced), then this job.")
+
+          def asset_for(url):
+              if url.startswith(api_base) and url[len(api_base):].isdigit():
+                  return by_id.get(url[len(api_base):])
+              if url.startswith(base) and "/" not in url[len(base):]:
+                  return by_name.get(urllib.parse.unquote(url[len(base):]))
+              return None
+
+          to_verify = []
+          for name, entry in sorted(platforms.items()):
+              url, sig = entry.get("url") or "", (entry.get("signature") or "").strip()
+              asset = asset_for(url)
+              if not asset:
+                  errors.append(f"{name}: URL is not an asset of this release: {url!r}")
+                  continue
+              entry["url"] = base + urllib.parse.quote(asset["name"], safe="")
+              if not sig:
+                  errors.append(f"{name}: no signature for {asset['name']}.")
+                  continue
+              to_verify.append((name, asset, sig))
+
+          with tempfile.TemporaryDirectory() as tmp:
+              downloaded = {}
+              for name, asset, sig in to_verify:
+                  path = downloaded.get(asset["id"])
+                  if path is None:
+                      path = os.path.join(tmp, f"asset-{asset['id']}")
+                      with open(path, "wb") as f:
+                          subprocess.run(["gh", "api", "-H", "Accept: application/octet-stream", f"repos/{repo}/releases/assets/{asset['id']}"], check=True, stdout=f)
+                      downloaded[asset["id"]] = path
+                  sig_path = os.path.join(tmp, f"{name}.sig")
+                  with open(sig_path, "w") as f:
+                      f.write(sig)
+                  r = subprocess.run([verifier, pubkey, path, sig_path, version], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                  print(f"{name}: {asset['name']}: {r.stdout.strip()}")
+                  if r.returncode != 0:
+                      errors.append(f"{name}: the signature of {asset['name']} does not pass the updater's check (see the log above).")
+
           json.dump(latest, open("latest.json", "w"), indent=2)
-          print(json.dumps({**latest, "platforms": {k: v["url"] for k, v in latest["platforms"].items()}}, indent=2))
+          print(json.dumps({**latest, "platforms": {k: v.get("url") for k, v in platforms.items()}}, indent=2))
           for e in errors:
               print(f"::error::{e}")
           sys.exit(1 if errors else 0)
           PY
 
+      # Replace-safe: the new copy is uploaded under a temporary name first, so a failed upload
+      # leaves the old latest.json in place. Only then is the old one (and any copy an interrupted
+      # run left behind) deleted and the new one renamed; a run that stops in between is picked up
+      # by the next run (see above).
       - name: Replace latest.json on the draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.draft.outputs.release_id }}
-          ASSET_ID: ${{ steps.fetch.outputs.asset_id }}
         run: |
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
-          curl --fail-with-body -sS -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Content-Type: application/json" \
-            --data-binary @latest.json \
-            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=latest.json" > /dev/null
+          tmp_name="latest.json.run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          new_id="$(curl --fail-with-body -sS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "Content-Type: application/json"             --data-binary @latest.json             "https://uploads.github.com/repos/$APP_REPO/releases/$RELEASE_ID/assets?name=$tmp_name" | jq -r .id)"
+          if [ -z "$new_id" ] || [ "$new_id" = "null" ]; then
+            echo "::error::Uploading the new latest.json failed; the old one is unchanged. Re-run this job."
+            exit 1
+          fi
+          export NEW_ID="$new_id"
+          old_ids="$(gh api --paginate "repos/$APP_REPO/releases/$RELEASE_ID/assets?per_page=100"             --jq '.[] | select(.name == "latest.json" or (.name | startswith("latest.json.run-"))) | select((.id | tostring) != env.NEW_ID) | .id')"
+          for id in $old_ids; do
+            gh api -X DELETE "repos/$APP_REPO/releases/assets/$id"
+          done
+          gh api -X PATCH "repos/$APP_REPO/releases/assets/$new_id" -f name=latest.json > /dev/null
           echo "latest.json is final. Check the draft release, then publish it."
