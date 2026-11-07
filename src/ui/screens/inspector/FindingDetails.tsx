@@ -10,6 +10,7 @@ import { EvidenceView } from '../../components/EvidenceView';
 import { fixLabel } from '../../components/labels';
 import { FindingCode, RAIL_BG } from '../../components/Severity';
 import { useActions, useApp } from '../../app/StoreContext';
+import { useFixVersions } from '../modrinthHooks';
 import { SubLegend } from './Plate';
 
 export function FindingDetails({ instanceId, findingId }: { instanceId: string; findingId: string }) {
@@ -31,6 +32,7 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
   const orderOpen = useApp((s) => s.order !== null);
   const selectedJar = useApp((s) => (s.selection?.kind === 'jar' ? s.selection.id : null));
   const a = useActions();
+  const versions = useFixVersions(instanceId);
   const names = useMemo(() => {
     const n: Record<string, string> = {};
     for (const j of result?.jars ?? []) n[j.id] = j.fileName;
@@ -79,7 +81,7 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
             <div className="flex flex-wrap gap-2 px-4 py-2">
               {plannable.map((fix, i) => (
                 <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={pending || orderOpen} onClick={() => void a.fix(findingId, fix, 'inspector')}>
-                  {fixLabel(fix, names)}
+                  {fixLabel(fix, names, versions)}
                 </Button>
               ))}
             </div>

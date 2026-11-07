@@ -46,6 +46,8 @@ export interface InstanceModrinth {
   scanRef: ScanResult | null;
   /** Update filters of the lookup (dependency resolution reuses them). */
   filters: UpdateFilters | null;
+  /** The update lookup answered (no update for a jar then means "up to date"). */
+  updatesChecked: boolean;
   /** Missing mod id → chosen Modrinth version. */
   resolutions: Readonly<Record<string, DependencyResolution>>;
   notice: ModrinthNotice | null;
@@ -54,7 +56,7 @@ export interface InstanceModrinth {
 }
 
 export function emptyModrinth(): InstanceModrinth {
-  return { status: 'idle', ctx: null, key: null, scanRef: null, filters: null, resolutions: {}, notice: null, error: null };
+  return { status: 'idle', ctx: null, key: null, scanRef: null, filters: null, updatesChecked: false, resolutions: {}, notice: null, error: null };
 }
 
 /** Cache key of a lookup: the identified hashes, the update filters and the beta preference. */

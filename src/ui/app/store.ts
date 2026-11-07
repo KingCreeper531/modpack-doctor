@@ -389,7 +389,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         let findings: Finding[] | null = null;
         if (m) {
           try {
-            findings = mr.enrichFindings(core.runChecks({ instance: inst, scan: sc.result, pack, modrinth: m.ctx }), m.ctx, m.resolutions);
+            findings = mr.enrichFindings(core.runChecks({ instance: inst, scan: sc.result, pack, modrinth: m.ctx }), m.ctx, m.resolutions, sc.result.jars);
           } catch {
             // A Modrinth-side failure must not cost the static findings.
             findings = null;
@@ -450,7 +450,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         const m = sc?.result && sc.pack ? usableModrinth(id, sc.result, sc.pack) : null;
         if (m) {
           try {
-            findings = mr.enrichFindings(findings, m.ctx, m.resolutions);
+            findings = mr.enrichFindings(findings, m.ctx, m.resolutions, sc?.result?.jars ?? []);
           } catch {
             // Keep the plain analysis.
           }
@@ -753,6 +753,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         key,
         scanRef: result,
         filters: q.updates,
+        updatesChecked: updates !== null && !updates.offline,
         resolutions: {},
         notice: limited ? null : degraded ? { kind: 'offline' } : null,
         error: firstError,

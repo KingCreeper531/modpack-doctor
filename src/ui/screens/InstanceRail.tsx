@@ -1,6 +1,7 @@
 /**
  * Instance rail (DESIGN.md §5): one 48px row per discovered instance with its last-scan pip,
- * then the footer: Add folder, add a launcher's data folder, and the theme control.
+ * then the footer: Add folder, add a launcher's data folder, the Modrinth settings and the theme
+ * control.
  */
 import { CaretDown, CaretRight, FolderPlus } from '@phosphor-icons/react';
 import { useState } from 'react';
@@ -14,6 +15,7 @@ import { LAUNCHER_NAME } from '../components/labels';
 import { Panel } from '../components/Panel';
 import { instanceStatus } from '../app/derive';
 import { useActions, useApp } from '../app/StoreContext';
+import { ModrinthControl } from './ModrinthControl';
 import { ThemeControl } from './ThemeControl';
 
 /** Launchers whose data folder can live somewhere custom (portable installs, moved folders). */
@@ -103,6 +105,7 @@ export function InstanceRail({ className }: { className?: string }) {
             </ul>
           ) : null}
         </div>
+        <ModrinthControl className="border-t border-line px-2 py-2" />
         <ThemeControl className="border-t border-line px-2 py-2" />
       </div>
     </Panel>

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ScanProgress, ScanStarted } from '../../../bindings';
+import { projectIdsOf } from '../../../core/modrinth';
 import { call, createBackend, isTauri, NO_BACKEND, tauriBackend } from '../ipc';
 import { MOCK_INSTANCES, mockJars } from '../mockData';
 import { createMockBackend, mockOptionsFromSearch } from '../mockIpc';
@@ -113,7 +114,6 @@ describe('mock backend', () => {
     const r = await b.commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
     expect(r).toEqual({ status: 'error', error: { kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null } });
     expect(await b.commands.listBackups('x')).toMatchObject({ error: { kind: 'unavailable', message: "Backup history isn't available in this version of Modpack Doctor yet." } });
-    expect(await b.commands.modrinthIdentify([], false)).toMatchObject({ error: { kind: 'unavailable', message: "Modrinth lookups isn't available in this version of Modpack Doctor yet." } });
     const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
     expect(await b.commands.scanInstance(pack.id)).toMatchObject({ error: { kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet." } });
   });
@@ -153,5 +153,58 @@ describe('mock jar data feeds the static checks', () => {
     expect(mockJars(MOCK_INSTANCES[1]!.id)).toBe(mockJars(MOCK_INSTANCES[1]!.id));
     expect(top[0]!.sha1).toMatch(/^[0-9a-f]{40}$/);
     expect(top[0]!.sha512).toMatch(/^[0-9a-f]{128}$/);
+  });
+});
+
+describe('mock Modrinth (M5)', () => {
+  const ATM = MOCK_INSTANCES[0]!;
+  const top = () => mockJars(ATM.id).filter((j) => j.depth === 0);
+  const sha = (file: string) => top().find((j) => j.fileName === file)!.sha1;
+  const FO = MOCK_INSTANCES[1]!;
+
+  it('identifies most jars, leaves a few off Modrinth, and serves only inline icons', async () => {
+    const b = createMockBackend({ latencyMs: 0 });
+    const sha1s = top().map((j) => j.sha1);
+    const r = await b.commands.modrinthIdentify(sha1s, false);
+    if (r.status !== 'ok') throw new Error('identify failed');
+    const found = Object.keys(r.data.found).length;
+    expect(found).toBeGreaterThan(sha1s.length * 0.8);
+    expect(found).toBeLessThan(sha1s.length);
+    expect(r.data.found[sha('OptiFine_1.20.1_HD_U_I6.jar')]).toBeUndefined();
+    expect(r.data.found[sha('Mekanism-1.20.1-10.4.5.20.jar')]).toBeUndefined();
+    const p = await b.commands.modrinthProjects(projectIdsOf(r.data), false);
+    if (p.status !== 'ok') throw new Error('projects failed');
+    const projects = Object.values(p.data.found);
+    expect(projects.some((x) => x.iconPath === null && x.slug === 'ftb-library-forge')).toBe(true);
+    for (const x of projects) if (x.iconPath) expect(x.iconPath).toMatch(/^data:image\/svg\+xml,/);
+    for (const v of Object.values(r.data.found)) for (const f of v.files) expect(f.url.startsWith('https://cdn.modrinth.com/')).toBe(true);
+  });
+
+  it('offers release updates, a beta-only update through the fallback, and a resolvable dependency', async () => {
+    const b = createMockBackend({ latencyMs: 0 });
+    const create = sha('create-1.20.1-0.5.1.f.jar');
+    const u = await b.commands.modrinthFindUpdates([create], ['forge'], ['1.20.1'], ['release'], false);
+    expect(u.status === 'ok' && u.data.found[create]?.versionNumber).toBe('0.5.1.j');
+    const ec = mockJars(FO.id).find((j) => j.fileName.startsWith('entityculling'))!.sha1;
+    const rel = await b.commands.modrinthFindUpdates([ec], ['fabric'], ['1.21.1'], ['release'], false);
+    expect(rel.status === 'ok' && rel.data.found[ec]).toBeFalsy();
+    const beta = await b.commands.modrinthFindUpdates([ec], ['fabric'], ['1.21.1'], ['release', 'beta'], false);
+    expect(beta.status === 'ok' && beta.data.found[ec]).toMatchObject({ versionNumber: '1.7.1-beta.2', versionType: 'beta' });
+    const p = await b.commands.modrinthResolveModId('botarium', ['forge'], ['1.20.1']);
+    if (p.status !== 'ok' || !p.data) throw new Error('botarium not resolved');
+    const v = await b.commands.modrinthProjectVersions(p.data.id, ['forge'], ['1.20.1'], ['release', 'beta']);
+    expect(v.status === 'ok' && v.data[0]).toMatchObject({ versionNumber: '2.3.4', versionType: 'release' });
+    expect(await b.commands.modrinthResolveModId('nothing_like_this', ['forge'], ['1.20.1'])).toEqual({ status: 'ok', data: null });
+  });
+
+  it('scenario offline answers every lookup offline; ratelimit fails the first identify only', async () => {
+    const off = createMockBackend({ latencyMs: 0, scenario: 'offline' });
+    expect(await off.commands.modrinthIdentify(['ab'], false)).toEqual({ status: 'ok', data: { found: {}, failed: ['ab'], offline: true } });
+    const rl = createMockBackend({ latencyMs: 0, scenario: 'ratelimit' });
+    expect(await rl.commands.modrinthIdentify([sha('create-1.20.1-0.5.1.f.jar')], false)).toMatchObject({ status: 'error', error: { kind: 'rateLimited', retryAfterS: 5 } });
+    expect((await rl.commands.modrinthIdentify([sha('create-1.20.1-0.5.1.f.jar')], false)).status).toBe('ok');
+    const disabled = createMockBackend({ latencyMs: 0, scenario: 'modrinthoff' });
+    expect(disabled.settings().modrinthEnabled).toBe(false);
+    expect(await disabled.commands.modrinthIdentify(['ab'], false)).toMatchObject({ status: 'ok', data: { offline: true } });
   });
 });

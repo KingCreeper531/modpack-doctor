@@ -31,7 +31,8 @@ describe('init and scan lifecycle', () => {
     expect(sc.done).toBe(512);
     expect(sc.findings.map((f) => f.id)).toEqual(['dup']);
     expect(sc.pack).toMatchObject({ mcVersion: '1.20.1', source: 'launcher' });
-    expect(calls).toHaveLength(1);
+    // The static checks first (Modrinth enrichment re-runs them later, modrinth.test.ts).
+    expect(calls[0]!.modrinth).toBeUndefined();
     expect(calls[0]!.instance.id).toBe(ATM.id);
     expect(instanceStatus(sc)).toBe('error');
   });

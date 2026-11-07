@@ -19,7 +19,7 @@ import { cx } from './cx';
 import { ErrorRow } from './ErrorRow';
 import { EvidenceView } from './EvidenceView';
 import { basename } from './format';
-import { fixLabel } from './labels';
+import { fixLabel, type FixVersions } from './labels';
 import { FindingCode, RAIL_BG } from './Severity';
 
 /** Chips shown before the rest collapse into `+N`. */
@@ -37,6 +37,8 @@ export interface TriageRowProps {
   selected?: boolean;
   /** Jar id → display name for chips and fix labels. */
   jarNames?: Readonly<Record<string, string>>;
+  /** Modrinth version facts for `replace` / `installDependency` labels. */
+  fixVersions?: FixVersions;
   selectedJarId?: string | null;
   onJarClick?: (jarId: string) => void;
   onFix?: (fix: FixAction, index: number) => void;
@@ -57,6 +59,7 @@ export function TriageRow({
   focused = false,
   selected = false,
   jarNames = {},
+  fixVersions = {},
   selectedJarId = null,
   onJarClick,
   onFix,
@@ -143,7 +146,7 @@ export function TriageRow({
                 {finding.fixes.map((fix, i) =>
                   fix.kind === 'manual' ? null : (
                     <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={fixesDisabled} onClick={() => onFix?.(fix, i)}>
-                      {fixLabel(fix, jarNames)}
+                      {fixLabel(fix, jarNames, fixVersions)}
                     </Button>
                   ),
                 )}
