@@ -11,13 +11,15 @@
 //! - `resolve_mod_id` maps a loader mod id (`cloth_config`) to a project: slug guesses + alias
 //!   table, then `/v2/search` (see `resolve.rs`).
 //! - Downloads and icons only from `https://<cdn_host>/…`; redirects never leave the origin.
+//! - The app holds one `ModrinthService` (online + cache-only client, see `service.rs`) in `AppState`.
 
 mod api;
 mod cache;
 mod download;
 mod http;
 mod resolve;
-mod validate;
+mod service;
+pub(crate) mod validate;
 
 #[cfg(test)]
 mod tests;
@@ -44,6 +46,8 @@ use crate::model::{HashLookup, MrVersion, ProjectLookup};
 use api::{CdnCheck, ProjectRecord};
 use cache::{DiskCache, Ttl};
 use http::{Limiter, ReqError, RetryPolicy};
+
+pub use service::ModrinthService;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.modrinth.com";
 pub const DEFAULT_CDN_HOST: &str = "cdn.modrinth.com";
