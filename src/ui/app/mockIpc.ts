@@ -552,6 +552,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       return ok(`C:\\Users\\alex\\Documents\\${defaultName}.${format === 'json' ? 'json' : 'md'}`);
     },
     setWindowTheme: async () => ok(null),
+    homeDir: async () => ok(String.raw`C:\Users\alex`),
     checkUpdate: async () => notYet('Update checks'),
     installUpdate: async () => notYet('Installing updates'),
   };

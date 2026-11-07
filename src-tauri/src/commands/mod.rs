@@ -244,6 +244,14 @@ pub async fn set_settings(_app: AppHandle, state: State<'_, AppState>, patch: Se
 
 // `save_report` lives in `report.rs` (glob re-export above).
 
+/// The user's home folder (absolute), so `src/core/report` can replace it by `~` in exported
+/// reports (CONTRACTS invariant 16). Empty when the OS reports none. Read-only; never a scope.
+#[tauri::command]
+#[specta::specta]
+pub fn home_dir() -> Cmd<String> {
+    Ok(dirs::home_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
 /// Re-themes the native title bar (Windows DWM); no-op elsewhere. Called on every resolved theme change.
 #[tauri::command]
 #[specta::specta]

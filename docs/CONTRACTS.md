@@ -316,7 +316,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     same data the UI shows: instance, effective pack, scan summary, static + crash findings with
     evidence, Modrinth match summary. Markdown and JSON (`schemaVersion: 1`). No absolute paths of
     the user's home in the report: paths are shown relative to the game dir, and the game dir with
-    the home folder replaced by `~`. `save_report` opens the native save dialog with the sanitized
+    the home folder replaced by `~` (Rust's `home_dir`; the UI's path heuristic only as a fallback). `save_report` opens the native save dialog with the sanitized
     default name and the format's extension (`.md` / `.json`, enforced), contents ≤ 16 MiB, writes
     temp + rename in the chosen folder. An existing file is replaced only when the dialog confirmed that exact path;
     if the extension had to be appended, an existing file is a `Conflict`. That path is the one write outside PathGuard roots, allowed
@@ -326,6 +326,8 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     and never execute a work order (Enter stays bound to DESIGN §6.4's rule). Context menus are
     native Tauri menus (`@tauri-apps/api/menu`, `core:menu:default`) under Tauri and a DESIGN-styled
     DOM menu in the browser dev build; every menu item that mutates files only *plans* a work order.
+    The drop overlay follows Tauri's webview drag events under Tauri (DOM drag events in the browser
+    build), for the visual only: opening a dropped pack is always Rust's `InstanceAdded` / `DropRejected`.
 
 ## Commands
 
@@ -356,6 +358,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `get_settings` / `set_settings` | — / `patch: SettingsPatch` | `Settings` | | M3 |
 | `save_report` | `defaultName, format, contents` | `string \| null` | | M7 |
 | `set_window_theme` | `theme: ResolvedTheme` | `null` | | M1 (done) |
+| `home_dir` | — | `string` (empty if unknown) | | M7 |
 | `check_update` / `install_update` | — | `UpdateInfo \| null` / `null` | | M8 |
 
 Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `CrashDetected`,

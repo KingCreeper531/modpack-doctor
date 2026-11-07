@@ -131,6 +131,7 @@ export function WorkOrderPanel({
       className={cx('focus-visible:outline-1 focus-visible:-outline-offset-1', className)}
       bodyClassName="flex min-h-0 flex-col"
       aria-label={`Work order ${order.id}: ${order.title}`}
+      data-work-order=""
       tabIndex={-1}
       onKeyDown={(e) => {
         const target = e.target;

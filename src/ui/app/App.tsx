@@ -11,6 +11,7 @@ import { browserNotifier, deniedNotifier, tauriNotifier } from './notify';
 import { createAppStore, type AppStore } from './store';
 import { StoreProvider, useApp, useAppStore } from './StoreContext';
 import { followTheme } from './theme';
+import { version } from '../../../package.json';
 
 function ThemeSync() {
   const pref = useApp((s) => s.settings.theme);
@@ -36,7 +37,7 @@ function createDefaultStore(): AppStore {
   const backend = createBackend();
   const initialSelect = backend.kind === 'mock' ? new URLSearchParams(window.location.search).get('select') : null;
   const notifier = backend.kind === 'tauri' ? tauriNotifier() : backend.kind === 'mock' ? browserNotifier() : deniedNotifier();
-  const store = createAppStore({ backend, initialSelect, notifier });
+  const store = createAppStore({ backend, initialSelect, notifier, appVersion: version });
   // `?order=` / `?tab=` screenshot hooks (devHooks.ts); dead code, and dropped, in production.
   if (import.meta.env.DEV && backend.kind === 'mock') applyDevHooks(store, window.location.search);
   return store;

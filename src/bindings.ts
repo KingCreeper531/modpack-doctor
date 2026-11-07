@@ -116,6 +116,11 @@ export const commands = {
 	saveReport: (defaultName: string, format: ReportFormat, contents: string) => typedError<string | null, AppError>(__TAURI_INVOKE("save_report", { defaultName, format, contents })),
 	/**  Re-themes the native title bar (Windows DWM); no-op elsewhere. Called on every resolved theme change. */
 	setWindowTheme: (theme: ResolvedTheme) => typedError<null, AppError>(__TAURI_INVOKE("set_window_theme", { theme })),
+	/**
+	 *  The user's home folder (absolute), so `src/core/report` can replace it by `~` in exported
+	 *  reports (CONTRACTS invariant 16). Empty when the OS reports none. Read-only; never a scope.
+	 */
+	homeDir: () => typedError<string, AppError>(__TAURI_INVOKE("home_dir")),
 	checkUpdate: () => typedError<UpdateInfo | null, AppError>(__TAURI_INVOKE("check_update")),
 	/**  Downloads, verifies the updater signature, installs, restarts. */
 	installUpdate: () => typedError<null, AppError>(__TAURI_INVOKE("install_update")),

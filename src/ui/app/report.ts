@@ -53,7 +53,7 @@ export function reportBlock(s: Pick<AppState, 'scans' | 'discovery'>, instanceId
 export function reportInput(
   s: Pick<AppState, 'scans' | 'discovery' | 'crashes' | 'modrinth'>,
   instanceId: string,
-  meta: { appVersion: string; generatedAtMs: number },
+  meta: { appVersion: string; generatedAtMs: number; homeDir?: string },
 ): ReportInput | null {
   const instance = s.discovery?.instances.find((i) => i.id === instanceId);
   const sc = s.scans[instanceId];
@@ -71,7 +71,8 @@ export function reportInput(
     modrinth: viewContext(s.modrinth[instanceId], sc.result),
     appVersion: meta.appVersion,
     generatedAtMs: meta.generatedAtMs,
-    homeDir: guessHomeDir([instance.gameDir, instance.root]),
+    // Rust's exact home folder when known; the path heuristic only as a fallback.
+    homeDir: meta.homeDir || guessHomeDir([instance.gameDir, instance.root]),
   };
 }
 

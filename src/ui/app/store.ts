@@ -453,6 +453,14 @@ export function createAppStore(deps: StoreDeps): AppStore {
   let initialSelect = deps.initialSelect ?? null;
   const reportCore: ReportCoreApi = deps.reportCore ?? { buildReport, reportMarkdown, reportJson, reportFileName };
   const appVersion = deps.appVersion ?? '0.0.0';
+  /** The user's home folder from Rust (`home_dir`), fetched once for report privacy. */
+  let homeDir: string | null = null;
+  const loadHomeDir = async (): Promise<string> => {
+    if (homeDir !== null) return homeDir;
+    const r = await call(cmd.homeDir());
+    homeDir = r.status === 'ok' ? r.data : '';
+    return homeDir;
+  };
   const cmd = backend.commands;
   /** Latest export per instance; an older one's answer is dropped. */
   const reportTokens = new Map<string, number>();
@@ -1883,7 +1891,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
             return { reports };
           });
         const blocked = reportBlock(get(), id);
-        const input = blocked ? null : reportInput(get(), id, { appVersion, generatedAtMs: now() });
+        const home = blocked ? '' : await loadHomeDir();
+        if (reportTokens.get(id) !== token) return;
+        const input = blocked ? null : reportInput(get(), id, { appVersion, generatedAtMs: now(), homeDir: home });
         if (!input) {
           put({ status: 'error', format, error: { kind: 'invalid', message: blocked ?? 'Scan the instance before exporting a report.', path: null } });
           return;

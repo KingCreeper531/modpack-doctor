@@ -15,6 +15,8 @@ import { shortcutOf, suppressesDefault } from '../app/keyboard';
 import { paletteGroups, runPaletteCommand } from '../app/paletteCommands';
 import type { AppStore } from '../app/store';
 import { useActions, useApp, useAppShallow, useAppStore } from '../app/StoreContext';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 function restoreFocus(el: Element | null) {
   if (el && el instanceof HTMLElement && el.isConnected && el !== document.body) el.focus();
@@ -180,6 +182,23 @@ export function DropOverlay({ forceShow = false }: { forceShow?: boolean }) {
       depth = 0;
       setOver(false);
     };
+    // Under Tauri the OS file drag goes to Rust (dragDropEnabled) and WebView2 may not fire DOM
+    // drag events: mirror Tauri's webview drag events for the overlay only (paths are ignored;
+    // opening stays Rust's InstanceAdded / DropRejected).
+    let unlistenTauri: (() => void) | null = null;
+    let disposed = false;
+    if (isTauri()) {
+      void getCurrentWebview()
+        .onDragDropEvent((e) => {
+          const t = e.payload.type;
+          setOver(t === 'enter' || t === 'over');
+        })
+        .then((u) => {
+          if (disposed) u();
+          else unlistenTauri = u;
+        })
+        .catch(() => {});
+    }
     window.addEventListener('dragenter', enter);
     window.addEventListener('dragleave', leave);
     window.addEventListener('dragover', overFn);
@@ -189,6 +208,8 @@ export function DropOverlay({ forceShow = false }: { forceShow?: boolean }) {
       window.removeEventListener('dragleave', leave);
       window.removeEventListener('dragover', overFn);
       window.removeEventListener('drop', drop);
+      disposed = true;
+      unlistenTauri?.();
     };
   }, []);
   if (!over && !forceShow) return null;
