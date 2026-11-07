@@ -479,6 +479,27 @@ impl ModrinthClient {
         }
     }
 
+    /// `GET /v2/version/{id}` from the network only: no cached copy is read or written and
+    /// nothing stale is ever served (the fix planner, CONTRACTS.md invariant 14). Offline →
+    /// `Offline`; any network failure is an error.
+    pub async fn version_fresh(&self, version_id: &str) -> Result<MrVersion> {
+        validate::version_id(version_id)?;
+        let what = format!("Modrinth version {version_id}");
+        if !self.inner.online {
+            return Err(Error::Offline);
+        }
+        let url = self.inner.endpoint(&format!("/v2/version/{version_id}"))?;
+        let inner = Arc::clone(&self.inner);
+        let build = move || inner.http.get(url.clone()).timeout(API_TIMEOUT);
+        let body = self.inner.json(&build, None).await.map_err(|e| e.into_error(&what))?;
+        let v = api::version_from_json(body, &self.inner.cdn)
+            .ok_or_else(|| ReqError::Body("not a version object".into()).into_error(&what))?;
+        if v.id != version_id {
+            return Err(Error::Network(format!("Modrinth answered with version {} for {what}", v.id)));
+        }
+        Ok(v)
+    }
+
     /// Batch fetcher for the two hash endpoints.
     fn hash_fetch(&self, url: Url, extra: serde_json::Map<String, Value>, cache_versions: bool) -> FetchFn<MrVersion> {
         let inner = Arc::clone(&self.inner);

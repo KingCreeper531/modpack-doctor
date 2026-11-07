@@ -16,7 +16,13 @@
 //! - Replace of a disabled jar, of a jar Modrinth does not know by its sha1, of a jar from
 //!   another project, with a version not published strictly after the current one (or a date
 //!   missing), or of a jar that declares no mod id (the download could not be verified);
-//! - InstallDependency with a malformed mod id.
+//! - InstallDependency with a malformed mod id, a mod id that no enabled top-level jar of the
+//!   instance declares as a required dependency (live scan of `mods/`), one that is already
+//!   provided (built in, a jar's mod id or `provides`, or a nested jar), one Rust cannot resolve
+//!   to a Modrinth project (`resolve_mod_id`), or a version of another project than that one.
+//!
+//! Every version is fetched fresh from the API (no cache, no stale copy); a network failure
+//! fails the plan naming the action.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -26,8 +32,8 @@ use crate::error::{Error, Result};
 use crate::guard::PathGuard;
 use crate::jar_id;
 use crate::model::{
-    FileOp, FixAction, Instance, Launcher, LoaderInfo, LoaderKind, MetadataSource, MrFile, MrVersion, PackIdentity,
-    PackOverride, PlannedOp, WorkOrder, WorkOrderKind,
+    DependencyKind, FileOp, FixAction, Instance, JarRecord, Launcher, LoaderInfo, LoaderKind, MetadataSource, MrFile, MrVersion,
+    PackIdentity, PackOverride, PlannedOp, ScanResult, WorkOrder, WorkOrderKind,
 };
 use crate::state::AppState;
 
@@ -314,6 +320,10 @@ enum TitleItem {
 struct Planner<'a> {
     guard: &'a PathGuard,
     game_dir: PathBuf,
+    instance_id: &'a str,
+    scan_cache: &'a crate::scan::ScanCache,
+    /// A live scan of `mods/`, made on first need (InstallDependency).
+    scan: Option<ScanResult>,
     pack: &'a PackIdentity,
     remote: Option<&'a dyn Remote>,
     ops: Vec<PlannedOp>,
@@ -402,6 +412,70 @@ impl<'a> Planner<'a> {
         }
         let dest = format!("mods/{}", file.filename);
         Ok((v, file, dest))
+    }
+
+    /// A live scan of `mods/` (unchanged jars come from the shared scan cache, keyed by path,
+    /// size and mtime).
+    fn scan(&mut self) -> Result<&ScanResult> {
+        if self.scan.is_none() {
+            let r = crate::scan::scan_mods_dir_cached(&self.game_dir, self.instance_id, self.guard, Some(self.scan_cache), |_| {}, |_| {})?;
+            self.scan = Some(r);
+        }
+        self.scan.as_ref().ok_or_else(|| Error::Internal("the mods folder scan is missing".into()))
+    }
+
+    /// Bound intent (CONTRACTS.md invariant 14): `mod_id` must be a required dependency declared
+    /// by an enabled top-level jar, and nothing may already provide it.
+    fn check_dependency_needed(&mut self, label: &str, mod_id: &str) -> Result<()> {
+        let pack_loader = self.pack.loader.clone();
+        if is_builtin_dependency(mod_id, &pack_loader) {
+            return Err(refuse(label, format!("\"{}\" is part of the game or the mod loader itself, so it is never installed.", clip(mod_id, 64))));
+        }
+        let scan = self.scan()?;
+        let by_id: HashMap<&str, &JarRecord> = scan.jars.iter().map(|j| (j.id.as_str(), j)).collect();
+        // A jar is active when its top-level ancestor is an enabled jar.
+        let top_of = |j: &'_ JarRecord| -> Option<String> {
+            let mut cur = j;
+            for _ in 0..64 {
+                match cur.parent_id.as_deref() {
+                    None => return Some(cur.id.clone()),
+                    Some(p) => cur = by_id.get(p)?,
+                }
+            }
+            None
+        };
+        let active = |j: &JarRecord| -> bool {
+            top_of(j).and_then(|t| by_id.get(t.as_str()).copied()).is_some_and(|t| t.depth == 0 && !t.disabled)
+        };
+        let same = |a: &str| a.eq_ignore_ascii_case(mod_id);
+        let requirer = scan.jars.iter().find(|j| {
+            j.depth == 0
+                && !j.disabled
+                && j.mods.iter().any(|m| !same(&m.mod_id) && m.deps.iter().any(|d| d.kind == DependencyKind::Required && same(&d.mod_id)))
+        });
+        if requirer.is_none() {
+            return Err(refuse(
+                label,
+                format!(
+                    "no enabled mod in this instance requires \"{}\", so it is not installed. Rescan the instance and review the fixes again.",
+                    clip(mod_id, 64)
+                ),
+            ));
+        }
+        let provider = scan
+            .jars
+            .iter()
+            .filter(|j| active(j))
+            .find(|j| j.mods.iter().any(|m| same(&m.mod_id) || m.provides.iter().any(|p| same(p))));
+        if let Some(p) = provider {
+            let top = top_of(p).and_then(|t| by_id.get(t.as_str()).copied()).map_or(p.file_name.clone(), |t| t.file_name.clone());
+            let how = if p.depth == 0 { top } else { format!("{} (bundled in {top})", p.file_name) };
+            return Err(refuse(
+                label,
+                format!("\"{}\" is already provided by {how}, so it is not installed. Rescan the instance and review the fixes again.", clip(mod_id, 64)),
+            ));
+        }
+        Ok(())
     }
 
     fn action(&mut self, i: u32, action: &FixAction) -> Result<()> {
@@ -517,11 +591,39 @@ impl<'a> Planner<'a> {
                 if !ok {
                     return Err(refuse(&label, "that is not a valid mod id"));
                 }
+                // Check order (shared with the UI mock): version, loader, MC and destination
+                // first, then the required-dependency and resolved-project checks.
                 let remote = self.remote()?;
                 let (v, file, dest) = self.version_and_file(&label, version_id)?;
                 self.absent(&label, &dest)?;
-                self.touch(&label, &dest)?;
                 let title = remote.project_title(&v.project_id).unwrap_or_else(|| mod_id.clone());
+                // "Install Botarium 2.3.4": the refusals below name the concrete download.
+                let label = format!("Install {} {}", clip(&title, 64), clip(&v.version_number, 40));
+                self.check_dependency_needed(&label, mod_id)?;
+                let loaders: Vec<String> = modrinth_loaders(self.pack).into_iter().map(str::to_string).collect();
+                let resolved = remote
+                    .resolve_mod_id(mod_id, &loaders, std::slice::from_ref(&self.pack.mc_version))
+                    .map_err(|e| remote_error(&label, e))?
+                    .ok_or_else(|| {
+                        refuse(
+                            &label,
+                            format!(
+                                "Modrinth has no project for the mod id \"{}\" for this pack's loader and Minecraft version (it is not on Modrinth), so it is not installed.",
+                                clip(mod_id, 64)
+                            ),
+                        )
+                    })?;
+                if resolved != v.project_id {
+                    return Err(refuse(
+                        &label,
+                        format!(
+                            "version {} belongs to a different Modrinth project than the one Modpack Doctor finds for the mod id \"{}\", so it is not installed.",
+                            v.version_number,
+                            clip(mod_id, 64)
+                        ),
+                    ));
+                }
+                self.touch(&label, &dest)?;
                 self.title.push(TitleItem::Install(mod_id.clone()));
                 let op = FileOp::Download {
                     project_title: title,
@@ -555,6 +657,54 @@ impl<'a> Planner<'a> {
             }
         }
     }
+}
+
+/// Dependency ids the game, the JVM or the loader provide (the E-MISSING-DEP built-ins of
+/// CONTRACTS.md, `src/core/checks/builtins.ts`), case-insensitive. `mixinextras` counts only
+/// where the loader bundles it (Fabric ≥ 0.15.0, Quilt ≥ 0.23.0; unknown version = modern).
+pub(crate) fn is_builtin_dependency(mod_id: &str, loader: &LoaderInfo) -> bool {
+    const BUILTIN: [&str; 12] = [
+        "minecraft",
+        "java",
+        "forge",
+        "neoforge",
+        "fml",
+        "mcp",
+        "javafml",
+        "lowcodefml",
+        "fabricloader",
+        "fabric-loader",
+        "quilt_loader",
+        "quilt-loader",
+    ];
+    let id = mod_id.to_ascii_lowercase();
+    if BUILTIN.contains(&id.as_str()) {
+        return true;
+    }
+    if id != "mixinextras" {
+        return false;
+    }
+    let since: &[u64] = match loader.kind {
+        LoaderKind::Fabric => &[0, 15, 0],
+        LoaderKind::Quilt => &[0, 23, 0],
+        _ => return false,
+    };
+    let Some(v) = loader.version.as_deref() else { return true };
+    // Leading numeric dot-separated parts ("0.15.11", "0.23.0-beta.1"); unparsable = modern.
+    let parts: Vec<u64> = v
+        .split(['.', '-', '+'])
+        .map_while(|p| p.parse::<u64>().ok())
+        .collect();
+    if parts.is_empty() {
+        return true;
+    }
+    for (i, want) in since.iter().enumerate() {
+        let have = parts.get(i).copied().unwrap_or(0);
+        if have != *want {
+            return have > *want;
+        }
+    }
+    true
 }
 
 /// Mod ids (incl. `provides`) the top-level jar itself declares.
@@ -721,6 +871,9 @@ pub fn plan_order(
     let mut p = Planner {
         guard: &st.guard,
         game_dir: game_dir.clone(),
+        instance_id,
+        scan_cache: &st.scan_cache,
+        scan: None,
         pack,
         remote,
         ops: Vec::new(),

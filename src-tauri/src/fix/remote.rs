@@ -11,14 +11,20 @@ use crate::model::MrVersion;
 use crate::modrinth::ModrinthClient;
 
 pub trait Remote: Send + Sync {
-    /// `GET /v2/version/{id}`.
+    /// `GET /v2/version/{id}`, always from the network: never a cached or stale copy
+    /// (CONTRACTS.md invariant 14). A network failure is an error.
     fn version(&self, version_id: &str) -> Result<MrVersion>;
     /// The version a sha1 belongs to, asked from the network (`refresh`). `Ok(None)` = not on
     /// Modrinth; `Err(Offline)` when Modrinth could not be reached.
     fn identify(&self, sha1: &str) -> Result<Option<MrVersion>>;
+    /// The Modrinth project id Rust itself resolves for a loader mod id (`resolve_mod_id`,
+    /// narrowed to the pack's Modrinth loaders and Minecraft version). `Ok(None)` = not on
+    /// Modrinth.
+    fn resolve_mod_id(&self, mod_id: &str, loaders: &[String], game_versions: &[String]) -> Result<Option<String>>;
     /// The project's title, best effort (None on any problem).
     fn project_title(&self, project_id: &str) -> Option<String>;
-    /// CDN-only, size-capped, SHA-512-verified download into `<dir>/.<name>.part` (fsynced).
+    /// CDN-only, size-capped, SHA-512-verified download into `<dir>/.<name>.part` (created with
+    /// `create_new`, fsynced).
     fn download(&self, url: &str, sha512: &str, size: u64, dir: &Path, name: &str) -> Result<PathBuf>;
 }
 
@@ -37,7 +43,7 @@ impl ClientRemote {
 
 impl Remote for ClientRemote {
     fn version(&self, version_id: &str) -> Result<MrVersion> {
-        self.handle.block_on(self.client.version(version_id))
+        self.handle.block_on(self.client.version_fresh(version_id))
     }
 
     fn identify(&self, sha1: &str) -> Result<Option<MrVersion>> {
@@ -53,6 +59,11 @@ impl Remote for ClientRemote {
             return Err(Error::Network("Modrinth did not answer the lookup of the current jar".into()));
         }
         Ok(None)
+    }
+
+    fn resolve_mod_id(&self, mod_id: &str, loaders: &[String], game_versions: &[String]) -> Result<Option<String>> {
+        let found = self.handle.block_on(self.client.resolve_mod_id(mod_id, loaders, game_versions))?;
+        Ok(found.map(|p| p.id))
     }
 
     fn project_title(&self, project_id: &str) -> Option<String> {
