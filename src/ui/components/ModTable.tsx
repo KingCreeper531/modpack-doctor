@@ -73,7 +73,20 @@ export function worstSeverity(f: ModRow['findings']): Severity | null {
   return f.error ? 'error' : f.warning ? 'warning' : f.info ? 'info' : null;
 }
 
-const MODRINTH_RANK: Record<ModrinthMatch['state'], number> = { update: 0, matched: 1, missing: 2, offline: 3 };
+/**
+ * React keys for the visible rows: the row id, suffixed `#2`, `#3`… on later repeats. Ids repeat
+ * when a `.mrpack` index lists one path twice (`files[].path` is not unique in the format).
+ */
+export function rowKeys(ids: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return ids.map((id) => {
+    const n = (seen.get(id) ?? 0) + 1;
+    seen.set(id, n);
+    return n === 1 ? id : `${id}#${n}`;
+  });
+}
+
+const MODRINTH_RANK:Record<ModrinthMatch['state'], number> = { update: 0, matched: 1, missing: 2, offline: 3 };
 
 const ACCESSOR: Record<ModSortKey, (r: ModRow) => SortValue> = {
   name: (r) => r.name,
@@ -172,6 +185,7 @@ export function ModTable({
     () => flattenTree(rows, expanded, sort ? ACCESSOR[sort.key] : null, sort?.dir ?? 'asc'),
     [rows, expanded, sort],
   );
+  const keys = useMemo(() => rowKeys(flat.map((f) => f.row.id)), [flat]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtual = useVirtualizer({
     count: flat.length,
@@ -218,7 +232,7 @@ export function ModTable({
               const worst = worstSeverity(r.findings);
               return (
                 <TableRow
-                  key={r.id}
+                  key={keys[v.index]}
                   aria-label={r.name}
                   focusable
                   selected={selectedId === r.id}

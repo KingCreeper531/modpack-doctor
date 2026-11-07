@@ -8,6 +8,7 @@
  * | J / K | next / previous finding in the visible list (FINDINGS, or a crash source's findings) |
  * | Enter | expand or collapse the row under the keyboard cursor |
  * | Ctrl/Cmd+R | rescan the open instance (the webview reload is always suppressed) |
+ * | F5, Ctrl/Cmd/Shift+F5, Ctrl/Cmd+Shift+R | nothing: only the webview reload is suppressed |
  * | Esc | close the top-most layer: palette, then the context menu, then the inspector selection |
  *
  * Never while typing: nothing fires when the event comes from an input, textarea, select or
@@ -91,12 +92,18 @@ export function shortcutOf(e: KeyInput): Shortcut | null {
 }
 
 /**
- * Ctrl/Cmd+R reloads the webview (and every piece of state with it); it is swallowed even while
- * typing, where it does not rescan.
+ * The webview's reload keys would discard every piece of state, so they are always swallowed,
+ * even while typing: Ctrl/Cmd+R (which also rescans, outside inputs), F5 alone or with
+ * Ctrl/Cmd/Shift (hard reload), and Ctrl/Cmd+Shift+R (hard reload; no rescan). Ctrl/Cmd+K is
+ * swallowed too (the palette). Alt combinations are left alone (Alt+F5 is not a reload).
  */
 export function suppressesDefault(e: KeyInput): boolean {
+  if (e.altKey) return false;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  return command(e) && !e.altKey && !e.shiftKey && (key === 'r' || key === 'k');
+  if (key === 'F5') return true;
+  if (!command(e)) return false;
+  if (key === 'r') return true;
+  return !e.shiftKey && key === 'k';
 }
 
 /** A finding list the keyboard cursor can walk. */

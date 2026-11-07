@@ -4,7 +4,8 @@
  *
  * Privacy: every string of the report (titles, explanations, evidence, culprits, log sources, the
  * game dir, the instance name) has the user's home folder replaced by `~` (`homeScrubber`:
- * either separator, any case, `%20` for spaces, whole folder names only). Jar paths are relative
+ * either separator, any case, NFC/NFD, UTF-8 percent-encoded, Windows 8.3 short names, UNC admin
+ * shares `\\host\C$\…`, whole folder names only; strings come out NFC). Jar paths are relative
  * to the game dir (`mods/sodium-0.5.8.jar`, `overrides/mods/x.jar`; a `.mrpack` index entry by its
  * index path), log sources are their relative source ids.
  *

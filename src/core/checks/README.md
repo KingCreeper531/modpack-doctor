@@ -103,9 +103,12 @@ checked from Modrinth data only, identified by sha1 like jars (`planQueries` inc
 `declaredMatch` in `../modrinth` gives their state):
 
 - `mrpackDeclared.ts`: E-WRONG-LOADER, E-MC-RANGE (mods under `mods/` only), E-MISSING-DEP (by
-  Modrinth project id, per side), I-NOT-ON-MODRINTH (one aggregate for declared files, separate
-  from the override jars' one). Needs a Modrinth context that is not offline; failed lookups are
-  unknown, never "missing". The header comment is the full rule.
+  Modrinth project id, per side; **warning** for declared files, since a jar Modrinth cannot see
+  into may provide it; Quilted Fabric API counts as Fabric API; dependencies of another loader's
+  build, and loader-family-only ones such as Fabric API on a Forge pack, are skipped),
+  I-NOT-ON-MODRINTH (one aggregate for declared files, separate from the override jars' one).
+  Needs a Modrinth context that is not offline; failed lookups are unknown, never "missing". Two
+  index entries with one path: the last one counts. The header comment is the full rule.
 - `mrpackDownload.ts`: W-MRPACK-DOWNLOAD (warning) for a download URL outside the allowlist
   (`cdn.modrinth.com`, `github.com`, `raw.githubusercontent.com`, `gitlab.com`, https only, no user
   info, no port but 443, exact host). Works offline. The URL parser is hand-written (no `URL`

@@ -22,14 +22,23 @@
  *   **error**; lowered to **warning** when the list holds another release of the same line
  *   (`1.20` / `1.20.2` for a `1.20.1` pack, `26.1` for `26.1.2`): Modrinth lists what the author
  *   tagged, and the jar's own range often admits the neighbour. Unknown MC or empty list → nothing.
- * - **E-MISSING-DEP** (error): a `required` Modrinth dependency (by project id) of an identified
- *   declared file is not installed on a side where that file is. Present on a side = a declared
- *   file (env not `unsupported` for that side) or an active top-level override jar for that side
- *   (`overrides/` both, `client-overrides/` client, `server-overrides/` server) identified as that
- *   project, or an override jar whose relevant mod ids / `provides` equal the project's slug
- *   (`-` ≡ `_`, case-insensitive) when the project is in `ctx.projects`. When any file on that
- *   side is unknown (lookup failed, no sha1), the side is skipped: it could be the provider.
- *   Dependencies with only a version id, and on the file's own project, are skipped.
+ * - **E-MISSING-DEP**, lowered to **warning** for declared files (the code keeps its `E-` name;
+ *   the severity field says warning): Modrinth knows project ids only, and a jar it cannot see
+ *   into may provide the dependency under another name. A `required` Modrinth dependency (by
+ *   project id) of an identified declared file is not installed on a side where that file is.
+ *   Present on a side = a declared file (env not `unsupported` for that side) or an active
+ *   top-level override jar for that side (`overrides/` both, `client-overrides/` client,
+ *   `server-overrides/` server) identified as that project or as a project that provides it
+ *   (`PROJECT_PROVIDES`: Quilted Fabric API provides Fabric API), or an override jar whose
+ *   relevant mod ids / `provides` equal the project's slug (`-` ≡ `_`, case-insensitive) when the
+ *   project is in `ctx.projects`. When any file on that side is unknown (lookup failed, no sha1),
+ *   the side is skipped: it could be the provider. Skipped too: dependencies with only a version
+ *   id or on the file's own project; every dependency of a version whose mod loaders exclude the
+ *   pack's (it is another loader's build; E-WRONG-LOADER covers it under `mods/`); a dependency
+ *   that exists for one loader family only (`LOADER_FAMILY_DEPS`: Fabric API, Quilted Fabric API,
+ *   Fabric Language Kotlin) when the pack's loader is not in it (a multi-loader version lists
+ *   Fabric API for its Fabric build). Unknown / vanilla pack loader → no loader-based skipping.
+ * - When two index entries share a path, the last one is checked (`declaredFiles`).
  * - **I-NOT-ON-MODRINTH** (info): every declared file not identified (`declaredMatch` →
  *   `missing`; failed lookups are unknown, not missing) in ONE aggregate finding with a stable id
  *   (`findingId('I-NOT-ON-MODRINTH', [], 'declared-aggregate')`), separate from the override jars'
@@ -60,16 +69,18 @@ export function declaredRef(file: DeclaredFile): JarRef {
   return { jarId: file.path, fileName: basename(file.path) };
 }
 
-/** Declared files of the input, de-duplicated by path (first wins), sorted by path. */
+/**
+ * Declared files of the input, de-duplicated by path, sorted by path. When two index entries share
+ * a path the LAST one wins: a launcher installing the pack writes them in order, so the last
+ * overwrites the first (Rust keeps the last too and reports the duplicate as a `ScanIssue`).
+ */
 export function declaredFiles(input: CheckInput): DeclaredFile[] {
-  const seen = new Set<string>();
-  const out: DeclaredFile[] = [];
+  const byPath = new Map<string, DeclaredFile>();
   for (const f of input.scan.declared ?? []) {
-    if (!f || typeof f.path !== 'string' || f.path.length === 0 || seen.has(f.path)) continue;
-    seen.add(f.path);
-    out.push(f);
+    if (!f || typeof f.path !== 'string' || f.path.length === 0) continue;
+    byPath.set(f.path, f);
   }
-  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /** `note` naming the index entry. */
@@ -160,6 +171,31 @@ function normalizeId(id: string): string {
   return id.trim().toLowerCase().replace(/-/g, '_');
 }
 
+/**
+ * Modrinth projects whose files also provide other projects (by project id): a required
+ * dependency on a provided project is met by the provider. Quilted Fabric API (`qvIfYCYJ`) ships
+ * Fabric API (`P7dR8mSH`) under Fabric API's mod ids.
+ */
+export const PROJECT_PROVIDES: Readonly<Record<string, readonly string[]>> = {
+  qvIfYCYJ: ['P7dR8mSH'],
+};
+
+/**
+ * Dependency projects that exist for one loader family only (Modrinth loader names). A
+ * multi-loader version lists them for its Fabric/Quilt build; on a pack whose loader is not in
+ * the family the dependency does not apply.
+ */
+export const LOADER_FAMILY_DEPS: Readonly<Record<string, readonly string[]>> = {
+  P7dR8mSH: ['fabric', 'quilt'], // Fabric API
+  qvIfYCYJ: ['quilt'], // Quilted Fabric API
+  Ha28R6CL: ['fabric', 'quilt'], // Fabric Language Kotlin
+};
+
+/** The version's mod loaders (lower-cased; `datapack`, `minecraft`, shader loaders left out). */
+function modLoadersOf(v: MrVersion): string[] {
+  return v.loaders.map((l) => l.trim().toLowerCase()).filter((l) => MOD_LOADERS.has(l));
+}
+
 /** What is installed on one side: identified project ids, mod ids of override jars, unknowns. */
 interface SideView {
   projects: Set<string>;
@@ -176,8 +212,10 @@ function sideViews(ctx: CheckContext, mr: ModrinthContext, files: readonly Decla
   const failed = new Set(mr.failed.map((s) => s.toLowerCase()));
   const note = (side: Side, sha1: string): void => {
     const v = sha1.length > 0 ? mr.versions[sha1] : undefined;
-    if (v) views[side].projects.add(v.projectId);
-    else if (sha1.length === 0 || failed.has(sha1)) views[side].unknown = true;
+    if (v) {
+      views[side].projects.add(v.projectId);
+      for (const p of PROJECT_PROVIDES[v.projectId] ?? []) views[side].projects.add(p);
+    } else if (sha1.length === 0 || failed.has(sha1)) views[side].unknown = true;
   };
   for (const file of files) {
     for (const side of ['client', 'server'] as const) if (sideInstalls(file, side)) note(side, sha1Key(file.sha1));
@@ -201,7 +239,7 @@ function wrongLoader(ctx: CheckContext, it: Identified): Finding | null {
   const accepted = acceptedLoaders(ctx.pack);
   if (accepted.size === 0 || !isModPath(it.file.path)) return null;
   const loaders = it.version.loaders.map((l) => l.trim().toLowerCase());
-  if (!loaders.some((l) => MOD_LOADERS.has(l)) || loaders.some((l) => accepted.has(l))) return null;
+  if (modLoadersOf(it.version).length === 0 || loaders.some((l) => accepted.has(l))) return null;
   const name = displayName(it.file, it.project);
   const packLoader = describeLoader(ctx.pack);
   const loaderName = ctx.pack.loader ? LOADER_NAMES[ctx.pack.loader.kind] : packLoader;
@@ -249,11 +287,19 @@ function mcRange(ctx: CheckContext, it: Identified): Finding | null {
 
 function missingDeps(ctx: CheckContext, mr: ModrinthContext, it: Identified, views: Record<Side, SideView>): Finding[] {
   const out: Finding[] = [];
+  const accepted = acceptedLoaders(ctx.pack);
+  // A version not made for the pack's loader family (E-WRONG-LOADER under mods/) lists the
+  // dependencies of another loader's build: none of them apply here.
+  const versionLoaders = modLoadersOf(it.version);
+  if (accepted.size > 0 && versionLoaders.length > 0 && !versionLoaders.some((l) => accepted.has(l))) return out;
   const seen = new Set<string>();
   for (const dep of it.version.dependencies) {
     const pid = dep.projectId?.trim();
     if (dep.dependencyType !== 'required' || !pid || pid === it.version.projectId || seen.has(pid)) continue;
     seen.add(pid);
+    // A multi-loader version lists e.g. Fabric API for its Fabric build: not needed on Forge.
+    const family = LOADER_FAMILY_DEPS[pid];
+    if (accepted.size > 0 && family && !family.some((l) => accepted.has(l))) continue;
     const sides = (['client', 'server'] as const).filter(
       (side) => sideInstalls(it.file, side) && !views[side].unknown && !provided(views[side], pid, mr),
     );
@@ -265,12 +311,15 @@ function missingDeps(ctx: CheckContext, mr: ModrinthContext, it: Identified, vie
     out.push(
       makeFinding({
         code: 'E-MISSING-DEP',
-        severity: 'error',
-        title: `${name} requires ${depName}, which the pack does not include${where}`,
+        // Warning, not error: Modrinth only knows project ids, and a jar it cannot see into (a
+        // file hosted elsewhere, a fork, a bundle) may provide the dependency under another name.
+        severity: 'warning',
+        title: `${name} requires ${depName}, which the pack does not seem to include${where}`,
         explanation:
           `Modrinth lists ${depName} as a required dependency of ${versionLabel(it.version, it.project)} (${it.file.path}), ` +
-          `and neither the .mrpack index nor its override jars provide it${where}. ` +
-          `The loader will refuse to start with a missing mandatory dependency. The pack needs ${depName} added.`,
+          `and no file of the .mrpack index or its override jars is ${depName} as far as Modrinth can tell${where}. ` +
+          `Another file may still provide it under a different name; if not, the loader refuses to start with a missing ` +
+          `mandatory dependency and the pack needs ${depName} added.`,
         culprits: [declaredRef(it.file)],
         evidence: [
           indexNote(it.file),

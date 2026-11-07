@@ -337,8 +337,9 @@ function DeclaredDetails({ instanceId, file }: { instanceId: string; file: Decla
         <PlateRow label="Env">{env ? env.words : 'not stated'}</PlateRow>
         <PlateRow label="Downloads">
           <span className="flex flex-col">
-            {file.downloads.map((u) => (
-              <span key={u}>{u}</span>
+            {/* An index may list the same URL twice: key by position, not by URL. */}
+            {file.downloads.map((u, i) => (
+              <span key={`${i}:${u}`}>{u}</span>
             ))}
           </span>
         </PlateRow>
@@ -375,7 +376,8 @@ export function JarDetails({ instanceId, jarId }: { instanceId: string; jarId: s
   const stub = useApp((s) => s.scans[instanceId]?.stubs.find((j) => j.id === jarId) ?? null);
   const byId = useMemo(() => new Map((result?.jars ?? []).map((j) => [j.id, j])), [result]);
   const jar = byId.get(jarId);
-  const declared = jar ? undefined : result?.declared?.find((d) => d.path === jarId);
+  // Two index entries with one path: the last one counts (as in Rust and the checks).
+  const declared = jar ? undefined : [...(result?.declared ?? [])].reverse().find((d) => d.path === jarId);
 
   if (declared) return <DeclaredDetails instanceId={instanceId} file={declared} />;
   if (!jar) {
