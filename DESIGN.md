@@ -249,7 +249,7 @@ Columns, left to right:
 | name | flex | `t-body`, with the mod id beneath in `t-mono` `fg-faint` |
 | version | 120px | `t-mono` |
 | loader | 80px | glyph plus abbreviation |
-| Modrinth | 112px | `matched` (`ok`), `update 0.5.11` (`signal`), `not on Modrinth` (`fg-faint`), `—` offline |
+| Modrinth | 112px | `matched` (`ok`), `update 0.5.11` (`signal`, followed by `beta` for a non-release), `not on Modrinth` (`fg-faint`), `—` unknown/offline |
 | status | 96px | finding count by severity |
 | enabled | 48px | toggle |
 
@@ -306,7 +306,11 @@ expand under their parent with a 16px indent and a `└` glyph in `fg-faint`.
 - **Scanning:** the grid fills in live. The summary strip shows `scanning 132/214`. The UI never
   blocks.
 - **Offline / Modrinth error:** a one-line notice in the summary strip, `Modrinth unreachable —
-  static checks only`, in `fg-dim` with an `info` pip.
+  static checks only`, in `fg-dim` with an `info` pip. Rate limited: `Modrinth rate limit —
+  retrying in 42 s` (one automatic retry). Switched off by the user: a quiet `Modrinth off` summary
+  segment in `fg-faint`, no pip.
+- **Modrinth settings** ("Look up mods online", "Suggest beta updates") sit in the rail footer
+  above THEME.
 - **Errors from Rust** (`AppError`) render as an inline row with the `err` rail, the kind code in
   mono and the message, never as a toast stack.
 
