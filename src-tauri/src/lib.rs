@@ -64,6 +64,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             save_report,
             set_window_theme,
             home_dir,
+            app_info,
             check_update,
             install_update,
         ])

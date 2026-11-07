@@ -229,7 +229,22 @@ pub struct ScanResult {
     pub jars: Vec<JarRecord>,
     /// `.mrpack` only; empty otherwise.
     pub declared: Vec<DeclaredFile>,
+    /// `.mrpack` only: download URLs of index entries that were skipped (bad hash, unsafe or
+    /// folder path) or shadowed by a later entry with the same path. A launcher may still install
+    /// them, so W-MRPACK-DOWNLOAD checks these too (CONTRACTS invariant 15). Same sentinels as
+    /// `DeclaredFile.downloads`.
+    pub unverified_downloads: Vec<UnverifiedDownload>,
     pub issues: Vec<ScanIssue>,
+}
+
+/// A download URL from a `.mrpack` index entry that is not in `ScanResult.declared`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UnverifiedDownload {
+    /// The entry's `path` as written in the index (may be unsafe; display only), or
+    /// `files[<i>]` when it has none.
+    pub entry: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]

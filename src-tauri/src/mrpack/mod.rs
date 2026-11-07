@@ -281,6 +281,7 @@ pub fn scan_pack(
         duration_ms: 0,
         jars: Vec::new(),
         declared: Vec::new(),
+        unverified_downloads: Vec::new(),
         issues: Vec::new(),
     };
     let finish = |mut res: ScanResult| {

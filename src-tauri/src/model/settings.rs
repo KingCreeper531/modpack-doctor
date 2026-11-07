@@ -117,6 +117,15 @@ pub struct UpdateInfo {
     pub date: Option<String>,
 }
 
+/// `app_info`: shown in About. Empty strings when a folder can't be resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub tauri_version: String,
+    pub data_dir: String,
+    pub cache_dir: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportFormat {

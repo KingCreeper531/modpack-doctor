@@ -382,7 +382,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (opts.scanMs > 0) await sleep(tick);
     }
     if (freezeAt < top.length) return new Promise<Result<ScanResult>>(() => undefined);
-    return ok({ instanceId, startedAtMs, durationMs: Date.now() - startedAtMs, jars, declared: inst.launcher === 'mrpack' ? mockDeclared(instanceId) : [], issues: [] });
+    return ok({ instanceId, startedAtMs, durationMs: Date.now() - startedAtMs, jars, declared: inst.launcher === 'mrpack' ? mockDeclared(instanceId) : [], unverifiedDownloads: [], issues: [] });
   }
 
   function applyPatch(p: SettingsPatch): Settings {
@@ -579,6 +579,12 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     setWindowTheme: async () => ok(null),
     homeDir: async () => ok(String.raw`C:\Users\alex`),
+    appInfo: async () =>
+      ok({
+        tauriVersion: '2.12.5',
+        dataDir: String.raw`C:\Users\alex\AppData\Roaming\io.github.kingcreeper531.modpackdoctor`,
+        cacheDir: String.raw`C:\Users\alex\AppData\Local\io.github.kingcreeper531.modpackdoctor`,
+      }),
     checkUpdate: async (): Promise<Result<UpdateInfo | null>> => {
       await lag();
       if (opts.scenario === 'updatefail') {

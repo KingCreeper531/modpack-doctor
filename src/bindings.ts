@@ -121,6 +121,11 @@ export const commands = {
 	 *  reports (CONTRACTS invariant 16). Empty when the OS reports none. Read-only; never a scope.
 	 */
 	homeDir: () => typedError<string, AppError>(__TAURI_INVOKE("home_dir")),
+	/**
+	 *  Facts for the About plate (DESIGN §6.8): the Tauri runtime version and the app's own data and
+	 *  cache folders (absolute). Read-only.
+	 */
+	appInfo: () => typedError<AppInfo, AppError>(__TAURI_INVOKE("app_info")),
 	/**  Checks GitHub for a newer release and reports it (null when up to date); never installs. */
 	checkUpdate: () => typedError<UpdateInfo | null, AppError>(__TAURI_INVOKE("check_update")),
 	/**  Downloads, verifies the updater signature, installs, restarts. */
@@ -160,6 +165,13 @@ export type AppError = {
 	path: string | null,
 	/**  `rateLimited` only: seconds until Modrinth accepts requests again. Omitted otherwise. */
 	retryAfterS?: number | null,
+};
+
+/**  `app_info`: shown in About. Empty strings when a folder can't be resolved. */
+export type AppInfo = {
+	tauriVersion: string,
+	dataDir: string,
+	cacheDir: string,
 };
 
 /**  One executed work order. Undo works per action (`plan_undo(backupId, actionIndexes)`). */
@@ -793,6 +805,13 @@ export type ScanResult = {
 	jars: JarRecord[],
 	/**  `.mrpack` only; empty otherwise. */
 	declared: DeclaredFile[],
+	/**
+	 *  `.mrpack` only: download URLs of index entries that were skipped (bad hash, unsafe or
+	 *  folder path) or shadowed by a later entry with the same path. A launcher may still install
+	 *  them, so W-MRPACK-DOWNLOAD checks these too (CONTRACTS invariant 15). Same sentinels as
+	 *  `DeclaredFile.downloads`.
+	 */
+	unverifiedDownloads: UnverifiedDownload[],
 	issues: ScanIssue[],
 };
 
@@ -846,6 +865,16 @@ export type Side = "client" | "server";
 export type SideSupport = "required" | "optional" | "unsupported" | "unknown";
 
 export type ThemePref = "system" | "dark" | "light";
+
+/**  A download URL from a `.mrpack` index entry that is not in `ScanResult.declared`. */
+export type UnverifiedDownload = {
+	/**
+	 *  The entry's `path` as written in the index (may be unsafe; display only), or
+	 *  `files[<i>]` when it has none.
+	 */
+	entry: string,
+	url: string,
+};
 
 export type UpdateInfo = {
 	version: string,

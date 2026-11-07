@@ -441,7 +441,7 @@ fn scan_targets(
         jars.extend(r);
         issues.extend(i);
     }
-    ScanResult { instance_id: instance_id.to_string(), started_at_ms: 0, duration_ms: 0, jars, declared: Vec::new(), issues }
+    ScanResult { instance_id: instance_id.to_string(), started_at_ms: 0, duration_ms: 0, jars, declared: Vec::new(), unverified_downloads: Vec::new(), issues }
 }
 
 /// Re-point an error at the relative path so messages never show absolute paths.

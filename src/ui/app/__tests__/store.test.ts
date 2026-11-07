@@ -148,7 +148,7 @@ describe('progress batching', () => {
     subs.progress!({ instanceId: ATM.id, done: 3, total: 3, jarId: 'mods/c.jar', parsed: true });
     off();
     // The result arrives before the frame: pending progress is flushed first, never lost.
-    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 5, jars: [], declared: [], issues: [] } });
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 5, jars: [], declared: [], unverifiedDownloads: [], issues: [] } });
     await until(() => store.getState().scans[ATM.id]?.status === 'done');
     const end = store.getState().scans[ATM.id]!;
     expect(end.progress['mods/c.jar']).toBe(true);
@@ -395,7 +395,7 @@ describe('review fixes', () => {
     await until(() => store.getState().scans[ATM.id]?.status === 'scanning');
     const stub = (id: string) => ({ id, path: id, fileName: id.slice(5), disabled: false });
     subs.started!({ instanceId: ATM.id, jars: [stub('mods/a.jar')] });
-    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], unverifiedDownloads: [], issues: [] } });
     await until(() => store.getState().scans[ATM.id]?.status === 'done');
     const before = store.getState().scans[ATM.id]!;
     subs.started!({ instanceId: ATM.id, jars: [stub('mods/late.jar')] });
@@ -414,11 +414,11 @@ describe('review fixes', () => {
     void store.getState().scan(ATM.id);
     expect(store.getState().rescanQueued[ATM.id]).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
-    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], unverifiedDownloads: [], issues: [] } });
     await until(() => spy.mock.calls.length === 2);
     expect(store.getState().scans[ATM.id]!.status).toBe('scanning');
     expect(store.getState().rescanQueued[ATM.id]).toBeUndefined();
-    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], issues: [] } });
+    resolve({ status: 'ok', data: { instanceId: ATM.id, startedAtMs: 0, durationMs: 1, jars: [], declared: [], unverifiedDownloads: [], issues: [] } });
     await until(() => store.getState().scans[ATM.id]?.status === 'done');
     expect(spy).toHaveBeenCalledTimes(2);
   });

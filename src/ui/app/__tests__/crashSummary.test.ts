@@ -64,7 +64,7 @@ describe('summarizeCrash', () => {
   it('summarises a real crash report mapped to the mock jars', () => {
     const text = readFileSync(join(FIXTURES, 'forge', 'fg20-mixin-transformer-error.txt'), 'utf8');
     const jars = mockJars(MOCK_INSTANCES[0]!.id);
-    const index = buildJarIndex({ instanceId: 'x', startedAtMs: 0, durationMs: 0, jars, declared: [], issues: [] });
+    const index = buildJarIndex({ instanceId: 'x', startedAtMs: 0, durationMs: 0, jars, declared: [], unverifiedDownloads: [], issues: [] });
     const digest = digestFromText(text, { id: 'crash-reports/crash.txt', kind: 'crashReport', modifiedMs: 0, size: 0 });
     const s = summarizeCrash(analyzeCrash({ digest, index }))!;
     expect(s.headline.startsWith('Modpack crashed — likely cause: ')).toBe(true);

@@ -250,7 +250,7 @@ export function nested(parent: JarRecord, spec: JarSpec, loader: LoaderKind = 'f
 }
 
 export function scan(...jars: JarRecord[]): ScanResult {
-  return { instanceId: '0123456789abcdef', startedAtMs: 0, durationMs: 10, jars, declared: [], issues: [] };
+  return { instanceId: '0123456789abcdef', startedAtMs: 0, durationMs: 10, jars, declared: [], unverifiedDownloads: [], issues: [] };
 }
 
 export function instance(over: Partial<Instance> = {}): Instance {

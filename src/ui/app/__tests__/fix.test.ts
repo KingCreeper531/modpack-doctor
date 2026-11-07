@@ -182,7 +182,7 @@ describe('planning refusals', () => {
 
   it('fix buttons say why they are disabled while the pack identity is unknown', () => {
     expect(fixBlockReason(undefined)).toBe('Fixes can be planned once the scan has finished.');
-    const result = { instanceId: 'x', startedAtMs: 0, durationMs: 0, jars: [], declared: [], issues: [] };
+    const result = { instanceId: 'x', startedAtMs: 0, durationMs: 0, jars: [], declared: [], unverifiedDownloads: [], issues: [] };
     expect(fixBlockReason({ result, pack: { mcVersion: null, loader: null, side: 'client', source: 'unknown' } })).toMatch(/Pack identity/);
     expect(fixBlockReason({ result, pack: { mcVersion: '1.20.1', loader: { kind: 'forge', version: null }, side: 'client', source: 'launcher' } })).toBeNull();
   });

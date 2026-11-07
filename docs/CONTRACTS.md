@@ -319,7 +319,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       `server-overrides/mods/` are scanned; other jars under the override trees are `ScanIssue`s.
       `downloads` keep every string URL ≤ 4 096 bytes (up to 64); anything else becomes a sentinel
       that is never a valid URL (`invalid:too-long`, `invalid:not-a-string`, `invalid:not-a-list`,
-      `invalid:more-urls`) plus a `ScanIssue`, so W-MRPACK-DOWNLOAD always sees it. The read-only rule
+      `invalid:more-urls`) plus a `ScanIssue`, so W-MRPACK-DOWNLOAD always sees it. URLs of index
+      entries that were skipped (bad hash, unsafe or folder path) or shadowed by a later entry with
+      the same path go to `ScanResult.unverifiedDownloads` and are checked too (a launcher may still
+      install them). `mods/` matches case-insensitively in override paths. The read-only rule
       pins the canonical path captured at open; if it later resolves elsewhere the pack is unreadable
       until reopened. A `:` in a file name (alternate data stream) is never a pack or a report name.
       Pack identity overrides are refused (`Invalid`): packs are session-only. Display names strip
@@ -398,6 +401,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `save_report` | `defaultName, format, contents` | `string \| null` | | M7 |
 | `set_window_theme` | `theme: ResolvedTheme` | `null` | | M1 (done) |
 | `home_dir` | — | `string` (empty if unknown) | | M7 |
+| `app_info` | — | `AppInfo` (Tauri version, data dir, cache dir) | | M8 |
 | `check_update` / `install_update` | — | `UpdateInfo \| null` / `null` | | M8 |
 
 Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `CrashDetected`,

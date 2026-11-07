@@ -242,6 +242,20 @@ pub async fn set_settings(_app: AppHandle, state: State<'_, AppState>, patch: Se
 
 // `save_report` lives in `report.rs` (glob re-export above).
 
+/// Facts for the About plate (DESIGN §6.8): the Tauri runtime version and the app's own data and
+/// cache folders (absolute). Read-only.
+#[tauri::command]
+#[specta::specta]
+pub fn app_info(app: AppHandle) -> Cmd<AppInfo> {
+    use tauri::Manager;
+    let p = app.path();
+    Ok(AppInfo {
+        tauri_version: tauri::VERSION.to_string(),
+        data_dir: p.app_data_dir().map(|d| d.display().to_string()).unwrap_or_default(),
+        cache_dir: p.app_cache_dir().map(|d| d.display().to_string()).unwrap_or_default(),
+    })
+}
+
 /// The user's home folder (absolute), so `src/core/report` can replace it by `~` in exported
 /// reports (CONTRACTS invariant 16). Empty when the OS reports none. Read-only; never a scope.
 #[tauri::command]
