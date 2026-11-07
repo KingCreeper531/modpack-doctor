@@ -8,7 +8,7 @@
  * `from <file>`, expanding to the log evidence with jar chips) or as the whole log digest
  * (virtualised log viewer, culprit lines highlighted).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { LogSource } from '../../bindings';
 import type { Finding, Severity } from '../../core/model';
@@ -22,7 +22,8 @@ import { Pip, type PipTone } from '../components/Severity';
 import { TriageRow } from '../components/TriageRow';
 import { digestView, LOG_KIND_LABEL, sourceDir, sourceName, type CrashAnalysis, type CrashPane } from '../app/crashState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
-import { useNow } from './hooks';
+import { findingMenuFor } from '../app/rowMenus';
+import { useFindingCursor, useNow, useRowMenu } from './hooks';
 import { useFixBlock } from './fixHooks';
 import { useFixVersions } from './modrinthHooks';
 
@@ -125,6 +126,20 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
     if (top) setExpanded(new Set([top.id]));
   }, [findings, opened]);
   const name = sourceName(source.id);
+  const listRef = useRef<HTMLDivElement>(null);
+  const rowMenu = useRowMenu();
+  /** Click or Enter on the keyboard cursor: expand/collapse and show it in the inspector. */
+  const open = (id: string) => {
+    setExpanded((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    a.select({ kind: 'crash', id, sourceId: source.id });
+  };
+  const ids = useMemo(() => findings.map((f) => f.id), [findings]);
+  const cursor = useFindingCursor(listRef, ids, open);
 
   if (!findings.length) {
     return (
@@ -139,7 +154,7 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
     );
   }
   return (
-    <div role="list" aria-label={`Crash findings, ${formatInt(findings.length)}`}>
+    <div ref={listRef} role="list" aria-label={`Crash findings, ${formatInt(findings.length)}`}>
       {findings.map((f) => (
         <div role="listitem" key={f.id} data-finding-id={f.id}>
           <TriageRow
@@ -147,14 +162,11 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
             origin={name}
             expanded={expanded.has(f.id)}
             onToggle={() => {
-              setExpanded((cur) => {
-                const next = new Set(cur);
-                if (next.has(f.id)) next.delete(f.id);
-                else next.add(f.id);
-                return next;
-              });
-              a.select({ kind: 'crash', id: f.id, sourceId: source.id });
+              a.setCursor(f.id);
+              open(f.id);
             }}
+            focused={cursor === f.id}
+            onContextMenu={(e) => rowMenu(e, `Crash finding ${f.code}`, (st) => findingMenuFor(st, f.id, source.id))}
             selected={selection?.kind === 'crash' && selection.id === f.id && selection.sourceId === source.id}
             jarNames={jarNames}
             fixVersions={versions}

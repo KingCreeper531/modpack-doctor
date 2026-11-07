@@ -3,7 +3,7 @@
  * split by hairlines, sortable headers with ▲/▼ in fg-faint, numbers right-aligned and tabular.
  * Columns are a CSS grid so the virtualised ModTable can share the header exactly.
  */
-import { createContext, useContext, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { createContext, useContext, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 
 import { cx } from './cx';
 import { ariaSort, nextSort, type SortState } from './sort';
@@ -93,17 +93,19 @@ export interface TableRowProps {
   selected?: boolean;
   onClick?: () => void;
   onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
   focusable?: boolean;
   className?: string;
   children: ReactNode;
   'aria-label'?: string;
+  'data-row-id'?: string;
 }
 
 /**
  * A 24px body row. Dense rows can't fit the offset focus ring, so they use the §6.5 inset 1px
  * signal outline plus `raised` instead (utilities beat the base-layer `:focus-visible` rule).
  */
-export function TableRow({ style, selected = false, onClick, onKeyDown, focusable = false, className, children, ...aria }: TableRowProps) {
+export function TableRow({ style, selected = false, onClick, onKeyDown, onContextMenu, focusable = false, className, children, ...aria }: TableRowProps) {
   const isGrid = useContext(TableRoleContext) === 'grid';
   return (
     <div
@@ -112,6 +114,7 @@ export function TableRow({ style, selected = false, onClick, onKeyDown, focusabl
       aria-selected={isGrid ? selected : undefined}
       onClick={onClick}
       onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
       style={style}
       className={cx(
         'grid h-6 items-center border-b border-line t-body text-fg-dim',

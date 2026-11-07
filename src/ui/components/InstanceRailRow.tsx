@@ -3,6 +3,8 @@
  * launcher abbreviation, MC version, loader glyph + version, mod count. A 4px status pip on the
  * right edge shows the last scan. Selected: 2px `signal` left rule plus `raised`.
  */
+import type { MouseEvent } from 'react';
+
 import type { Instance } from '../../bindings';
 import { LoaderGlyph } from '../glyphs/LoaderGlyph';
 import { LOADER_NAME } from '../glyphs/loaders';
@@ -33,9 +35,11 @@ export interface InstanceRailRowProps {
   crash?: string | null;
   /** Watch mode is on (a small `watching` word on the name line). */
   watching?: boolean;
+  /** Right-click / Menu key: the instance's context menu. */
+  onContextMenu?: (e: MouseEvent<HTMLElement>) => void;
 }
 
-export function InstanceRailRow({ instance, status, selected = false, onSelect, crash = null, watching = false }: InstanceRailRowProps) {
+export function InstanceRailRow({ instance, status, selected = false, onSelect, crash = null, watching = false, onContextMenu }: InstanceRailRowProps) {
   const loader = instance.loader;
   return (
     <button
@@ -44,6 +48,7 @@ export function InstanceRailRow({ instance, status, selected = false, onSelect, 
       aria-label={`${instance.name}, ${LAUNCHER_NAME[instance.launcher]}, ${STATUS_WORD[status]}${crash ? `, ${crash}` : ''}`}
       title={instance.root}
       onClick={() => onSelect?.(instance.id)}
+      onContextMenu={onContextMenu}
       className={cx(
         'flex h-12 w-full items-center gap-2 border-b border-l-2 border-b-line pr-2 pl-[14px] text-left',
         selected ? 'border-l-signal bg-raised' : 'border-l-transparent hover:bg-raised',

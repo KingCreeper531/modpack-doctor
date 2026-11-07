@@ -379,7 +379,11 @@ describe('rail actions', () => {
     (backend.events.instanceAdded as unknown as { emit(p: unknown): void }).emit({ instance: inst });
     expect(store.getState().selectedInstanceId).toBe(inst.id);
     (backend.events.dropRejected as unknown as { emit(p: unknown): void }).emit({ name: 'x.zip', reason: 'not a folder or .mrpack' });
-    expect(store.getState().railError?.message).toBe('x.zip was not added: not a folder or .mrpack');
+    expect(store.getState().dropRejected).toEqual({ name: 'x.zip', reason: 'not a folder or .mrpack' });
+    expect(store.getState().railError).toBeNull();
+    // The next added instance clears it.
+    (backend.events.instanceAdded as unknown as { emit(p: unknown): void }).emit({ instance: { ...inst, id: 'eeeeeeeeeeeeeeee' } });
+    expect(store.getState().dropRejected).toBeNull();
   });
 });
 
@@ -430,15 +434,14 @@ describe('review fixes', () => {
     expect(sc.detected).toMatchObject({ mcVersion: '1.20.1', source: 'launcher' });
   });
 
-  it('treats an unavailable scan (.mrpack in this build) as not scanned, not failed', async () => {
-    const { store } = mockStore();
+  it('treats an unavailable scan as not scanned, not failed', async () => {
+    const { store, backend } = mockStore();
     await store.getState().init();
     const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
+    vi.spyOn(backend.commands, 'scanInstance').mockResolvedValue({ status: 'error', error: { kind: 'unavailable', message: 'Not in this build.', path: null } });
     store.getState().selectInstance(pack.id);
     await until(() => store.getState().scans[pack.id]?.status === 'error');
-    const sc = store.getState().scans[pack.id]!;
-    expect(sc.error).toEqual({ kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet.", path: null });
-    expect(instanceStatus(sc)).toBe('unscanned');
+    expect(instanceStatus(store.getState().scans[pack.id])).toBe('unscanned');
   });
 
   it('opens the inspector drawer on selection and closes it on request', async () => {

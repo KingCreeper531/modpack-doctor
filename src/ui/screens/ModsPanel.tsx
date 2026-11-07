@@ -13,12 +13,14 @@ import { ErrorRow } from '../components/ErrorRow';
 import { basename, formatInt } from '../components/format';
 import { ModTable } from '../components/ModTable';
 import { Panel } from '../components/Panel';
-import { jarMatch } from '../../core/modrinth';
-import { deriveModRows } from '../app/derive';
+import { declaredMatch, jarMatch } from '../../core/modrinth';
+import { deriveModRows, derivePackRows } from '../app/derive';
+import { modMenuFor } from '../app/rowMenus';
 import { iconConverter } from '../app/external';
-import { modrinthRowView, viewContext } from '../app/modrinthState';
+import { declaredRowView, modrinthRowView, viewContext } from '../app/modrinthState';
 import { emptyScan } from '../app/scanState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import { useRowMenu } from './hooks';
 
 /** The most recent enable/disable refusal, if any. */
 function toggleError(errors: Readonly<Record<string, AppError>>): [string, AppError] | null {
@@ -39,18 +41,19 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
   const mr = useApp((st) => st.modrinth[instanceId]);
   const modrinthOn = useApp((st) => st.settings.modrinthEnabled);
   const backendKind = useApp((st) => st.backendKind);
+  // An opened .mrpack: override jars plus the index's declared files, read-only (no toggles).
+  const pack = useApp((st) => st.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
   const a = useActions();
+  const rowMenu = useRowMenu();
 
   const ctx = viewContext(mr, s.result);
   const icons = mr?.icons;
-  const rows = useMemo(
-    () =>
-      deriveModRows(
-        { ...emptyScan(), stubs: s.stubs ?? [], result: s.result, findings: s.findings ?? [], status: s.status },
-        modrinthRowView({ jarMatch }, ctx, iconConverter(backendKind), icons),
-      ),
-    [s.stubs, s.result, s.findings, s.status, ctx, backendKind, icons],
-  );
+  const rows = useMemo(() => {
+    const scan = { ...emptyScan(), stubs: s.stubs ?? [], result: s.result, findings: s.findings ?? [], status: s.status };
+    const view = modrinthRowView({ jarMatch }, ctx, iconConverter(backendKind), icons);
+    return pack ? derivePackRows(scan, view, declaredRowView({ declaredMatch }, ctx)) : deriveModRows(scan, view);
+  }, [s.stubs, s.result, s.findings, s.status, ctx, backendKind, icons, pack]);
+  const declaredCount = pack ? (s.result?.declared.length ?? 0) : 0;
   const looking = mr?.status === 'loading';
   const disabled = rows.filter((r) => !r.enabled).length;
   const err = toggleError(fixErrors);
@@ -58,7 +61,13 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
   return (
     <Panel
       legend="Mods"
-      meta={rows.length ? `${formatInt(rows.length)} jars · ${formatInt(disabled)} disabled` : undefined}
+      meta={
+        rows.length
+          ? pack
+            ? `${formatInt(rows.length - declaredCount)} in zip · ${formatInt(declaredCount)} declared`
+            : `${formatInt(rows.length)} jars · ${formatInt(disabled)} disabled`
+          : undefined
+      }
       actions={
         modrinthOn && s.status === 'done' ? (
           // Never disabled: a click while a lookup runs starts it over (bypassing every cache).
@@ -94,8 +103,11 @@ export function ModsPanel({ instanceId, className }: { instanceId: string; class
           sort={sort}
           onSort={(next) => a.setModSort(instanceId, next)}
           selectedId={selection?.kind === 'jar' ? selection.id : null}
+          // A declared file (not in the zip) shows as a pack index entry in the inspector.
           onSelect={(id) => a.select({ kind: 'jar', id })}
-          onToggleEnabled={(id, next) => void a.setJarEnabled(id, next)}
+          {...(pack ? {} : { onToggleEnabled: (id: string, next: boolean) => void a.setJarEnabled(id, next) })}
+          onRowContextMenu={(id, e) => rowMenu(e, 'Mod', (st) => modMenuFor(st, id))}
+          variant={pack ? 'pack' : 'instance'}
           scrollToId={reveal}
           height="fill"
         />

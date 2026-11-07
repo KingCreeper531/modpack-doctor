@@ -22,6 +22,7 @@ import { useViewportWidth } from './hooks';
 import { InstanceRail } from './InstanceRail';
 import { Inspector } from './Inspector';
 import { NoInstances } from './NoInstances';
+import { Overlays } from './Overlays';
 import { Workspace } from './Workspace';
 
 
@@ -36,6 +37,8 @@ export function Shell() {
   const viewport = useViewportWidth();
   const layout = inspectorLayout(viewport, preferred);
   const drawer = layout.mode === 'drawer';
+  // `?drag=1` screenshot hook (browser mock only; dead code in production builds).
+  const dragPreview = import.meta.env.DEV && backendKind === 'mock' && new URLSearchParams(window.location.search).get('drag') === '1';
 
   if (backendKind === 'none') {
     return (
@@ -48,6 +51,7 @@ export function Shell() {
   return (
     <DrawerContext.Provider value={drawer}>
       <div className="relative flex h-screen min-h-0 overflow-hidden bg-bg text-fg">
+        <Overlays dragPreview={dragPreview} />
         <InstanceRail className="w-[240px] shrink-0 border-r border-line" />
         {ready && !hasInstances ? (
           <NoInstances className="min-w-0 flex-1" />

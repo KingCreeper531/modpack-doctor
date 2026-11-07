@@ -7,7 +7,7 @@
  * it answers the current scan (`key` = the planned queries + `includeBeta`), so a stale context
  * never marks a new jar "not on Modrinth".
  */
-import type { AppError, JarRecord, MrProject, MrVersion, ScanResult } from '../../bindings';
+import type { AppError, DeclaredFile, JarRecord, MrProject, MrVersion, ScanResult } from '../../bindings';
 import type * as ModrinthCore from '../../core/modrinth';
 import type { DependencyResolution, JarMatch, UpdateFilters } from '../../core/modrinth';
 import type { ModrinthContext } from '../../core/model';
@@ -194,6 +194,26 @@ export function modrinthRowView(
       return { modrinth: matchCell(m), iconUrl: iconSrc(iconPathOf(matchProject(m), icons), convert) };
     } catch {
       return { modrinth: { state: 'offline' }, iconUrl: null };
+    }
+  };
+}
+
+/**
+ * Mod-table facts of a file a `.mrpack` index declares (`core.declaredMatch` by sha1): the
+ * Modrinth column, the identified version and the project title (the row's name).
+ */
+export function declaredRowView(
+  core: Pick<typeof ModrinthCore, 'declaredMatch'>,
+  ctx: ModrinthContext | null,
+): (file: DeclaredFile) => { modrinth: ModrinthMatch; version: string | null; title: string | null } {
+  return (file) => {
+    if (!ctx) return { modrinth: { state: 'offline' }, version: null, title: null };
+    try {
+      const m = core.declaredMatch(file, ctx);
+      const p = matchProject(m);
+      return { modrinth: matchCell(m), version: m.state === 'matched' || m.state === 'update' ? m.version.versionNumber : null, title: p?.title ?? null };
+    } catch {
+      return { modrinth: { state: 'offline' }, version: null, title: null };
     }
   };
 }

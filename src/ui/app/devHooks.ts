@@ -11,9 +11,15 @@
  *   its 2nd op and rolls back; with `gamerunning` it is refused).
  * - `?order=undo`: HISTORY, then an undo whose file changed since (refused inline) and an undo of
  *   the seeded Curios API update (the work order opens for review).
+ * - `?open=mrpack` (M7): "opens" the mock pack (Explorer Kit 2.1) as `pick_mrpack` would.
+ * - `?palette=1`: the command palette opens once the selected instance is scanned.
+ * - `?menu=mod|finding|instance`: the DOM context menu of the first mod-table row, triage row or
+ *   rail row opens once the selected instance is scanned (with `open=mrpack`: the pack's rows).
+ * - `?drag=1` (read by Shell.tsx): the file-drop overlay shows as if a file were dragged over.
  */
 import type { FixAction } from '../../bindings';
 import type { Finding } from '../../core/model';
+import { findingMenuFor, instanceMenuFor, modMenuFor } from './rowMenus';
 import type { AppState, AppStore } from './store';
 
 function firstReplace(s: AppState, id: string): { finding: Finding; fix: FixAction } | null {
@@ -29,7 +35,10 @@ export function applyDevHooks(store: AppStore, search: string): void {
   const order = p.get('order');
   const tab = p.get('tab');
   const instance = p.get('instance');
-  if (!order && tab !== 'history' && !instance) return;
+  const open = p.get('open');
+  const palette = p.get('palette') === '1';
+  const menu = p.get('menu');
+  if (!order && tab !== 'history' && !instance && open !== 'mrpack' && !palette && !menu) return;
   const waitFor = (pred: (s: AppState) => boolean) =>
     new Promise<void>((resolve) => {
       if (pred(store.getState())) return resolve();
@@ -41,6 +50,10 @@ export function applyDevHooks(store: AppStore, search: string): void {
     });
 
   void (async () => {
+    if (open === 'mrpack') {
+      await waitFor((s) => s.phase === 'ready');
+      await store.getState().openMrpack();
+    }
     if (instance) {
       await waitFor((s) => !!s.discovery?.instances.some((i) => i.id === instance));
       store.getState().selectInstance(instance);
@@ -49,6 +62,22 @@ export function applyDevHooks(store: AppStore, search: string): void {
     await waitFor((s) => !!s.selectedInstanceId && s.scans[s.selectedInstanceId]?.status === 'done');
     const st = store.getState();
     const id = st.selectedInstanceId!;
+    if (palette) st.setPaletteOpen(true);
+    if (menu === 'mod' || menu === 'finding' || menu === 'instance') {
+      // Let the rows render, then open the menu under the first one, as a right-click would.
+      await new Promise((r) => setTimeout(r, 400));
+      const sel = menu === 'mod' ? '[role="grid"][aria-label="Mods"] [data-row-id]' : menu === 'finding' ? '[data-finding-id]' : 'nav[aria-label="Instance list"] button[aria-current="true"]';
+      const el = document.querySelector<HTMLElement>(sel);
+      const s = store.getState();
+      const items =
+        menu === 'mod'
+          ? modMenuFor(store, el?.dataset.rowId ?? '')
+          : menu === 'finding'
+            ? findingMenuFor(store, el?.dataset.findingId ?? s.scans[id]?.findings[0]?.id ?? '')
+            : instanceMenuFor(store, id);
+      const r = el?.getBoundingClientRect();
+      if (items.length) s.openMenu({ label: `${menu} menu`, items, x: (r?.left ?? 240) + 48, y: (r?.top ?? 120) + 16, returnFocus: el });
+    }
     if (tab === 'history' || order === 'undo') st.setFindingsTab(id, 'history');
     if (order === 'replace' || order === 'running' || order === 'execute') {
       await waitFor((s) => firstReplace(s, id) !== null);

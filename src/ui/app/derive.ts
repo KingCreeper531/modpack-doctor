@@ -2,7 +2,7 @@
  * Pure view derivations from the store's scan state: tile states for the scan grid, mod-table
  * rows, rail pips, severity counts and the `PackIdentity` sent with fixes. No React, no IPC.
  */
-import type { GridSort, JarRecord, JarStub, PackIdentity } from '../../bindings';
+import type { DeclaredFile, GridSort, JarRecord, JarStub, PackIdentity } from '../../bindings';
 import type { Finding, PackContext, Severity } from '../../core/model';
 import type { ScanStatus } from '../components/InstanceRailRow';
 import type { ModRow } from '../components/ModTable';
@@ -203,4 +203,67 @@ export function fixBlockReason(scan: Pick<InstanceScan, 'result' | 'pack'> | und
 /** Class-file major version → Java release (`65` → `21`). */
 export function javaRelease(major: number): number {
   return major - 44;
+}
+
+// ---- .mrpack (M7, CONTRACTS invariant 15) ----------------------------------------------------
+
+const ENV_SHORT: Readonly<Record<string, string>> = { required: 'req', optional: 'opt', unsupported: 'no' };
+
+/**
+ * `req/no` — client/server, as the pack table's `Env C/S` column reads — and the words for a
+ * tooltip, from a declared file's `env`; null when the index states none.
+ */
+export function envLabel(client: string | null, server: string | null): { short: string; words: string } | null {
+  if (client === null && server === null) return null;
+  const s = (v: string | null) => (v === null ? '?' : (ENV_SHORT[v] ?? v));
+  const w = (v: string | null) => v ?? 'not stated';
+  return { short: `${s(client)}/${s(server)}`, words: `client: ${w(client)}, server: ${w(server)}` };
+}
+
+/** Where an override jar of a pack runs, from its folder in the zip. */
+export function overrideEnv(path: string): { short: string; words: string } {
+  if (path.startsWith('client-overrides/')) return { short: 'client', words: 'client-overrides/ (client installs only)' };
+  if (path.startsWith('server-overrides/')) return { short: 'server', words: 'server-overrides/ (server installs only)' };
+  return { short: 'both', words: 'overrides/ (client and server)' };
+}
+
+/** Modrinth facts of a declared file for its row (modrinthState.ts `declaredRowView`). */
+export type DeclaredRowView = (file: DeclaredFile) => { modrinth: ModRow['modrinth']; version: string | null; title: string | null; iconUrl?: string | null };
+
+const UNKNOWN_DECLARED: DeclaredRowView = () => ({ modrinth: { state: 'offline' }, version: null, title: null });
+
+/**
+ * Mod-table rows of a pack: its override jars (`deriveModRows`, with the override folder as env)
+ * followed by the files its index declares (path, Modrinth match, env; never a toggle). A finding
+ * counts on a declared row when it cites the file's path as its jar id.
+ */
+export function derivePackRows(scan: InstanceScan, jarView?: ModrinthRowView, declaredView: DeclaredRowView = UNKNOWN_DECLARED): ModRow[] {
+  const jars = deriveModRows(scan, jarView).map((r) => {
+    const env = overrideEnv(r.id);
+    return { ...r, env: env.short, envTitle: env.words };
+  });
+  const declared = scan.result?.declared ?? [];
+  if (!declared.length) return jars;
+  const { exact } = findingsByJar(scan.findings);
+  const rows = declared.map((d): ModRow => {
+    const m = declaredView(d);
+    const env = envLabel(d.client, d.server);
+    const file = d.path.slice(d.path.lastIndexOf('/') + 1);
+    return {
+      id: d.path,
+      name: m.title ?? file,
+      modId: null,
+      version: m.version,
+      loader: null,
+      modrinth: m.modrinth,
+      iconUrl: m.iconUrl ?? null,
+      findings: exact.get(d.path) ?? zero(),
+      enabled: true,
+      declared: true,
+      path: d.path,
+      env: env?.short ?? null,
+      ...(env ? { envTitle: env.words } : {}),
+    };
+  });
+  return [...jars, ...rows];
 }

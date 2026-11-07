@@ -19,6 +19,10 @@ export interface PaletteItem {
   detail?: string;
   shortcut?: string;
   icon?: ReactNode;
+  /** Mono prefix in a fixed column, e.g. a finding code (matched by the filter too). */
+  code?: string;
+  /** Extra words the filter matches (culprit file names, mod ids). */
+  keywords?: readonly string[];
 }
 
 export interface PaletteGroup {
@@ -96,6 +100,7 @@ export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed',
               <Command.Item
                 key={it.id}
                 value={`${it.label} ${it.detail ?? ''} ${it.id}`}
+                {...(it.code || it.keywords ? { keywords: [...(it.code ? [it.code] : []), ...(it.keywords ?? [])] } : {})}
                 onSelect={() => onSelect(it.id)}
                 className={cx(
                   'flex h-6 cursor-default items-center gap-2 border-l-2 border-transparent pr-4 pl-[14px] t-body',
@@ -103,6 +108,7 @@ export function CommandPalette({ groups, onSelect, onClose, placement = 'fixed',
                 )}
               >
                 <span className="flex size-4 shrink-0 items-center justify-center text-fg-faint">{it.icon}</span>
+                {it.code ? <span className="w-32 shrink-0 truncate t-mono text-fg-dim">{it.code}</span> : null}
                 <Marked label={it.label} query={query} />
                 {it.detail ? <span className="truncate t-mono text-fg-faint">{it.detail}</span> : null}
                 {it.shortcut ? <span className="ml-auto shrink-0 t-mono text-fg-faint">{it.shortcut}</span> : null}
