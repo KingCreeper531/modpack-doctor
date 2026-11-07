@@ -13,6 +13,7 @@ import { loaderRangeCheck } from './loaderRange';
 import { mcRangeCheck } from './mcRange';
 import { missingDepCheck } from './missingDep';
 import { notOnModrinthCheck } from './notOnModrinth';
+import { mrpackDeclaredCheck } from './mrpackDeclared';
 import { mrpackDownloadCheck } from './mrpackDownload';
 import { splitPkgCheck } from './splitPkg';
 import { wrongLoaderCheck } from './wrongLoader';
@@ -31,6 +32,7 @@ export const CHECKS: readonly Check[] = [
   corruptJarCheck,
   javaClassCheck,
   notOnModrinthCheck,
+  mrpackDeclaredCheck,
   mrpackDownloadCheck,
 ];
 

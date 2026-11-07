@@ -27,7 +27,7 @@
  * 6. `enrichFindings(findings, ctx, resolutions, scan.jars)` adds `replace` / `installDependency`
  *    fixes, also for crash findings.
  */
-import type { FixAction, HashLookup, JarRecord, MrFile, MrProject, MrVersion, ProjectLookup, ScanResult } from '../../bindings';
+import type { DeclaredFile, FixAction, HashLookup, JarRecord, MrFile, MrProject, MrVersion, ProjectLookup, ScanResult } from '../../bindings';
 import type { Finding, FindingCode, ModrinthContext, PackContext } from '../model';
 
 export interface UpdateFilters {
@@ -38,7 +38,10 @@ export interface UpdateFilters {
 }
 
 export interface ModrinthQueries {
-  /** sha1 (lower-case, deduplicated, sorted) of every top-level jar, enabled or disabled. */
+  /**
+   * sha1 (lower-case, deduplicated, sorted) of every top-level jar, enabled or disabled, and of
+   * every file a `.mrpack` index declares (`scan.declared`, CONTRACTS invariant 15).
+   */
   identify: string[];
   /** Null when the pack's loader or MC version is unknown: no update lookup then. */
   updates: UpdateFilters | null;
@@ -163,9 +166,11 @@ export function modrinthLoaders(pack: PackContext): string[] {
 }
 
 export function planQueries(scan: ScanResult, pack: PackContext): ModrinthQueries {
+  // `declared` is absent in ScanResults from builds before M7.
+  const hashes = [...scan.jars.filter((j) => j.depth === 0).map((j) => j.sha1), ...(scan.declared ?? []).map((d) => d.sha1)];
   const identify = sortedUnique(
-    scan.jars.filter((j) => j.depth === 0).flatMap((j) => {
-      const h = j.sha1.trim().toLowerCase();
+    hashes.flatMap((sha1) => {
+      const h = typeof sha1 === 'string' ? sha1.trim().toLowerCase() : '';
       return h.length > 0 ? [h] : [];
     }),
   );
@@ -336,8 +341,22 @@ export function buildModrinthContext(args: {
  * never alpha — also for hand-built contexts.
  */
 export function jarMatch(jar: JarRecord, ctx: ModrinthContext | null | undefined): JarMatch {
+  return matchSha1(jar.sha1, ctx, jar.depth === 0);
+}
+
+/**
+ * State of one file a `.mrpack` index declares (`ScanResult.declared`, CONTRACTS invariant 15),
+ * by its sha1, under the same rules as a top-level jar: `missing` only after a completed online
+ * lookup that did not fail for this hash; no context, offline or failed → `unknown`. The
+ * mrpack-declared checks and the report use it; packs never get fixes, whatever the state.
+ */
+export function declaredMatch(file: DeclaredFile, ctx: ModrinthContext | null | undefined): JarMatch {
+  return matchSha1(file.sha1, ctx, true);
+}
+
+function matchSha1(rawSha1: string, ctx: ModrinthContext | null | undefined, mayBeMissing: boolean): JarMatch {
   if (!ctx) return { state: 'unknown' };
-  const sha1 = jar.sha1.trim().toLowerCase();
+  const sha1 = (typeof rawSha1 === 'string' ? rawSha1 : '').trim().toLowerCase();
   if (sha1.length === 0) return { state: 'unknown' };
   const version = ctx.versions[sha1];
   if (version) {
@@ -350,7 +369,7 @@ export function jarMatch(jar: JarRecord, ctx: ModrinthContext | null | undefined
     return { state: 'matched', version, project };
   }
   // Not identified: only a completed online lookup of a top-level jar may say "missing".
-  if (ctx.offline || jar.depth > 0 || ctx.failed.some((s) => s.toLowerCase() === sha1)) return { state: 'unknown' };
+  if (ctx.offline || !mayBeMissing || ctx.failed.some((s) => s.toLowerCase() === sha1)) return { state: 'unknown' };
   return { state: 'missing' };
 }
 
