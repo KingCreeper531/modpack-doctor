@@ -141,7 +141,8 @@ describe('buildModrinthContext', () => {
   ])('%s', (_name, upd, beta, expected) => {
     const ctx = buildModrinthContext({
       identify,
-      updates: upd ? lookup({ [SHA_SODIUM_OLD]: upd }) : null,
+      // The release lookup ran (and found `upd`, or nothing): the fallback only follows it.
+      updates: lookup(upd ? { [SHA_SODIUM_OLD]: upd } : {}),
       betaFallback: beta ? lookup({ [SHA_SODIUM_OLD.toUpperCase()]: beta }) : undefined,
     });
     expect(ctx.updates[SHA_SODIUM_OLD]).toEqual(expected);
@@ -187,7 +188,11 @@ describe('jarMatch', () => {
     projects: projectLookup({ AANobbMI: SODIUM }),
   });
   const offline: ModrinthContext = { ...online, offline: true };
-  const betaCtx = buildModrinthContext({ identify: lookup({ [SHA_SODIUM_OLD]: SODIUM_OLD }), betaFallback: lookup({ [SHA_SODIUM_OLD]: SODIUM_BETA }) });
+  const betaCtx = buildModrinthContext({
+    identify: lookup({ [SHA_SODIUM_OLD]: SODIUM_OLD }),
+    updates: lookup({}),
+    betaFallback: lookup({ [SHA_SODIUM_OLD]: SODIUM_BETA }),
+  });
 
   it.each<[string, JarRecord, ModrinthContext | null | undefined, string]>([
     ['update available', sodium, online, 'update'],
@@ -330,8 +335,9 @@ describe('enrichFindings', () => {
   const child = nested(cloth, { file: 'sodium-nested.jar', mods: [{ id: 'sodium' }], sha1: SHA_SODIUM_OLD }, 'fabric');
   const jars = [sodium, cloth, child, disabledSodium];
 
-  const clothOld = mrVersion({ id: 'cLoTh011', projectId: CLOTH_CONFIG.id, versionNumber: '11.0.99' });
-  const clothNoFile = mrVersion({ id: 'cLoTh012', projectId: CLOTH_CONFIG.id, versionNumber: '11.1.106', files: [] });
+  const clothOld = mrVersion({ id: 'cLoTh011', projectId: CLOTH_CONFIG.id, versionNumber: '11.0.99', datePublished: '2023-06-08T20:15:02.181207Z' });
+  // Newer, but without a downloadable file: no replace for that reason alone.
+  const clothNoFile = mrVersion({ id: 'cLoTh012', projectId: CLOTH_CONFIG.id, versionNumber: '11.1.106', files: [], datePublished: '2023-09-14T13:01:55.902441Z' });
   const ctx = buildModrinthContext({
     identify: lookup({ [SHA_SODIUM_OLD]: SODIUM_OLD, [SHA_CLOTH]: clothOld }),
     updates: lookup({ [SHA_SODIUM_OLD]: SODIUM_NEW, [SHA_CLOTH]: clothNoFile }),
@@ -468,8 +474,14 @@ describe('enrichFindings', () => {
 
   it('works for Forge-family packs too (realistic: NeoForge 1.20.1 culprit with a Forge-loader update)', () => {
     const jei = forge({ file: 'jei-1.20.1-forge-15.2.0.27.jar', mods: [{ id: 'jei' }], sha1: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' });
-    const jeiOld = mrVersion({ id: 'jEi15200', projectId: 'u6dRKJwZ', versionNumber: '15.2.0.27', loaders: ['forge'] });
-    const jeiNew = mrVersion({ id: 'jEi15201', projectId: 'u6dRKJwZ', versionNumber: '15.20.0.106', loaders: ['forge', 'neoforge'] });
+    const jeiOld = mrVersion({ id: 'jEi15200', projectId: 'u6dRKJwZ', versionNumber: '15.2.0.27', loaders: ['forge'], datePublished: '2023-08-29T21:44:09.531066Z' });
+    const jeiNew = mrVersion({
+      id: 'jEi15201',
+      projectId: 'u6dRKJwZ',
+      versionNumber: '15.20.0.106',
+      loaders: ['forge', 'neoforge'],
+      datePublished: '2024-12-07T02:18:37.296415Z',
+    });
     const c = buildModrinthContext({ identify: lookup({ [jei.sha1]: jeiOld }), updates: lookup({ [jei.sha1]: jeiNew }) });
     const f = finding('C-ROOT-CAUSE', { culprits: [{ jarId: jei.id, fileName: jei.fileName, modId: 'jei' }] });
     expect(enrichFindings([f], c, undefined, [jei])[0]?.fixes).toEqual([{ kind: 'replace', jarId: jei.id, versionId: 'jEi15201' }]);
