@@ -124,7 +124,8 @@ describe('mock backend', () => {
     expect(await b.commands.saveReport('r', 'markdown', '# r')).toEqual({ status: 'ok', data: 'C:\\Users\\alex\\Documents\\r.md' });
     expect(b.reports()).toEqual([{ name: 'r', format: 'markdown', contents: '# r' }]);
     expect(await createMockBackend({ latencyMs: 0, scenario: 'reportcancel' }).commands.saveReport('r', 'json', '{}')).toEqual({ status: 'ok', data: null });
-    expect(await b.commands.checkUpdate()).toMatchObject({ error: { kind: 'unavailable' } });
+    // M8: up to date by default (`?scenario=update` / `updatefail` in update.test.ts).
+    expect(await b.commands.checkUpdate()).toEqual({ status: 'ok', data: null });
   });
 
   it('answers the fix commands (M6) with readable refusals for bad input', async () => {

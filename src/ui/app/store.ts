@@ -54,6 +54,11 @@
  * `plan_undo(backupId, null)` (Rust plans the recovery). The UI never closes or reloads the
  * window itself; while an order executes Rust refuses the window close natively.
  *
+ * Updates (M8, CONTRACTS invariant 18): only on request. `checkUpdate` (About → "Check for
+ * updates", or the palette) → `check_update` → up to date / the `UpdateInfo` / an inline error.
+ * `installUpdate(version)` calls `install_update` only for the version on screen, never while a
+ * work order executes (refused inline as a `conflict`; Rust refuses too). Nothing runs at start.
+ *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
  */
@@ -97,6 +102,7 @@ import { buildReport, reportFileName, reportJson, reportMarkdown } from '../../c
 import * as coreModrinth from '../../core/modrinth';
 import type { DependencyResolution, ModrinthQueries } from '../../core/modrinth';
 import { buildJarIndex as coreBuildJarIndex, resolvePack as coreResolvePack } from '../../core/pack';
+import type { UpdateView } from '../components/AboutPlate';
 import type { ModSortKey } from '../components/ModTable';
 import { clampSize, INSPECTOR_DEFAULT, INSPECTOR_MAX, INSPECTOR_MIN } from '../components/resize';
 import type { SortState } from '../components/sort';
@@ -334,6 +340,10 @@ export interface AppState {
   dropRejected: DropRejected | null;
   /** The last report export per instance (saving, the saved path, or the refusal). */
   reports: Readonly<Record<string, ReportState>>;
+  /** The About dialog (rail footer, palette) is open. */
+  aboutOpen: boolean;
+  /** The user-initiated update check and install (M8); `idle` until the user asks. */
+  update: UpdateState;
 
   init(): Promise<void>;
   dispose(): void;
@@ -403,7 +413,21 @@ export interface AppState {
   /** Build the report (`src/core/report`) and `save_report`; Cancel in the dialog changes nothing. */
   exportReport(id: string, format: ReportFormat): Promise<void>;
   dismissReport(id: string): void;
+  setAboutOpen(open: boolean): void;
+  /** `check_update`, only when the user asks (never at start or on a timer). */
+  checkUpdate(): Promise<void>;
+  /** `install_update`, only for `version` when it is the update on screen. */
+  installUpdate(version: string): Promise<void>;
 }
+
+export type UpdateState = UpdateView;
+
+/** Shown when Install is pressed while a work order executes (Rust refuses it too). */
+export const UPDATE_ORDER_RUNNING: AppError = {
+  kind: 'conflict',
+  message: 'A work order is running. Wait for it to finish, then install the update.',
+  path: null,
+};
 
 export type AppStore = StoreApi<AppState>;
 
@@ -464,6 +488,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const cmd = backend.commands;
   /** Latest export per instance; an older one's answer is dropped. */
   const reportTokens = new Map<string, number>();
+  /** Latest update check / install; an older one's answer is dropped. */
+  let updateToken = 0;
 
   const unlisten: Unlisten[] = [];
   let initOnce: Promise<void> | null = null;
@@ -1387,6 +1413,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       cursorToggle: null,
       dropRejected: null,
       reports: {},
+      aboutOpen: false,
+      update: { status: 'idle' },
 
       init() {
         initOnce ??= start();
@@ -1800,6 +1828,39 @@ export function createAppStore(deps: StoreDeps): AppStore {
 
       setPaletteOpen(open) {
         set(open ? { paletteOpen: true, menu: null } : { paletteOpen: false });
+      },
+
+      setAboutOpen(open) {
+        set(open ? { aboutOpen: true, paletteOpen: false, menu: null } : { aboutOpen: false });
+      },
+
+      async checkUpdate() {
+        const u = get().update;
+        if (u.status === 'checking' || (u.status === 'available' && u.install !== 'idle')) return;
+        const token = ++updateToken;
+        set({ update: { status: 'checking' } });
+        const r = await call(cmd.checkUpdate());
+        if (token !== updateToken) return;
+        if (r.status === 'error') set({ update: { status: 'error', error: r.error } });
+        else if (r.data === null) set({ update: { status: 'current', version: appVersion } });
+        else set({ update: { status: 'available', info: r.data, install: 'idle', error: null } });
+      },
+
+      async installUpdate(version) {
+        const u = get().update;
+        // Only the version on screen, once, after the user pressed Install for it.
+        if (u.status !== 'available' || u.info.version !== version || u.install !== 'idle') return;
+        if (get().order?.phase === 'running') {
+          set({ update: { ...u, error: UPDATE_ORDER_RUNNING } });
+          return;
+        }
+        const token = ++updateToken;
+        set({ update: { ...u, install: 'installing', error: null } });
+        const r = await call(cmd.installUpdate());
+        if (token !== updateToken) return;
+        const now = get().update;
+        if (now.status !== 'available') return;
+        set({ update: r.status === 'error' ? { ...now, install: 'idle', error: r.error } : { ...now, install: 'restarting', error: null } });
       },
 
       openMenu(menu) {

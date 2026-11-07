@@ -2,7 +2,8 @@
  * Command palette contents (DESIGN §6.7): pure, from the store state. Groups: INSTANCES (switch),
  * ACTIONS, FINDINGS (the open instance's static findings, matched by code, title and culprit file
  * names), MODS (its top-level jars). `runPaletteCommand` maps an id back to store actions. No
- * command executes a work order; packs get no watch or history commands.
+ * command executes a work order; packs get no watch or history commands. "Check for updates"
+ * opens About and checks (CONTRACTS invariant 18); nothing in the palette installs an update.
  */
 import { LAUNCHER_ABBR } from '../components/labels';
 import { chord } from './keyboard';
@@ -70,6 +71,8 @@ export function paletteGroups(s: PaletteState, mac?: boolean): PaletteCommandGro
   for (const t of ['system', 'dark', 'light'] as const) {
     actions.push({ id: `theme:${t}`, label: `Theme: ${t[0]!.toUpperCase()}${t.slice(1)}`, ...(s.settings.theme === t ? { detail: 'current' } : {}) });
   }
+  actions.push({ id: 'check-updates', label: 'Check for updates', detail: 'github.com', keywords: ['update', 'version', 'release'] });
+  actions.push({ id: 'about', label: 'About Modpack Doctor', keywords: ['version', 'licence', 'license', 'disclaimer'] });
   groups.push({ heading: 'Actions', items: actions });
 
   if (sc?.findings.length) {
@@ -117,7 +120,9 @@ export type PaletteActions = Pick<
   | 'setTheme'
   | 'goToFinding'
   | 'revealJar'
->;
+> &
+  /** About and the update check (M8); optional so a caller without them still type-checks. */
+  Partial<Pick<AppState, 'setAboutOpen' | 'checkUpdate'>>;
 
 export function runPaletteCommand(commandId: string, s: Pick<AppState, 'selectedInstanceId' | 'settings'>, a: PaletteActions): void {
   const id = s.selectedInstanceId;
@@ -141,6 +146,13 @@ export function runPaletteCommand(commandId: string, s: Pick<AppState, 'selected
       return;
     case 'add-folder':
       void a.addFolder();
+      return;
+    case 'about':
+      a.setAboutOpen?.(true);
+      return;
+    case 'check-updates':
+      a.setAboutOpen?.(true);
+      void a.checkUpdate?.();
       return;
   }
   if (!id) return;

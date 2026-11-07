@@ -46,6 +46,11 @@
  * Logs (M4): `list_log_sources` / `read_log_digest` serve real-format texts from fixtures/logs
  * (mockLogs.ts); the digest is the whole file, as `digestFromText` builds it.
  * - `?theme=dark|light` seeds the stored theme preference.
+ *
+ * Updates (M8): `check_update` answers "up to date" (`null`) by default; `?scenario=update` offers
+ * `MOCK_UPDATE` (0.2.0) and `install_update` then "installs" it (nothing restarts in a browser);
+ * `?scenario=updatefail` answers a network error. `install_update` is refused with `conflict`
+ * while a work order executes, as in Rust.
  */
 import type {
   AppError,
@@ -76,6 +81,7 @@ import type {
   Settings,
   SettingsPatch,
   ThemePref,
+  UpdateInfo,
   WatchAnchor,
 } from '../../bindings';
 import { digestFromText } from '../../core/crash';
@@ -108,7 +114,9 @@ export type MockScenario =
   | 'expired'
   | 'interrupted'
   | 'drop'
-  | 'reportcancel';
+  | 'reportcancel'
+  | 'update'
+  | 'updatefail';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -143,6 +151,8 @@ const SCENARIOS: readonly MockScenario[] = [
   'interrupted',
   'drop',
   'reportcancel',
+  'update',
+  'updatefail',
 ];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
@@ -161,8 +171,6 @@ export function mockOptionsFromSearch(search: string): MockOptions {
 
 const ok = <T>(data: T): Result<T> => ({ status: 'ok', data });
 const err = (kind: AppError['kind'], message: string, path: string | null = null): Result<never> => ({ status: 'error', error: { kind, message, path } });
-/** Same shape as Rust's `not_yet` (commands/mod.rs): a neutral `unavailable` error. */
-const notYet = (feature: string) => err('unavailable', `${feature} isn't available in this version of Modpack Doctor yet.`);
 
 function emitter<T>() {
   const subs = new Set<(p: T) => void>();
@@ -180,6 +188,17 @@ function emitter<T>() {
   };
   return ch;
 }
+
+/** The release `?scenario=update` offers. */
+export const MOCK_UPDATE: UpdateInfo = {
+  version: '0.2.0',
+  date: '2026-11-20T09:00:00Z',
+  notes: [
+    'Watch mode now follows log rotation on Prism Launcher.',
+    'Faster scans of packs with many nested jars.',
+    'The mod table remembers its sort per instance.',
+  ].join('\n'),
+};
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -247,6 +266,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   const instances = () => [...discovery.instances, ...added];
   /** Instances with a scan in flight (an order is refused while its instance is scanned). */
   const scanning = new Set<string>();
+  /** Work orders executing right now (`install_update` is refused meanwhile). */
+  let executing = 0;
   const fix = createMockFix(
     {
       opMs: opts.opMs ?? opts.latencyMs * 10,
@@ -511,7 +532,12 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     executeWorkOrder: async (orderId: string): Promise<Result<WorkOrderResult>> => {
       await lag();
-      return fix.execute(orderId);
+      executing++;
+      try {
+        return await fix.execute(orderId);
+      } finally {
+        executing--;
+      }
     },
     discardWorkOrder: async (orderId: string): Promise<Result<null>> => {
       await lag();
@@ -553,8 +579,19 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     },
     setWindowTheme: async () => ok(null),
     homeDir: async () => ok(String.raw`C:\Users\alex`),
-    checkUpdate: async () => notYet('Update checks'),
-    installUpdate: async () => notYet('Installing updates'),
+    checkUpdate: async (): Promise<Result<UpdateInfo | null>> => {
+      await lag();
+      if (opts.scenario === 'updatefail') {
+        return err('network', "Couldn't reach github.com to check for updates. Check your internet connection, then try again.");
+      }
+      return ok(opts.scenario === 'update' ? { ...MOCK_UPDATE } : null);
+    },
+    installUpdate: async (): Promise<Result<null>> => {
+      await lag();
+      if (executing > 0) return err('conflict', 'A work order is running. Wait for it to finish, then install the update.');
+      if (opts.scenario !== 'update') return err('notFound', 'There is no update to install. Check for updates first.');
+      return ok(null);
+    },
   };
 
   return {

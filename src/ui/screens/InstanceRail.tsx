@@ -1,9 +1,9 @@
 /**
  * Instance rail (DESIGN.md §5): one 48px row per discovered instance with its last-scan pip,
- * then the footer: Add folder, add a launcher's data folder, the Modrinth settings and the theme
- * control.
+ * then the footer: Add folder, add a launcher's data folder, the Modrinth settings, the theme
+ * control, and the About entry (with the app version) that opens the About dialog.
  */
-import { CaretDown, CaretRight, FilePlus, FolderPlus } from '@phosphor-icons/react';
+import { CaretDown, CaretRight, FilePlus, FolderPlus, Info } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import type { Launcher } from '../../bindings';
@@ -16,6 +16,7 @@ import { Panel } from '../components/Panel';
 import { instanceStatus } from '../app/derive';
 import { instanceMenuFor } from '../app/rowMenus';
 import { useActions, useApp } from '../app/StoreContext';
+import { AboutDialog, APP_VERSION } from './AboutDialog';
 import { useRowMenu } from './hooks';
 import { ModrinthControl } from './ModrinthControl';
 import { ThemeControl } from './ThemeControl';
@@ -144,7 +145,23 @@ export function InstanceRail({ className }: { className?: string }) {
         </div>
         <ModrinthControl className="border-t border-line px-2 py-2" />
         <ThemeControl className="border-t border-line px-2 py-2" />
+        <div className="flex h-8 items-center gap-2 border-t border-line px-2">
+          <button
+            type="button"
+            data-about-trigger
+            aria-haspopup="dialog"
+            onClick={() => a.setAboutOpen(true)}
+            className="flex h-6 items-center gap-1 px-1 t-small text-fg-dim hover:text-fg"
+          >
+            <Info size={16} aria-hidden />
+            About
+          </button>
+          <span className="ml-auto t-mono text-fg-faint" title="Modpack Doctor version">
+            {APP_VERSION}
+          </span>
+        </div>
       </div>
+      <AboutDialog />
     </Panel>
   );
 }

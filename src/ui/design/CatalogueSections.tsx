@@ -2,7 +2,7 @@
 import { ArrowClockwise, Copy, FolderPlus, Info } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { AboutPlate } from '../components/AboutPlate';
+import { AboutPlate, UpdateSection, type UpdateView } from '../components/AboutPlate';
 import { CommandPalette, type PaletteGroup } from '../components/CommandPalette';
 import { EmptyState } from '../components/EmptyState';
 import { ModTable, type ModRow, type ModSortKey } from '../components/ModTable';
@@ -99,13 +99,55 @@ export function PaletteSection() {
   );
 }
 
+/** Update section states (M8). The notes carry markup to show it stays text. */
+const UPDATE_VIEWS: Array<[string, string, UpdateView]> = [
+  ['Idle', 'nothing runs until clicked', { status: 'idle' }],
+  ['Checking', 'button disabled', { status: 'checking' }],
+  ['Up to date', 'ok text', { status: 'current', version: ABOUT.version }],
+  [
+    'Available',
+    'notes as plain text',
+    {
+      status: 'available',
+      info: { version: '0.2.0', date: '2026-11-20T09:00:00Z', notes: 'Faster nested-jar scans.\n<b>Markup</b> in notes is shown as text.' },
+      install: 'idle',
+      error: null,
+    },
+  ],
+  [
+    'Install refused',
+    'conflict inline',
+    {
+      status: 'available',
+      info: { version: '0.2.0', date: null, notes: null },
+      install: 'idle',
+      error: { kind: 'conflict', message: 'A work order is running. Wait for it to finish, then install the update.', path: null },
+    },
+  ],
+  ['Check failed', 'inline error row', { status: 'error', error: { kind: 'network', message: "Couldn't reach github.com to check for updates. Check your internet connection, then try again.", path: null } }],
+];
+
 export function AboutSection() {
   return (
     <Section id="about" title="About" spec="§6.8" meta="data plate · no third-party logos">
       <SpecRow>
         <div className="border border-line bg-bg p-8">
-          <AboutPlate info={ABOUT} onClose={() => undefined} />
+          <AboutPlate
+            info={ABOUT}
+            onClose={() => undefined}
+            onOpenLink={() => undefined}
+            updates={<UpdateSection view={{ status: 'idle' }} onCheck={() => undefined} onInstall={() => undefined} />}
+          />
         </div>
+      </SpecRow>
+      <SpecRow>
+        {UPDATE_VIEWS.map(([label, note, view]) => (
+          <Spec key={label} label={label} note={note} className="w-[560px]">
+            <div className="border border-line bg-panel">
+              <UpdateSection view={view} onCheck={() => undefined} onInstall={() => undefined} />
+            </div>
+          </Spec>
+        ))}
       </SpecRow>
     </Section>
   );
