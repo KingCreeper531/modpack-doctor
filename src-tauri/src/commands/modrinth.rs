@@ -144,9 +144,10 @@ pub(crate) async fn resolve_mod_id_with(
         return Ok(None);
     };
     let id = project.id.clone();
+    // Cached icon only: like `modrinth_projects`, never wait for the CDN (`modrinth_icons` fetches).
     let icon_path = match c.projects_with_icon_urls(std::slice::from_ref(&id), false).await {
         Ok((mut lookup, urls)) => {
-            c.attach_icons(&mut lookup, &urls, svc.icon_dir()).await;
+            c.attach_cached_icons(&mut lookup, &urls, svc.icon_dir()).await;
             lookup.found.get(&id).and_then(|p| p.icon_path.clone())
         }
         Err(_) => None,

@@ -289,18 +289,25 @@ async fn project_versions_filter_by_version_type() {
 }
 
 #[tokio::test]
-async fn resolve_mod_id_returns_the_project_with_its_icon() {
+async fn resolve_mod_id_returns_the_project_and_only_a_cached_icon() {
     let h = Harness::new().await;
     h.mount_world().await;
 
     let p = resolve_mod_id_with(&h.st, "cloth_config".into(), s(&["forge"]), s(&["1.20.1"])).await.unwrap().unwrap();
     assert_eq!(p.id, CLOTH);
     assert_eq!(p.slug, "cloth-config");
-    let icon = p.icon_path.expect("icon attached");
-    assert!(is_under(&icon, &h.icon_dir), "{icon}");
-    // The icon came from the project cache filled by the slug guess: one projects request.
+    // Never waits for the CDN: no icon yet, and the project came from the cache filled by the slug
+    // guess (one projects request).
+    assert_eq!(p.icon_path, None);
+    assert!(h.requests().await.iter().all(|r| !r.url.path().starts_with("/data/")), "no icon request");
     let projects_calls = h.requests().await.iter().filter(|r| r.url.path() == "/v2/projects").count();
     assert_eq!(projects_calls, 1);
+    // After the icons pass, resolve attaches the cached icon.
+    let fetched = icons_with(&h.st, s(&[CLOTH])).await.unwrap();
+    let p = resolve_mod_id_with(&h.st, "cloth_config".into(), s(&["forge"]), s(&["1.20.1"])).await.unwrap().unwrap();
+    let icon = p.icon_path.expect("cached icon attached");
+    assert!(is_under(&icon, &h.icon_dir), "{icon}");
+    assert_eq!(icon, fetched[CLOTH]);
     // Pseudo-dependencies resolve to nothing without a request.
     let before = h.count().await;
     assert_eq!(resolve_mod_id_with(&h.st, "minecraft".into(), s(&["forge"]), vec![]).await.unwrap(), None);
@@ -334,10 +341,11 @@ async fn disabled_modrinth_is_cache_only_and_reenabling_needs_no_restart() {
     assert!(p.offline);
     assert_eq!(p.found, projects.found, "cached project with its cached icon path");
     assert_eq!(p.found["sodium"].icon_path.as_ref(), Some(&icons[SODIUM]));
-    // Icons: what is on disk (SODIUM, and CLOTH from the resolve), no request even when stale.
+    // Icons: only what is on disk (SODIUM; resolving CLOTH never downloads its icon), no request
+    // even when stale.
     age_file(Path::new(&icons[SODIUM]), 30);
     let off_icons = icons_with(&h.st, s(&[SODIUM, CLOTH, FAPI])).await.unwrap();
-    assert_eq!(off_icons.keys().map(String::as_str).collect::<Vec<_>>(), vec![CLOTH, SODIUM]);
+    assert_eq!(off_icons.keys().map(String::as_str).collect::<Vec<_>>(), vec![SODIUM]);
     assert_eq!(off_icons[SODIUM], icons[SODIUM]);
     let v = project_versions_with(&h.st, SODIUM.into(), s(&["fabric"]), s(&["1.20.1"]), s(&["release"])).await.unwrap();
     assert_eq!(v, versions);
