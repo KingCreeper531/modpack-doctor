@@ -290,23 +290,32 @@ describe('fixes', () => {
     await store.getState().init();
     await until(() => store.getState().scans[ATM.id]?.status === 'done');
     const spy = vi.spyOn(backend.commands, 'planWorkOrder');
-    await store.getState().fix('dup', { kind: 'disable', jarId: JEI_A });
-    expect(spy).toHaveBeenCalledWith(ATM.id, { mcVersion: '1.20.1', loader: { kind: 'forge', version: '47.3.0' } }, [{ kind: 'disable', jarId: JEI_A }]);
-    expect(store.getState().fixErrors.dup).toEqual({ kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null });
+    await store.getState().fix('dup', { kind: 'disable', jarId: 'mods/gone.jar' });
+    expect(spy).toHaveBeenCalledWith(ATM.id, { mcVersion: '1.20.1', loader: { kind: 'forge', version: '47.3.0' } }, [{ kind: 'disable', jarId: 'mods/gone.jar' }]);
+    expect(store.getState().fixErrors.dup).toMatchObject({ kind: 'notFound', message: expect.stringContaining('mods/gone.jar is not in the mods folder any more') });
     expect(store.getState().fixErrorFrom.dup).toBe('triage');
     expect(store.getState().fixPending.dup).toBeUndefined();
+    expect(store.getState().order).toBeNull();
     store.getState().dismissFixError('dup');
     expect(store.getState().fixErrors.dup).toBeUndefined();
   });
 
-  it('the enable toggle plans enable/disable the same way', async () => {
+  it('the enable toggle plans enable/disable the same way: a one-op order, never a silent rename', async () => {
     const { store, backend } = mockStore();
     await store.getState().init();
     await until(() => store.getState().scans[ATM.id]?.status === 'done');
     const spy = vi.spyOn(backend.commands, 'planWorkOrder');
     await store.getState().setJarEnabled(CREATE, false);
     expect(spy.mock.calls[0]![2]).toEqual([{ kind: 'disable', jarId: CREATE }]);
-    expect(store.getState().fixErrors[`jar:${CREATE}`]?.kind).toBe('unavailable');
+    const o = store.getState().order!;
+    expect(o.order.ops).toEqual([{ actionIndex: 0, op: { op: 'rename', from: CREATE, to: `${CREATE}.disabled` } }]);
+    expect(o.source).toMatchObject({ kind: 'fix', key: `jar:${CREATE}`, from: 'mods' });
+    // Nothing changed on disk until Execute.
+    expect(backend.fix.jarsOf(ATM.id).find((j) => j.id === CREATE)?.disabled).toBe(false);
+    // Enabling an enabled jar is refused next to the toggle.
+    await store.getState().cancelOrder();
+    await store.getState().setJarEnabled(CREATE, true);
+    expect(store.getState().fixErrors[`jar:${CREATE}`]?.kind).toBe('invalid');
     expect(store.getState().fixErrorFrom[`jar:${CREATE}`]).toBe('mods');
   });
 

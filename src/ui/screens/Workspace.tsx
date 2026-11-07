@@ -119,18 +119,25 @@ function WatchError({ instanceId }: { instanceId: string }) {
   return <ErrorRow error={error} className="shrink-0" />;
 }
 
+/** The open work order in place of the mod table (§6.4); it stays until Cancel or Close. */
 function OrderPanel() {
   const order = useApp((s) => s.order);
   const a = useActions();
   if (!order) return null;
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {order.error ? <ErrorRow error={order.error} /> : null}
+    <div className="flex min-h-40 flex-1 flex-col">
       <WorkOrderPanel
+        className="min-h-0 flex-1"
         order={order.order}
         statuses={order.statuses}
         phase={order.phase}
         rolledBack={order.rolledBack}
+        game={order.game}
+        error={order.error}
+        expired={order.expired}
+        replanning={order.replanning}
+        onPlanAgain={() => void a.planAgain()}
+        autoFocus
         onExecute={() => void a.executeOrder()}
         onCancel={() => void a.cancelOrder()}
       />
@@ -147,7 +154,8 @@ export function Workspace({ instanceId }: { instanceId: string }) {
       <Header instance={instance} />
       <WatchError instanceId={instanceId} />
       <ScanPanel instanceId={instanceId} className="shrink-0 border-b border-line" />
-      <TriagePanel key={instanceId} instanceId={instanceId} className="max-h-[45%] min-h-24 shrink border-b border-line" />
+      {/* An open work order is the task at hand: the findings panel gives it room (a third). */}
+      <TriagePanel key={instanceId} instanceId={instanceId} compact={orderOpen} className="min-h-24 shrink border-b border-line" />
       {orderOpen ? <OrderPanel /> : <ModsPanel instanceId={instanceId} className="min-h-40 flex-1" />}
     </>
   );

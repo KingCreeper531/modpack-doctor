@@ -40,6 +40,17 @@
  * writes are serialised and lookups wait for them, so no lookup runs against a Rust
  * `modrinthEnabled` the UI no longer intends.
  *
+ * Fixes (M6, CONTRACTS invariants 8 and 14): every mutation is a work order. A fix button (or the
+ * mod-table toggle, a one-op Enable/Disable) sends one `FixAction` with the effective
+ * `PackIdentity` to `plan_work_order`; a refusal lands in `fixErrors` next to the button. A
+ * planned order is shown only after `game_running` answered (a running game is a warning in the
+ * panel; Rust refuses the execute itself). `execute_work_order` → live `OpStatus` events (this
+ * order only) → the `WorkOrderResult` (statuses, `rolledBack`, backup id) → rescan (which re-runs
+ * the checks and Modrinth) and a history reload; the panel stays until Close. A refused execute
+ * keeps the order open: `gameRunning` / `conflict` can be retried, `notFound` (expired) offers
+ * Plan again. Undo: `list_backups` per instance (History tab) → `plan_undo(backupId, indexes)`
+ * → the same panel (`kind: undo`); refusals land in `undoErrors` per action.
+ *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
  */
@@ -47,9 +58,11 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type {
   AppError,
+  BackupEntry,
   CrashDetected,
   DiscoveryReport,
   FixAction,
+  GameStatus,
   GridSort,
   HashLookup,
   Instance,
@@ -94,7 +107,7 @@ import {
   type FindingsTab,
   type InstanceCrashes,
 } from './crashState';
-import { call, type Backend, type Unlisten } from './ipc';
+import { call, type Backend, type Result, type Unlisten } from './ipc';
 import {
   emptyModrinth,
   isNetworkError,
@@ -114,14 +127,49 @@ export type Selection =
   /** A crash finding (C-*) from one log source's analysis. */
   | { kind: 'crash'; id: string; sourceId: string };
 
+/** How an open work order was planned; "Plan again" re-runs it after the order expired. */
+export type OrderSource =
+  | { kind: 'fix'; key: string; from: FixOrigin; action: FixAction }
+  | { kind: 'undo'; key: string; backupId: string; actionIndexes: number[] | null };
+
 export interface OpenOrder {
   instanceId: string;
   order: WorkOrder;
+  /** Latest `OpStatus` per op while running; the result's statuses once finished. */
   statuses: OpStatus[];
   phase: 'review' | 'running' | 'finished';
   rolledBack: boolean;
+  /** Why Execute was refused (`gameRunning`, `notFound`, `conflict`…); shown in the panel. */
+  error: AppError | null;
+  source: OrderSource;
+  /** `game_running` asked before Execute was shown; null when that check failed (unknown). */
+  game: GameStatus | null;
+  /** Rust no longer has the order (`notFound` on execute): only Plan again or Cancel remain. */
+  expired: boolean;
+  /** The backup snapshot of the executed order. */
+  backupId: string | null;
+  /** A "Plan again" in flight. */
+  replanning: boolean;
+}
+
+/** Backup history of one instance (`list_backups`), newest first. */
+export interface InstanceHistory {
+  status: 'idle' | 'loading' | 'done' | 'error';
+  entries: BackupEntry[];
   error: AppError | null;
 }
+
+/** Key of an undo request: `<backupId>#<action indexes>` or `<backupId>#all` (every remaining). */
+export function undoKey(backupId: string, actionIndexes: readonly number[] | null): string {
+  return `${backupId}#${actionIndexes === null ? 'all' : actionIndexes.join(',')}`;
+}
+
+/** Shown when a fix is planned while another order is executing. */
+const ORDER_BUSY: AppError = {
+  kind: 'conflict',
+  message: 'Another work order is running. Wait for it to finish, then try this fix again.',
+  path: null,
+};
 
 export interface CoreApi {
   resolvePack: (instance: Instance, scan: NonNullable<InstanceScan['result']>, override?: PackOverride | null) => PackContext;
@@ -233,6 +281,12 @@ export interface AppState {
   watchErrors: Readonly<Record<string, AppError>>;
   /** Modrinth enrichment per instance (M5). */
   modrinth: Readonly<Record<string, InstanceModrinth>>;
+  /** Backup history per instance (M6), loaded when its History tab opens and after each order. */
+  history: Readonly<Record<string, InstanceHistory>>;
+  /** Undo planning refusals by `undoKey` (e.g. the file changed since the fix). */
+  undoErrors: Readonly<Record<string, AppError>>;
+  /** `undoKey`s with a `plan_undo` call in flight. */
+  undoPending: Readonly<Record<string, true>>;
 
   init(): Promise<void>;
   dispose(): void;
@@ -250,7 +304,14 @@ export interface AppState {
   setInspectorOpen(open: boolean): void;
   setJarEnabled(jarId: string, enabled: boolean): Promise<void>;
   executeOrder(): Promise<void>;
+  /** Cancel (discards a planned order) or Close (a finished one); never while running. */
   cancelOrder(): Promise<void>;
+  /** Plan an expired order again from the same fix or undo request. */
+  planAgain(): Promise<void>;
+  loadBackups(id: string): Promise<void>;
+  /** Plan undoing some actions of a backup (`null`: every remaining one) and open the order. */
+  undo(backupId: string, actionIndexes: number[] | null): Promise<void>;
+  dismissUndoError(key: string): void;
   addFolder(): Promise<void>;
   addLauncherRoot(launcher: Launcher): Promise<void>;
   clearRailError(): void;
@@ -998,6 +1059,74 @@ export function createAppStore(deps: StoreDeps): AppStore {
       );
     };
 
+    /** Set or clear one keyed error (fix or undo refusals). */
+    const keyed = (m: Readonly<Record<string, AppError>>, key: string, e: AppError | null): Record<string, AppError> => {
+      const next = { ...m };
+      if (e) next[key] = e;
+      else delete next[key];
+      return next;
+    };
+
+    const setUndoPending = (key: string, on: boolean) =>
+      set((st) => {
+        const undoPending: Record<string, true> = { ...st.undoPending };
+        if (on) undoPending[key] = true;
+        else delete undoPending[key];
+        return { undoPending };
+      });
+
+    /** Route a planning refusal to the row whose button asked for it. */
+    const planFailed = (source: OrderSource, e: AppError) => {
+      if (source.kind === 'undo') set((st) => ({ undoErrors: keyed(st.undoErrors, source.key, e) }));
+      else
+        set((st) => ({
+          fixErrors: keyed(st.fixErrors, source.key, e),
+          fixErrorFrom: { ...st.fixErrorFrom, [source.key]: source.from },
+        }));
+    };
+
+    /** `plan_work_order` / `plan_undo` for a source. */
+    const planSource = async (instanceId: string, source: OrderSource): Promise<Result<WorkOrder>> => {
+      if (source.kind === 'undo') return call(cmd.planUndo(source.backupId, source.actionIndexes));
+      const identity = packIdentity(get().scans[instanceId]?.pack ?? null);
+      if (!identity) return { status: 'error', error: UNKNOWN_PACK };
+      return call(cmd.planWorkOrder(instanceId, identity, [source.action]));
+    };
+
+    /**
+     * Show a planned order in the panel, after asking `game_running` (Execute is never shown
+     * before that answer). A planned order never silently replaces one that is executing: it is
+     * discarded and `ORDER_BUSY` returned. An open order still in review is discarded for it.
+     */
+    const openOrder = async (instanceId: string, order: WorkOrder, source: OrderSource): Promise<AppError | null> => {
+      const game = await call(cmd.gameRunning(instanceId));
+      const cur = get().order;
+      if (cur?.phase === 'running') {
+        void call(cmd.discardWorkOrder(order.id));
+        return ORDER_BUSY;
+      }
+      if (cur && cur.phase === 'review' && !cur.expired && cur.order.id !== order.id) void call(cmd.discardWorkOrder(cur.order.id));
+      set({
+        order: {
+          instanceId,
+          order,
+          statuses: [],
+          phase: 'review',
+          rolledBack: false,
+          error: null,
+          source,
+          game: game.status === 'ok' ? game.data : null,
+          expired: false,
+          backupId: null,
+          replanning: false,
+        },
+      });
+      return null;
+    };
+
+    /** Latest `list_backups` request per instance. */
+    const historyTokens = new Map<string, number>();
+
     /** Episode sources being announced, per `instanceId/sourceId` (a stale listing keeps them). */
     const announcing = new Map<string, LogSource>();
 
@@ -1086,9 +1215,10 @@ export function createAppStore(deps: StoreDeps): AppStore {
           set({ railError: { kind: 'invalid', message: `${name} was not added: ${reason}`, path: null } }),
         ),
         ev.crashDetected.listen((e) => void onCrash(e)),
+        // Live op statuses of the executing order only; a late event never overrides the result.
         ev.opStatus.listen((s) =>
           set((st) => {
-            if (!st.order || st.order.order.id !== s.orderId) return {};
+            if (!st.order || st.order.order.id !== s.orderId || st.order.phase !== 'running') return {};
             const statuses = [...st.order.statuses.filter((x) => x.index !== s.index), s];
             return { order: { ...st.order, statuses } };
           }),
@@ -1138,6 +1268,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
       watchPending: {},
       watchErrors: {},
       modrinth: {},
+      history: {},
+      undoErrors: {},
+      undoPending: {},
 
       init() {
         initOnce ??= start();
@@ -1293,39 +1426,93 @@ export function createAppStore(deps: StoreDeps): AppStore {
           return;
         }
         set((st) => ({ fixPending: { ...st.fixPending, [key]: true } }));
-        const r = await call(cmd.planWorkOrder(id, identity, [action]));
-        if (r.status === 'error') {
-          setErr(r.error);
-          return;
-        }
-        setErr(null);
-        set({ order: { instanceId: id, order: r.data, statuses: [], phase: 'review', rolledBack: false, error: null } });
+        const source: OrderSource = { kind: 'fix', key, from, action };
+        const r = await planSource(id, source);
+        setErr(r.status === 'error' ? r.error : await openOrder(id, r.data, source));
       },
 
       async setJarEnabled(jarId, enabled) {
+        // Never a silent rename: a one-op Enable/Disable work order, shown in the panel.
         await get().fix(`jar:${jarId}`, { kind: enabled ? 'enable' : 'disable', jarId });
       },
 
       async executeOrder() {
         const o = get().order;
-        if (!o || o.phase !== 'review') return;
-        set({ order: { ...o, phase: 'running' } });
-        const r = await call(cmd.executeWorkOrder(o.order.id));
+        if (!o || o.phase !== 'review' || o.expired || o.replanning) return;
+        const orderId = o.order.id;
+        set({ order: { ...o, phase: 'running', statuses: [], error: null } });
+        const r = await call(cmd.executeWorkOrder(orderId));
         const cur = get().order;
-        if (!cur || cur.order.id !== o.order.id) return;
+        if (!cur || cur.order.id !== orderId) return;
         if (r.status === 'error') {
-          set({ order: { ...cur, phase: 'review', error: r.error } });
+          // Refused before any op ran. `gameRunning` / `conflict`: the order stays, so Execute
+          // can be retried. `notFound`: it expired (or was used); only Plan again helps.
+          set({ order: { ...cur, phase: 'review', statuses: [], error: r.error, expired: r.error.kind === 'notFound' } });
           return;
         }
-        set({ order: { ...cur, phase: 'finished', statuses: r.data.statuses, rolledBack: r.data.rolledBack, error: null } });
+        set({ order: { ...cur, phase: 'finished', statuses: r.data.statuses, rolledBack: r.data.rolledBack, backupId: r.data.backupId, error: null } });
+        // Files may have changed (even a rolled-back order touched them): rescan, which re-runs the
+        // checks and Modrinth enrichment, and refresh the history (new snapshot, undone marks).
         void get().scan(o.instanceId);
+        void get().loadBackups(o.instanceId);
       },
 
       async cancelOrder() {
         const o = get().order;
-        if (!o) return;
+        if (!o || o.phase === 'running') return;
         set({ order: null });
-        if (o.phase === 'review') await call(cmd.discardWorkOrder(o.order.id));
+        if (o.phase === 'review' && !o.expired) await call(cmd.discardWorkOrder(o.order.id));
+      },
+
+      async planAgain() {
+        const o = get().order;
+        if (!o || !o.expired || o.replanning || o.phase !== 'review') return;
+        set({ order: { ...o, replanning: true } });
+        const r = await planSource(o.instanceId, o.source);
+        if (get().order?.order.id !== o.order.id) {
+          if (r.status === 'ok') void call(cmd.discardWorkOrder(r.data.id));
+          return;
+        }
+        if (r.status === 'error') {
+          // The plan itself is refused now: the panel closes, the refusal shows where it was asked.
+          set({ order: null });
+          planFailed(o.source, r.error);
+          return;
+        }
+        const e = await openOrder(o.instanceId, r.data, o.source);
+        if (e) planFailed(o.source, e);
+      },
+
+      async loadBackups(id) {
+        const token = bump(historyTokens, id);
+        set((st) => ({ history: { ...st.history, [id]: { entries: [], ...st.history[id], status: 'loading', error: null } } }));
+        const r = await call(cmd.listBackups(id));
+        if (historyTokens.get(id) !== token) return;
+        set((st) => {
+          const prev = st.history[id] ?? { status: 'idle', entries: [], error: null };
+          const next: InstanceHistory =
+            r.status === 'ok'
+              ? { status: 'done', entries: [...r.data].sort((a, b) => b.createdAtMs - a.createdAtMs), error: null }
+              : { ...prev, status: 'error', error: r.error };
+          return { history: { ...st.history, [id]: next } };
+        });
+      },
+
+      async undo(backupId, actionIndexes) {
+        const key = undoKey(backupId, actionIndexes);
+        if (get().undoPending[key]) return;
+        const instanceId = backupId.slice(0, backupId.indexOf('/'));
+        setUndoPending(key, true);
+        set((st) => ({ undoErrors: keyed(st.undoErrors, key, null) }));
+        const source: OrderSource = { kind: 'undo', key, backupId, actionIndexes };
+        const r = await planSource(instanceId, source);
+        const e = r.status === 'error' ? r.error : await openOrder(instanceId, r.data, source);
+        if (e) planFailed(source, e);
+        setUndoPending(key, false);
+      },
+
+      dismissUndoError(key) {
+        set((st) => ({ undoErrors: keyed(st.undoErrors, key, null) }));
       },
 
       async addFolder() {
@@ -1420,6 +1607,11 @@ export function createAppStore(deps: StoreDeps): AppStore {
 
       setFindingsTab(id, tab) {
         set((st) => ({ findingsTab: { ...st.findingsTab, [id]: tab } }));
+        if (tab === 'history') {
+          const h = get().history[id]?.status;
+          if (!h || h === 'idle' || h === 'error') void get().loadBackups(id);
+          return;
+        }
         if (tab !== 'crashes') return;
         clearAlert(id);
         const cs = get().crashes[id]?.sourcesStatus;

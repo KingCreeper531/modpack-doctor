@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PlannedOp, WorkOrder } from '../../../bindings';
-import { basename, formatAgo, formatBytes, formatDuration, formatInt, opNumber, plural } from '../format';
-import { fixLabel, probeResult } from '../labels';
+import { basename, formatAgo, formatBytes, formatDuration, formatInt, formatStamp, opNumber, plural } from '../format';
+import { appliedActionLabel, fixLabel, probeResult } from '../labels';
 import { buildLogRows, excerptLines, gutterChars } from '../logModel';
 import { matchMask, matchRuns } from '../paletteModel';
 import { rovingIndex } from '../roving';
-import { describeOp, enterExecutes } from '../workOrderModel';
+import { describeOp, enterExecutes, orderOutcome, refusalText } from '../workOrderModel';
 
 describe('format', () => {
   it('formats numbers, sizes and times', () => {
@@ -132,6 +132,37 @@ describe('work order', () => {
       detail: 'replaces mods/sodium-0.5.8.jar',
     });
     expect(describeOp(rename.op)).toMatchObject({ verb: 'rename', subject: 'mods/a.jar.disabled', target: 'mods/a.jar' });
+  });
+
+  it('says what a finished order did', () => {
+    const st = (index: number, state: 'done' | 'failed' | 'skipped', message: string | null = null) => ({ orderId: 'o', index, state, message });
+    expect(orderOutcome({ ops: [] }, [], false)).toEqual({ ok: true, text: 'Done: this work order had notes only; no file was changed.' });
+    expect(orderOutcome({ ops: [rename] }, [st(0, 'done')], false).text).toBe('Done: 1 operation completed. Each action can be undone from History.');
+    expect(orderOutcome({ ops: [rename, download] }, [st(1, 'failed', 'locked'), st(0, 'done')], true)).toEqual({
+      ok: false,
+      text: 'Operation 02 failed: locked. Rolled back: every completed operation was reversed, so the files are as they were.',
+    });
+    expect(orderOutcome({ ops: [rename, download] }, [st(0, 'failed', 'Gone.'), st(1, 'skipped')], false).text).toBe('Operation 01 failed: Gone. Nothing was changed.');
+    expect(orderOutcome({ ops: [rename, download] }, [st(0, 'done'), st(1, 'failed')], false).text).toBe(
+      'Operation 02 failed: no reason was given. The operations before it completed and were not rolled back; see each row.',
+    );
+  });
+
+  it('turns a gameRunning refusal into an instruction and leaves other errors alone', () => {
+    expect(refusalText({ kind: 'gameRunning', message: 'Minecraft is running.', path: null }).message).toBe('Close Minecraft first: Minecraft is running.');
+    const other = { kind: 'conflict' as const, message: 'Busy.', path: null };
+    expect(refusalText(other)).toBe(other);
+  });
+
+  it('labels actions that ran by the version their download fetched', () => {
+    expect(appliedActionLabel({ kind: 'replace', jarId: 'mods/sodium-0.5.8.jar', versionId: 'x' }, [download.op])).toBe('Update sodium to 0.5.11');
+    expect(appliedActionLabel({ kind: 'installDependency', modId: 'sodium', versionId: 'x' }, [download.op])).toBe('Install sodium 0.5.11');
+    expect(appliedActionLabel({ kind: 'disable', jarId: 'mods/a.jar' }, [rename.op])).toBe('Disable a.jar');
+    expect(appliedActionLabel({ kind: 'replace', jarId: 'mods/sodium-0.5.8.jar', versionId: 'x' }, [])).toBe('Replace sodium-0.5.8.jar');
+  });
+
+  it('stamps history rows in local time', () => {
+    expect(formatStamp(new Date(2026, 10, 5, 9, 4).getTime())).toBe('2026-11-05 09:04');
   });
 });
 

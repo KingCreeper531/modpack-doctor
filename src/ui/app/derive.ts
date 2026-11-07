@@ -190,6 +190,16 @@ export function packIdentity(pack: PackContext | null): PackIdentity | null {
   return { mcVersion: pack.mcVersion, loader: pack.loader };
 }
 
+/**
+ * Why fix buttons are disabled for an instance, or null when fixes can be planned: a fix is
+ * checked against the pack's Minecraft version and loader (`PackIdentity`), so both must be known.
+ */
+export function fixBlockReason(scan: Pick<InstanceScan, 'result' | 'pack'> | undefined): string | null {
+  if (!scan?.result) return 'Fixes can be planned once the scan has finished.';
+  if (packIdentity(scan.pack)) return null;
+  return "The pack's Minecraft version or loader is unknown. Set them under Pack identity in the inspector to plan fixes.";
+}
+
 /** Class-file major version → Java release (`65` → `21`). */
 export function javaRelease(major: number): number {
   return major - 44;

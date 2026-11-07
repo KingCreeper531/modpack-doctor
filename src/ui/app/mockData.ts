@@ -636,3 +636,54 @@ export function pickedFolderInstance(n: number): Instance {
     modCount: 0,
   };
 }
+
+// ── Jars written by mock fixes (mockFix.ts) ──────────────────────────────────
+
+/** One mod a jar written by a mock fix declares. */
+export interface MockModSpec {
+  modId: string;
+  version: string;
+  name: string;
+  loader: LoaderKind;
+  /** Minecraft range in the loader's syntax (Maven for Forge/NeoForge, Fabric predicates otherwise). */
+  mc: string;
+  /** Dependencies other than the loader and Minecraft: `[modId, kind, range]`. */
+  deps?: DepSpec[];
+  env?: ModEnvironment;
+}
+
+/** Class-file major version a jar built for `mc` uses (Java 8 / 17 / 21). */
+function classMajorFor(mc: string): number {
+  const [maj = 1, min = 0, patch = 0] = mc.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  if (maj > 1) return 65;
+  if (min < 17) return 52;
+  return min > 20 || (min === 20 && patch >= 5) ? 65 : 61;
+}
+
+/**
+ * A top-level jar at `path` declaring `mod`, as a mock fix writes it: a downloaded version, or an
+ * old jar kept in a seeded backup snapshot. `sha1` / `sha512` / `sizeBytes` pin the file facts
+ * (a download's come from its Modrinth file); otherwise they derive from `path`.
+ */
+export function mockJarAt(
+  path: string,
+  mod: MockModSpec,
+  opts: { mcVersion: string; sizeBytes?: number; sha1?: string; sha512?: string; mtimeMs?: number },
+): JarRecord {
+  const slash = path.lastIndexOf('/');
+  const spec: JarSpec = {
+    file: path.slice(slash + 1),
+    dir: slash < 0 ? '' : path.slice(0, slash),
+    mods: [{ modId: mod.modId, version: mod.version, name: mod.name, loader: mod.loader, mc: mod.mc, loaderRange: null, deps: mod.deps ?? [], env: mod.env ?? 'both' }],
+    maxClass: classMajorFor(opts.mcVersion),
+    sizeKb: (opts.sizeBytes ?? 512 * 1024) / 1024,
+  };
+  const top = buildJar(spec, hashString(`fix:${path}:${mod.version}`))[0]!;
+  return {
+    ...top,
+    size: opts.sizeBytes ?? top.size,
+    sha1: opts.sha1 ?? top.sha1,
+    sha512: opts.sha512 ?? top.sha512,
+    mtimeMs: opts.mtimeMs ?? top.mtimeMs,
+  };
+}

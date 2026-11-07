@@ -279,6 +279,59 @@ export function mockFindUpdates(sha1s: string[], loaders: string[], gameVersions
   });
 }
 
+/** Every Modrinth loader name the mock answers for. */
+const ALL_LOADERS = ['forge', 'neoforge', 'fabric', 'quilt'];
+
+/** A Modrinth version the mock knows, with the mod id its jar declares. */
+export interface MockVersionInfo {
+  version: MrVersion;
+  modId: string;
+  title: string;
+}
+
+/**
+ * `GET /v2/version/{id}` for the mock fix planner (mockFix.ts): every version the mock ever
+ * answers (identified jars, their updates and betas, resolvable dependencies), or null.
+ */
+export function mockVersionById(versionId: string): MockVersionInfo | null {
+  for (const e of entries().values()) {
+    const candidates = [
+      identified(e),
+      mockFindUpdates([e.jar.sha1], ALL_LOADERS, [e.mc], ['release']).found[e.jar.sha1],
+      mockFindUpdates([e.jar.sha1], ALL_LOADERS, [e.mc], ['release', 'beta']).found[e.jar.sha1],
+    ];
+    const hit = candidates.find((v) => v?.id === versionId);
+    if (hit) return { version: hit, modId: e.modId, title: e.spec.title };
+  }
+  for (const [modId, r] of Object.entries(RESOLVABLE)) {
+    for (const mc of Object.keys(r.versions)) {
+      for (const loader of ALL_LOADERS) {
+        const hit = mockProjectVersions(projectId(r.slug), [loader], [mc]).find((v) => v.id === versionId);
+        if (hit) return { version: hit, modId, title: r.title };
+      }
+    }
+  }
+  return null;
+}
+
+/** The version a jar's hash identifies (`modrinth_identify` for one hash), or null. */
+export function mockIdentifiedVersion(sha1: string): MrVersion | null {
+  return mockIdentify([sha1]).found[sha1] ?? null;
+}
+
+/**
+ * Make a jar a mock fix wrote (a download, a restored snapshot file) identifiable by its hash,
+ * as Modrinth would identify the real file. Idempotent; jars of unknown projects are ignored.
+ */
+export function mockRegisterJar(instanceId: string, jar: JarRecord): void {
+  const meta = jar.mods[0];
+  if (!meta) return;
+  const spec = PROJECTS[meta.modId] ?? RESOLVABLE[meta.modId];
+  if (!spec) return;
+  const mc = MOCK_INSTANCES.find((i) => i.id === instanceId)?.mcVersion ?? '';
+  entries().set(jar.sha1.toLowerCase(), { instanceId, mc, jar, modId: meta.modId, spec });
+}
+
 function sides(env: ProjectSpec['env']): { clientSide: SideSupport; serverSide: SideSupport } {
   if (env === 'client_only') return { clientSide: 'required', serverSide: 'unsupported' };
   if (env === 'server_only') return { clientSide: 'unsupported', serverSide: 'required' };

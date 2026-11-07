@@ -12,7 +12,8 @@ import type { CrashSummary } from '../../core/crash/summary';
 import type { Finding, FrameRef, LogLine } from '../../core/model';
 import { logPath } from '../components/format';
 
-export type FindingsTab = 'findings' | 'crashes';
+/** The findings panel's legends: static findings, crash analysis, backup history (M6). */
+export type FindingsTab = 'findings' | 'crashes' | 'history';
 export type CrashPane = 'diagnosis' | 'log';
 
 export interface CrashAnalysis {

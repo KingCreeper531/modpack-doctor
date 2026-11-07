@@ -17,6 +17,16 @@
  *   - `crash`: two instances are watched (`Settings.watched`); a few seconds after the UI re-arms
  *     them, each "crashes": a new crash report appears in its log list, the game process goes
  *     away and one `CrashDetected` is emitted per instance, as Rust watch mode would.
+ *   - `gamerunning`: `game_running` reports Minecraft running for every instance, and every
+ *     `execute_work_order` is refused with `gameRunning` (the order stays valid).
+ *   - `fixfail`: the 2nd op of every work order fails (the only op of a one-op order); the
+ *     completed ops are rolled back and the result says `rolledBack: true`.
+ *   - `expired`: the first `execute_work_order` answers `notFound` (the order expired).
+ * - `?order=running` (with the `order` screenshot hook, devHooks.ts): the 2nd op of an executed
+ *   order starts running and never finishes.
+ *
+ * Fixes (M6): mockFix.ts plans, executes and undoes work orders over an in-memory copy of each
+ * instance's jars, so a rescan after a fix shows the change; backups are recorded per order.
  *
  * Modrinth (M5): realistic answers over the mock jar sets (mockModrinth.ts). With
  * `modrinthEnabled` false every lookup is cache-only and the cache is empty (`offline: true`),
@@ -29,9 +39,14 @@
  */
 import type {
   AppError,
+  BackupEntry,
   CrashDetected,
   DropRejected,
+  FixAction,
   GridSort,
+  PackIdentity,
+  WorkOrder,
+  WorkOrderResult,
   GameStatus,
   HashLookup,
   InstanceAdded,
@@ -54,7 +69,8 @@ import type {
 } from '../../bindings';
 import { digestFromText } from '../../core/crash';
 import type { AppCommands, Backend, EventChannel, Result, Unlisten } from './ipc';
-import { mockDiscovery, mockJars, pickedFolderInstance, seeded } from './mockData';
+import { mockDiscovery, pickedFolderInstance, seeded } from './mockData';
+import { createMockFix, type MockFixEngine } from './mockFix';
 import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from './mockLogs';
 import {
   MOCK_RATE_LIMIT_S,
@@ -67,7 +83,18 @@ import {
   mockResolveModId,
 } from './mockModrinth';
 
-export type MockScenario = 'default' | 'empty' | 'scanning' | 'errors' | 'offline' | 'ratelimit' | 'modrinthoff' | 'crash';
+export type MockScenario =
+  | 'default'
+  | 'empty'
+  | 'scanning'
+  | 'errors'
+  | 'offline'
+  | 'ratelimit'
+  | 'modrinthoff'
+  | 'crash'
+  | 'gamerunning'
+  | 'fixfail'
+  | 'expired';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -81,9 +108,25 @@ export interface MockOptions {
   gridSort?: GridSort;
   /** `crash` scenario: override every instance's delay between arming and its crash. */
   crashDelayMs?: number;
+  /** Delay of each work-order op step (default: ten times `latencyMs`). */
+  opMs?: number;
+  /** Screenshot hook: the op at this index of an executed order never finishes. */
+  holdOpAt?: number | null;
 }
 
-const SCENARIOS: readonly MockScenario[] = ['default', 'empty', 'scanning', 'errors', 'offline', 'ratelimit', 'modrinthoff', 'crash'];
+const SCENARIOS: readonly MockScenario[] = [
+  'default',
+  'empty',
+  'scanning',
+  'errors',
+  'offline',
+  'ratelimit',
+  'modrinthoff',
+  'crash',
+  'gamerunning',
+  'fixfail',
+  'expired',
+];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
   const p = new URLSearchParams(search);
@@ -95,6 +138,7 @@ export function mockOptionsFromSearch(search: string): MockOptions {
     scanMs: 1500,
     latencyMs: 40,
     iconMs: 700,
+    holdOpAt: p.get('order') === 'running' ? 1 : null,
   };
 }
 
@@ -136,6 +180,8 @@ export interface MockBackend extends Backend {
   crash(instanceId: string, episode?: number): CrashDetected | null;
   /** Test hook: emit any `CrashDetected` as Rust would (e.g. a repeated episode). */
   emitCrashDetected(e: CrashDetected): void;
+  /** Test hook: the fix engine (jar lists, stored orders, expiry). */
+  fix: MockFixEngine;
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
@@ -173,6 +219,26 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
 
   const lag = () => sleep(opts.latencyMs);
   const instances = () => [...discovery.instances, ...added];
+  /** Instances with a scan in flight (an order is refused while its instance is scanned). */
+  const scanning = new Set<string>();
+  const fix = createMockFix(
+    {
+      opMs: opts.opMs ?? opts.latencyMs * 10,
+      failSecondOp: opts.scenario === 'fixfail',
+      expireFirst: opts.scenario === 'expired',
+      gameRunning: opts.scenario === 'gamerunning',
+      holdOpAt: opts.holdOpAt ?? null,
+    },
+    {
+      instance: (id) => instances().find((i) => i.id === id),
+      override: (id) => settings.overrides[id] ?? null,
+      offline: () => mrOffline(),
+      scanning: (id) => scanning.has(id),
+      emit: (s) => ev.opStatus.emit(s),
+      now: () => Date.now(),
+      sleep: (ms) => (ms > 0 ? sleep(ms) : Promise.resolve()),
+    },
+  );
 
   /** Wall clock when the backend started; log ages are relative to it. */
   const born = Date.now();
@@ -222,6 +288,15 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   }
 
   async function scanInstance(instanceId: string): Promise<Result<ScanResult>> {
+    scanning.add(instanceId);
+    try {
+      return await scanOnce(instanceId);
+    } finally {
+      scanning.delete(instanceId);
+    }
+  }
+
+  async function scanOnce(instanceId: string): Promise<Result<ScanResult>> {
     await lag();
     const inst = instances().find((i) => i.id === instanceId);
     if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
@@ -236,7 +311,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       );
     }
     const startedAtMs = Date.now();
-    const jars = mockJars(instanceId);
+    // The instance as the mock fixes left it.
+    const jars = [...fix.jarsOf(instanceId)];
     const top = jars.filter((j) => j.depth === 0).sort((a, b) => a.fileName.toLowerCase().localeCompare(b.fileName.toLowerCase()));
     const stubs: JarStub[] = top.map((j) => ({ id: j.id, path: j.path, fileName: j.fileName, disabled: j.disabled }));
     ev.scanStarted.emit({ instanceId, jars: stubs });
@@ -391,14 +467,26 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (mrOffline()) return err('offline', 'Modrinth is not reachable right now, so the mod could not be looked up.');
       return ok(mockResolveModId(modId, iconCache));
     },
-    planWorkOrder: async () => {
+    planWorkOrder: async (instanceId: string, pack: PackIdentity, actions: FixAction[]): Promise<Result<WorkOrder>> => {
       await lag();
-      return notYet('Applying fixes');
+      return fix.plan(instanceId, pack, actions);
     },
-    executeWorkOrder: async () => notYet('Applying fixes'),
-    discardWorkOrder: async () => notYet('Applying fixes'),
-    listBackups: async () => notYet('Backup history'),
-    planUndo: async () => notYet('Undo'),
+    executeWorkOrder: async (orderId: string): Promise<Result<WorkOrderResult>> => {
+      await lag();
+      return fix.execute(orderId);
+    },
+    discardWorkOrder: async (orderId: string): Promise<Result<null>> => {
+      await lag();
+      return fix.discard(orderId);
+    },
+    listBackups: async (instanceId: string): Promise<Result<BackupEntry[]>> => {
+      await lag();
+      return fix.listBackups(instanceId);
+    },
+    planUndo: async (backupId: string, actionIndexes: number[] | null): Promise<Result<WorkOrder>> => {
+      await lag();
+      return fix.planUndo(backupId, actionIndexes);
+    },
     gameRunning: async (instanceId: string): Promise<Result<GameStatus>> => {
       await lag();
       const inst = instances().find((i) => i.id === instanceId);
@@ -408,7 +496,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (scripted && opts.scenario === 'crash' && !crashed.has(instanceId)) {
         return ok({ running: true, pids: [scripted.pid], reason: `javaw.exe pid ${scripted.pid} with --gameDir ${inst.gameDir}` });
       }
-      return ok({ running: false, pids: [], reason: null });
+      return ok(fix.gameStatus(instanceId));
     },
     getSettings: async () => {
       await lag();
@@ -433,5 +521,6 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     watches: () => watches,
     crash,
     emitCrashDetected: (e) => ev.crashDetected.emit(e),
+    fix,
   };
 }
