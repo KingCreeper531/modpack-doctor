@@ -147,6 +147,20 @@ pub struct WorkOrderResult {
     pub rolled_back: bool,
 }
 
+/// How an executed order ended, from its manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum BackupStatus {
+    /// Every op completed.
+    Complete,
+    /// An op failed and every completed op was reversed: the files are as they were.
+    RolledBack,
+    /// The order was interrupted (app closed, crash, power loss) or a rollback step failed: some
+    /// files may be in the snapshot instead of `mods/`. `plan_undo(id, None)` then plans a
+    /// recovery from the actual file locations recorded in the manifest.
+    Incomplete,
+}
+
 /// One executed work order. Undo works per action (`plan_undo(backupId, actionIndexes)`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -161,6 +175,7 @@ pub struct BackupEntry {
     pub ops: Vec<PlannedOp>,
     /// Indexes into `actions` already undone.
     pub undone_actions: Vec<u32>,
+    pub status: BackupStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]

@@ -625,7 +625,7 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
       let ms = plannedAt;
       while (snapshotsOf(id).some((x) => x.entry.id === `${id}/${ms}`)) ms++;
       snap = {
-        entry: { id: `${id}/${ms}`, instanceId: id, createdAtMs: ms, title: order.title, actions: order.actions, ops: order.ops, undoneActions: [] },
+        entry: { id: `${id}/${ms}`, instanceId: id, createdAtMs: ms, title: order.title, actions: order.actions, ops: order.ops, undoneActions: [], status: 'incomplete' },
         dir: snapshotDir(id, ms),
         files: new Map(),
         after: new Map(),
@@ -698,7 +698,7 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
     const add = (agoMs: number, actions: FixAction[], ops: PlannedOp[], undone: number[], files: Array<[string, JarRecord]>, after: Array<[string, string | null]>) => {
       const ms = born - agoMs;
       list.push({
-        entry: { id: `${instanceId}/${ms}`, instanceId, createdAtMs: ms, title: title(instanceId, actions, ops), actions, ops, undoneActions: undone },
+        entry: { id: `${instanceId}/${ms}`, instanceId, createdAtMs: ms, title: title(instanceId, actions, ops), actions, ops, undoneActions: undone, status: 'complete' },
         dir: snapshotDir(instanceId, ms),
         files: new Map(files.map(([p, j]) => [`files/${p}`, [j]])),
         after: new Map(after),

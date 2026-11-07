@@ -113,6 +113,8 @@ fn open_journal(guard: &PathGuard, o: &StoredOrder) -> Result<Journal> {
                     actions: o.order.actions.clone(),
                     ops: o.order.ops.clone(),
                     undone_actions: Vec::new(),
+                    // Until the order finishes, a manifest on disk means "interrupted".
+                    status: crate::model::BackupStatus::Incomplete,
                 },
                 order_id: o.order.id.clone(),
                 game_dir: o.game_dir.display().to_string(),

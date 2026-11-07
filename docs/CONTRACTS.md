@@ -245,6 +245,28 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       write access and never use `share_mode(0)`: the JVM's `ZipFile` opens jars with
       `FILE_SHARE_READ | FILE_SHARE_WRITE` only, so such a handle makes the game's own open fail
       (measured in M6; the earlier DELETE-probe wording was wrong).
+    - **Write-ahead and recovery (M6 safety review).** Before each mutation the manifest records
+      the op as running plus every intended move (source, destination, `.part` name), fsynced; after
+      it, the actual result. `BackupEntry.status`: `complete`, `rolledBack`, or `incomplete`
+      (interrupted, or a rollback step failed). For `incomplete`, `plan_undo(id, None)` plans a
+      recovery from the *actual* recorded file locations (snapshot `files/`, `created/`, `dest`),
+      checking each file's sha1, so any interrupted or half-rolled-back order can be restored.
+      Rollback steps are all-or-nothing per op (a Download whose replaced jar cannot be moved back
+      keeps its new jar in place, so the state stays a consistent "applied"). On startup, leftover
+      `mods/.<name>.<hex>.part` files named in an incomplete manifest are moved into its snapshot.
+    - **No replacing renames.** Every move refuses an existing destination atomically
+      (Windows `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`; elsewhere hard link + remove of
+      the source, or `renameat2(RENAME_NOREPLACE)` on Linux), not check-then-rename.
+      `.part` files are created with `create_new`. Cross-volume copies keep mtime.
+    - **One app process** (`tauri-plugin-single-instance`); closing the window while an order
+      executes is refused with a native message until it finishes.
+    - **Bound intents.** `InstallDependency.modId` must be a required dependency declared by an
+      enabled top-level jar of the instance and not already provided (built-ins, `provides`, nested
+      jars); the version's project must equal the project Rust itself resolves for that mod id
+      (`resolve_mod_id`). `Replace` stays within the jar's own project. The planner fetches every
+      version fresh from the API (no cache, no stale fallback); a failure fails the plan.
+    - **Confirmation shows the source URL:** the download row shows host + size, and the full CDN
+      URL as a detail line.
     - **Tests run only on temp-dir copies.** No test, smoke tool or manual check mutates a real
       instance unless the owner asks.
     - **UI:** every mutation goes through a work order shown in the panel (DESIGN §6.4), including

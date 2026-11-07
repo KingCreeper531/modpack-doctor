@@ -163,7 +163,21 @@ export type BackupEntry = {
 	ops: PlannedOp[],
 	/**  Indexes into `actions` already undone. */
 	undoneActions: number[],
+	status: BackupStatus,
 };
+
+/**  How an executed order ended, from its manifest. */
+export type BackupStatus = 
+/**  Every op completed. */
+"complete" | 
+/**  An op failed and every completed op was reversed: the files are as they were. */
+"rolledBack" | 
+/**
+ *  The order was interrupted (app closed, crash, power loss) or a rollback step failed: some
+ *  files may be in the snapshot instead of `mods/`. `plan_undo(id, None)` then plans a
+ *  recovery from the actual file locations recorded in the manifest.
+ */
+"incomplete";
 
 export type ChunkReason = 
 /**  First N lines of the file. */
