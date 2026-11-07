@@ -94,6 +94,31 @@ an error.
 - **Java class versions**: the top-level jar's own classes decide W-JAVA-CLASS (warning); a
   newer *bundled* module alone is info ("it may be optional").
 
+### `.mrpack` packs (CONTRACTS invariant 15)
+
+An opened `.mrpack` is scanned without extracting or downloading anything. Its override jars
+(`overrides/`, `client-overrides/`, `server-overrides/`) are ordinary `JarRecord`s and get every
+check above. The files its `modrinth.index.json` declares arrive as `ScanResult.declared` and are
+checked from Modrinth data only, identified by sha1 like jars (`planQueries` includes them;
+`declaredMatch` in `../modrinth` gives their state):
+
+- `mrpackDeclared.ts`: E-WRONG-LOADER, E-MC-RANGE (mods under `mods/` only), E-MISSING-DEP (by
+  Modrinth project id, per side), I-NOT-ON-MODRINTH (one aggregate for declared files, separate
+  from the override jars' one). Needs a Modrinth context that is not offline; failed lookups are
+  unknown, never "missing". The header comment is the full rule.
+- `mrpackDownload.ts`: W-MRPACK-DOWNLOAD (warning) for a download URL outside the allowlist
+  (`cdn.modrinth.com`, `github.com`, `raw.githubusercontent.com`, `gitlab.com`, https only, no user
+  info, no port but 443, exact host). Works offline. The URL parser is hand-written (no `URL`
+  global in `src/core`); anything it cannot read counts as outside.
+
+**Culprit of a declared file:** there is no `JarRecord`, so the `JarRef` is
+`{ jarId: <index path>, fileName: <basename> }` with no `modId`, e.g.
+`{ jarId: 'mods/sodium-fabric-0.5.8.jar', fileName: 'sodium-fabric-0.5.8.jar' }`
+(`declaredRef`). Index paths are relative to the instance folder the pack installs into and never
+collide with override jar ids (`overrides/…`). Finding ids: `findingId(code, [index path],
+'declared…')`. **Declared-file findings carry no fixes and no `missingModIds`**: packs are
+read-only, and `enrichFindings` finds no jar for the culprit, so it adds nothing either.
+
 ### Known gaps
 
 - `config/fml.toml` `dependencyOverrides` are not read: a dependency the user removed there is

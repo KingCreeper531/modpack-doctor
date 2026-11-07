@@ -13,6 +13,7 @@ import { loaderRangeCheck } from './loaderRange';
 import { mcRangeCheck } from './mcRange';
 import { missingDepCheck } from './missingDep';
 import { notOnModrinthCheck } from './notOnModrinth';
+import { mrpackDeclaredCheck } from './mrpackDeclared';
 import { mrpackDownloadCheck } from './mrpackDownload';
 import { splitPkgCheck } from './splitPkg';
 import { wrongLoaderCheck } from './wrongLoader';
@@ -31,6 +32,7 @@ export const CHECKS: readonly Check[] = [
   corruptJarCheck,
   javaClassCheck,
   notOnModrinthCheck,
+  mrpackDeclaredCheck,
   mrpackDownloadCheck,
 ];
 
@@ -59,6 +61,8 @@ export function compareFindings(a: Finding, b: Finding): number {
 export function runChecks(input: CheckInput): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
+  // CONTRACTS invariant 15: a .mrpack is read-only; no finding on it carries fixes.
+  const readOnly = input.instance.launcher === 'mrpack';
   for (const check of CHECKS) {
     let found: Finding[];
     try {
@@ -69,7 +73,7 @@ export function runChecks(input: CheckInput): Finding[] {
     for (const f of found) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      out.push(f);
+      out.push(readOnly && f.fixes.length > 0 ? { ...f, fixes: [] } : f);
     }
   }
   return out.sort(compareFindings);
