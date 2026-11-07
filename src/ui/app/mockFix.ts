@@ -813,10 +813,12 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
     }
     if (undo) {
       if (failed < 0) snap.entry.undoneActions = [...new Set([...snap.entry.undoneActions, ...undo.indexes])].sort((a, b) => a - b);
-      // A finished recovery: every file is back where it was before the order.
+      // A finished recovery: every file is back where it was before the order, so it reads as
+      // rolled back (CONTRACTS invariant 14), with nothing left to undo.
       if (failed < 0 && undo.recovery) {
         snap.live.clear();
-        snap.entry.status = 'complete';
+        snap.entry.status = 'rolledBack';
+        snap.entry.undoneActions = snap.entry.actions.map((_, i) => i);
       }
     } else {
       snap.entry.status = failed < 0 ? 'complete' : snap.live.size === 0 ? 'rolledBack' : 'incomplete';

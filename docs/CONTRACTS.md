@@ -251,6 +251,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       (interrupted, or a rollback step failed). For `incomplete`, `plan_undo(id, None)` plans a
       recovery from the *actual* recorded file locations (snapshot `files/`, `created/`, `dest`),
       checking each file's sha1, so any interrupted or half-rolled-back order can be restored.
+      A completed recovery sets the backup to `rolledBack` (files as before the order; nothing left
+      to undo); a recovery that fails part-way leaves it `incomplete`. Per-action undo is refused on
+      `rolledBack` and `incomplete` backups.
       Rollback steps are all-or-nothing per op (a Download whose replaced jar cannot be moved back
       keeps its new jar in place, so the state stays a consistent "applied"). On startup, leftover
       `mods/.<name>.<hex>.part` files named in an incomplete manifest are moved into its snapshot.

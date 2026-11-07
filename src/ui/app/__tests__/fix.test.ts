@@ -415,7 +415,7 @@ describe('backup status and recovery (write-ahead, CONTRACTS invariant 14)', () 
     expect(r).toMatchObject({ status: 'error', error: { kind: 'invalid', message: expect.stringContaining('rolled back') } });
   });
 
-  it('interrupted: op 02 fails and reversing op 01 fails too, so the backup stays incomplete; Recover restores the files and leaves it complete', async () => {
+  it('interrupted: op 02 fails and reversing op 01 fails too, so the backup stays incomplete; Recover restores the files and leaves it rolled back', async () => {
     const m = await ready({ scenario: 'interrupted' });
     const before = paths(m).sort();
     await m.store.getState().fix('r', lithoReplace(m));
@@ -441,7 +441,7 @@ describe('backup status and recovery (write-ahead, CONTRACTS invariant 14)', () 
     await finish(m);
     expect(m.store.getState().order!.statuses.map((s) => s.state)).toEqual(['done']);
     expect(paths(m).sort()).toEqual(before);
-    expect(m.store.getState().history[ATM.id]!.entries.find((e) => e.id === entry.id)).toMatchObject({ status: 'complete', undoneActions: [0] });
+    expect(m.store.getState().history[ATM.id]!.entries.find((e) => e.id === entry.id)).toMatchObject({ status: 'rolledBack', undoneActions: [0] });
   });
 
   it('the seeded interrupted backup (Create: Above and Beyond) recovers the jar it had moved into the snapshot', async () => {
@@ -459,7 +459,7 @@ describe('backup status and recovery (write-ahead, CONTRACTS invariant 14)', () 
     expect(rec.order.notes).toHaveLength(1);
     await finishOn(m, CABIN.id);
     expect(scanPaths(m, CABIN.id)).toContain(SEEDED_INTERRUPTED_JAR);
-    expect(m.store.getState().history[CABIN.id]!.entries[0]).toMatchObject({ status: 'complete', undoneActions: [0, 1] });
+    expect(m.store.getState().history[CABIN.id]!.entries[0]).toMatchObject({ status: 'rolledBack', undoneActions: [0, 1] });
   });
 
   it('opening an instance loads its history (so an interrupted backup can be announced)', async () => {

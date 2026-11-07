@@ -251,7 +251,7 @@ describe('backup status: rolled back, interrupted and Recover', () => {
     expect(within(entry).queryByRole('button', { name: /^Undo/ })).toBeNull();
   });
 
-  it('Recover plans the recovery into the same panel (undo, title from Rust); executing it leaves the backup complete', async () => {
+  it('Recover plans the recovery into the same panel (undo, title from Rust); executing it leaves the backup rolled back', async () => {
     const m = await renderCabin();
     m.store.getState().setFindingsTab(CABIN.id, 'history');
     const entry = await screen.findByRole('listitem', { name: /Remove create/ });
@@ -270,10 +270,10 @@ describe('backup status: rolled back, interrupted and Recover', () => {
       fireEvent.click(within(panel()).getByRole('button', { name: 'Execute' }));
       await until(() => m.store.getState().order?.phase === 'finished' && m.store.getState().history[CABIN.id]?.status === 'done');
     });
-    expect(m.store.getState().history[CABIN.id]!.entries[0]!.status).toBe('complete');
+    expect(m.store.getState().history[CABIN.id]!.entries[0]!.status).toBe('rolledBack');
     const after = within(screen.getByRole('list', { name: 'Backup history' })).getAllByRole('listitem', { name: /^\d{4}-/ })[0]!;
     expect(within(after).queryByRole('button', { name: 'Recover' })).toBeNull();
-    expect(within(after).getByText('all undone')).toBeTruthy();
+    expect(within(after).getByText('rolled back — files unchanged')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /interrupted work order/ })).toBeNull();
   });
 
