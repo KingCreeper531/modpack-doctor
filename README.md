@@ -41,8 +41,9 @@ Instances are found automatically on all three operating systems:
 
 A launcher installed somewhere unusual can be pointed at with "Add a launcher's data folder".
 `.mrpack` files are opened read-only and never extracted: the files the index declares are checked
-by hash without downloading them, and the jars in `overrides/`, `client-overrides/` and
-`server-overrides/` get every static check.
+by hash without downloading them, and the jars directly in `overrides/mods/`,
+`client-overrides/mods/` and `server-overrides/mods/` get every static check (other jars under the
+override folders are listed as scan issues, not checked).
 
 ### Static checks
 
@@ -150,8 +151,10 @@ Download the installer for your system from the
 | Linux | `.AppImage` or `.deb` |
 
 The installers are not code-signed with an OS certificate yet. Windows SmartScreen and macOS
-Gatekeeper will warn on first launch; on Windows choose "More info" then "Run anyway", on macOS
-right-click the app and choose Open.
+Gatekeeper will warn on first launch. On Windows choose "More info" then "Run anyway". On macOS 15
+and newer, open the app once, dismiss the warning, then go to System Settings → Privacy & Security
+and click "Open Anyway" next to Modpack Doctor (on older macOS, right-click the app and choose
+Open).
 
 **Updates** are checked only when you ask: About → "Check for updates", or "Check for updates" in
 the command palette. If a newer release exists, About shows its version, date and notes; nothing is
@@ -165,13 +168,19 @@ app's updater signature before it is installed. Installing is refused while a wo
   User-Agent `KingCreeper531/modpack-doctor/<version> (github.com/KingCreeper531/modpack-doctor)`.
   Responses and icons are cached on disk. Switch off "Look up mods online" in the rail footer to
   stop all Modrinth requests; static checks keep working.
-- **GitHub** (`github.com`, `objects.githubusercontent.com`): only when you click "Check for updates"
-  or "Install … and restart".
+- **GitHub** (`github.com`, which redirects release downloads to `objects.githubusercontent.com` /
+  `release-assets.githubusercontent.com`): only when you click "Check for updates" or "Install …
+  and restart".
 - Nothing else. There is no telemetry or analytics, and no account.
 - **Offline:** discovery, scanning, every static check and crash analysis run without a network.
   Modrinth lookups then show `Modrinth unreachable — static checks only`.
 - The app's web view has no file system, shell or HTTP access of its own. All file access happens in
-  the Rust backend and is limited to the instance folders it found or you added.
+  the Rust backend, which reads and writes only:
+  - the instance folders it found or you added (fixes change files only through a work order);
+  - its own data folder (settings, backups) and cache folder (Modrinth responses, icons);
+  - `.mrpack` files you open, read-only;
+  - the report file you choose in the save dialog;
+  - when you install an update, the downloaded installer and the app's own install location.
 
 ## Safety model
 
@@ -261,7 +270,11 @@ fixtures and the rule that severity mirrors what the loader really does.
 2. Push a tag `v<version>` (for example `v0.2.0`). The release workflow
    (`.github/workflows/release.yml`) builds Windows (`.msi`, `.exe`), macOS universal (`.dmg`) and
    Linux (`.AppImage`, `.deb`), signs the update bundles, and uploads everything with `latest.json`
-   to a draft GitHub Release.
+   to a draft GitHub Release. It stops early if the tag doesn't match the version in all three
+   files, or if the release for that tag is already published. Its last job checks `latest.json`:
+   every platform present, every download URL a `github.com` release download of this tag, and
+   every updater signature verified against the public key and bound to this version
+   (`src-tauri/examples/verify_update_sig.rs`).
 3. Review the draft and publish it. Installed apps see the update the next time someone clicks
    "Check for updates".
 

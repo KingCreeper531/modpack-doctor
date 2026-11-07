@@ -1,8 +1,9 @@
 /**
  * About (DESIGN.md §6.8): a panel overlay laid out like a data plate. Under the `ABOUT` legend,
  * the app name and a one-line description, a two-column table (version, build commit, Tauri
- * version, data dir, cache dir, licence, source link; rows the build cannot report are left
- * out), the update section, and the non-affiliation disclaimer. No third-party logos.
+ * version, data directory, cache directory, licence, source link; values in mono, truncated with
+ * the full value as their title; rows the build cannot report are left out), the update section,
+ * and the non-affiliation disclaimer. No third-party logos.
  *
  * `UpdateSection` is presentational: it renders an `UpdateView` (app/updateState.ts) and calls
  * back. Release notes are rendered as a plain text node (pre-wrapped), never as HTML or Markdown.
@@ -56,7 +57,7 @@ export function AboutPlate({ info, onClose, onOpenLink, updates, titleId, classN
   const rows: Array<[string, string | null]> = [
     ['Version', info.version],
     ['Build commit', info.commit],
-    ['Tauri', info.tauri],
+    ['Tauri version', info.tauri],
     ['Data directory', info.dataDir],
     ['Cache directory', info.cacheDir],
     ['Licence', info.licence],
