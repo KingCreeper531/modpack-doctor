@@ -141,3 +141,15 @@ describe('end-to-end with resolvePack + buildJarIndex', () => {
     expect(f[0]?.culprits[0]).toEqual({ jarId: 'mods/host.jar', fileName: 'host.jar', modId: 'fabric-api-base' });
   });
 });
+
+describe('runChecks on a .mrpack', () => {
+  it('strips every fix: a pack is read-only (CONTRACTS invariant 15)', () => {
+    const p = pack('fabric', '1.20.1', '0.16.5', 'server');
+    const base = input(messyPack(), p, modrinth());
+    const normal = runChecks(base);
+    expect(normal.some((f) => f.fixes.length > 0)).toBe(true);
+    const packed = runChecks({ ...base, instance: { ...base.instance, launcher: 'mrpack' } });
+    expect(packed.length).toBe(normal.length);
+    expect(packed.every((f) => f.fixes.length === 0)).toBe(true);
+  });
+});
