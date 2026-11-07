@@ -23,6 +23,7 @@ import { TriageRow } from '../components/TriageRow';
 import { digestView, LOG_KIND_LABEL, sourceDir, sourceName, type CrashAnalysis, type CrashPane } from '../app/crashState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { useNow } from './hooks';
+import { useFixBlock } from './fixHooks';
 import { useFixVersions } from './modrinthHooks';
 
 const TONE: Record<Severity, PipTone> = { error: 'error', warning: 'warning', info: 'info' };
@@ -112,6 +113,7 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
     return names;
   }, [result]);
   const versions = useFixVersions(instanceId);
+  const blocked = useFixBlock(instanceId);
   const findings = analysis.findings;
   // The top error opens by itself the first time this source's findings appear.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -159,7 +161,8 @@ function CrashFindings({ instanceId, source, analysis }: { instanceId: string; s
             selectedJarId={selection?.kind === 'jar' ? selection.id : null}
             onJarClick={a.revealJar}
             onFix={(fix) => void a.fix(f.id, fix, 'triage')}
-            fixesDisabled={orderOpen || !!fixPending[f.id]}
+            fixesDisabled={orderOpen || !!fixPending[f.id] || blocked !== null}
+            fixHint={blocked}
             fixError={fixErrorFrom[f.id] === 'triage' ? (fixErrors[f.id] ?? null) : null}
           />
         </div>

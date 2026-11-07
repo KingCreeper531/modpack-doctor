@@ -5,7 +5,7 @@
  * `unavailable` is not a failure: the feature isn't in this build yet. It renders neutrally,
  * with an `info` rail, `fg-dim` text and `role="status"`, never the err rail.
  */
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 import type { AppError } from '../../bindings';
 import { cx } from './cx';
@@ -15,6 +15,7 @@ export interface ErrorRowProps {
   /** Optional trailing action, e.g. a Retry button. */
   action?: ReactNode;
   className?: string;
+  ref?: Ref<HTMLDivElement>;
 }
 
 /** A feature this build doesn't have yet, as opposed to something that went wrong. */
@@ -22,10 +23,11 @@ export function isUnavailable(error: AppError | null | undefined): boolean {
   return error?.kind === 'unavailable';
 }
 
-export function ErrorRow({ error, action, className }: ErrorRowProps) {
+export function ErrorRow({ error, action, className, ref }: ErrorRowProps) {
   const neutral = isUnavailable(error);
   return (
     <div
+      ref={ref}
       role={neutral ? 'status' : 'alert'}
       data-kind={error.kind}
       className={cx('flex min-h-8 items-stretch border-b border-line bg-panel', className)}

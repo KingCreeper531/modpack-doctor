@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { WORK_ORDER_FIX, WORK_ORDER_UNDO } from '../../design/fixtures';
+import type { OpStatus, WorkOrder } from '../../../bindings';
+import { STATUSES_RUNNING, WORK_ORDER_FIX, WORK_ORDER_RESTORE, WORK_ORDER_UNDO } from '../../design/fixtures';
 import { WorkOrderPanel } from '../WorkOrderPanel';
 
 afterEach(cleanup);
@@ -61,5 +62,136 @@ describe('WorkOrderPanel keyboard gating (DESIGN §6.4)', () => {
     const { onExecute, panel } = setup(WORK_ORDER_UNDO, 'running');
     fireEvent.keyDown(panel, { key: 'Enter' });
     expect(onExecute).not.toHaveBeenCalled();
+  });
+
+  it('Esc closes a finished order; Enter does nothing then', () => {
+    const { onCancel, onExecute, panel } = setup(WORK_ORDER_UNDO, 'finished');
+    fireEvent.keyDown(panel, { key: 'Enter' });
+    expect(onExecute).not.toHaveBeenCalled();
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+  });
+
+  it('an expired order never executes, by Enter or click; Plan again replaces it', () => {
+    const onPlanAgain = vi.fn();
+    const onExecute = vi.fn();
+    render(
+      <WorkOrderPanel
+        order={WORK_ORDER_UNDO}
+        expired
+        error={{ kind: 'notFound', message: 'This work order expired — review the fixes again.', path: null }}
+        onPlanAgain={onPlanAgain}
+        onExecute={onExecute}
+        onCancel={() => undefined}
+      />,
+    );
+    fireEvent.keyDown(screen.getByLabelText(/^Work order 0413/), { key: 'Enter' });
+    expect(screen.queryByText('↵')).toBeNull();
+    const execute = screen.getByRole('button', { name: 'Execute' }) as HTMLButtonElement;
+    expect(execute.disabled).toBe(true);
+    expect(onExecute).not.toHaveBeenCalled();
+    expect(screen.getByText('This work order expired — review the fixes again.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Plan again' }));
+    expect(onPlanAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it('autoFocus moves focus into the panel so Esc / Enter work at once, and back after Execute disables', () => {
+    const props = { order: WORK_ORDER_FIX, onExecute: () => undefined, onCancel: () => undefined, autoFocus: true };
+    const { rerender } = render(<WorkOrderPanel {...props} />);
+    const panel = screen.getByLabelText(/^Work order 0412/);
+    expect(document.activeElement).toBe(panel);
+    const execute = screen.getByRole('button', { name: 'Execute' });
+    execute.focus();
+    rerender(<WorkOrderPanel {...props} phase="running" />);
+    expect(document.activeElement).toBe(panel);
+  });
+});
+
+describe('WorkOrderPanel rendering', () => {
+  it('renders every op kind as a numbered mono row (rename, backup, download with size and host, restore, remove)', () => {
+    const order: WorkOrder = {
+      ...WORK_ORDER_FIX,
+      ops: [...WORK_ORDER_FIX.ops, ...WORK_ORDER_RESTORE.ops],
+    };
+    render(<WorkOrderPanel order={order} onExecute={() => undefined} onCancel={() => undefined} />);
+    const rows = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(rows).toHaveLength(7);
+    expect(rows[0]).toBe('01renamemods/rubidium-0.7.1.jar → mods/rubidium-0.7.1.jar.disabledpending');
+    expect(rows[1]).toBe('02downloadsodium 0.5.11 (312 KB) from cdn.modrinth.com → mods/sodium-0.5.11.jarreplaces mods/sodium-0.5.8.jarpending');
+    expect(rows[2]).toBe('03backupmods/sodium-0.5.8.jar → backup snapshotpending');
+    expect(rows[4]).toBe('05restoremods/sodium-0.5.8.jar → mods/sodium-0.5.8.jarexpects absentpending');
+    expect(rows[5]).toBe('06removemods/sodium-0.5.11.jar → backup snapshotcreated by fix · sha1 4f2c9e1apending');
+    expect(screen.getByText(WORK_ORDER_FIX.backupDir)).toBeTruthy();
+    expect(screen.getByText('manual step: set the Java runtime to Java 21 if sodium still fails')).toBeTruthy();
+    expect(screen.getByText(`fix · 7 ops`)).toBeTruthy();
+  });
+
+  it('a running game is a warning line before Execute, which stays enabled (Rust refuses)', () => {
+    render(
+      <WorkOrderPanel
+        order={WORK_ORDER_FIX}
+        game={{ running: true, pids: [18244], reason: 'javaw.exe pid 18244 with --gameDir D:\\mc' }}
+        onExecute={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    const warn = screen.getByRole('status');
+    expect(warn.textContent).toContain('game running');
+    expect(warn.textContent).toContain('Minecraft is running (javaw.exe pid 18244 with --gameDir D:\\mc). Close it before you execute');
+    expect((screen.getByRole('button', { name: 'Execute' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('a gameRunning refusal reads "Close Minecraft first: …" and replaces the warning line', () => {
+    render(
+      <WorkOrderPanel
+        order={WORK_ORDER_FIX}
+        game={{ running: true, pids: [1], reason: 'x' }}
+        error={{ kind: 'gameRunning', message: 'Minecraft is running for "ATM9". Nothing was changed.', path: null }}
+        onExecute={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    const row = screen.getByRole('alert');
+    expect(row.getAttribute('data-kind')).toBe('gameRunning');
+    expect(row.textContent).toContain('Close Minecraft first: Minecraft is running for "ATM9". Nothing was changed.');
+    expect(screen.queryByText(/Close it before you execute/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Execute' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('while executing: the running op has the bar, Cancel is disabled, Execute shows Executing', () => {
+    const { container } = render(<WorkOrderPanel order={WORK_ORDER_FIX} statuses={STATUSES_RUNNING} phase="running" onExecute={() => undefined} onCancel={() => undefined} />);
+    expect(container.querySelectorAll('.md-op-bar')).toHaveLength(1);
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Executing' }) as HTMLButtonElement).disabled).toBe(true);
+    const rows = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
+    expect(rows.map((r) => r.match(/(pending|running|done)$/)?.[1])).toEqual(['done', 'running', 'pending', 'pending']);
+  });
+
+  it('a successful order: a done line and Close', () => {
+    const statuses: OpStatus[] = WORK_ORDER_FIX.ops.map((_, index) => ({ orderId: '0412', index, state: 'done', message: null }));
+    render(<WorkOrderPanel order={WORK_ORDER_FIX} statuses={statuses} phase="finished" onExecute={() => undefined} onCancel={() => undefined} />);
+    expect(screen.getByRole('status').textContent).toBe('doneDone: 4 operations completed. Each action can be undone from History.');
+    expect(screen.queryByRole('button', { name: 'Execute' })).toBeNull();
+    expect(screen.getByText('4 done')).toBeTruthy();
+  });
+
+  it('a rolled-back order: the failed op message inline and in the outcome, completed ops read "rolled back"', () => {
+    const statuses: OpStatus[] = [
+      { orderId: '0412', index: 0, state: 'done', message: 'rolled back' },
+      { orderId: '0412', index: 1, state: 'failed', message: 'The SHA-512 does not match.' },
+      { orderId: '0412', index: 2, state: 'skipped', message: null },
+      { orderId: '0412', index: 3, state: 'skipped', message: null },
+    ];
+    render(<WorkOrderPanel order={WORK_ORDER_FIX} statuses={statuses} phase="finished" rolledBack onExecute={() => undefined} onCancel={() => undefined} />);
+    const rows = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
+    expect(rows[0]).toMatch(/rolled back$/);
+    expect(rows[1]).toMatch(/The SHA-512 does not match\.failed$/);
+    expect(rows[2]).toMatch(/skipped$/);
+    const outcome = screen.getByRole('alert');
+    expect(outcome.textContent).toBe(
+      'rolled backOperation 02 failed: The SHA-512 does not match. Rolled back: every completed operation was reversed, so the files are as they were.',
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
   });
 });

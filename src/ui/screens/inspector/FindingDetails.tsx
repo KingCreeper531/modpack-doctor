@@ -10,6 +10,7 @@ import { EvidenceView } from '../../components/EvidenceView';
 import { fixLabel } from '../../components/labels';
 import { FindingCode, RAIL_BG } from '../../components/Severity';
 import { useActions, useApp } from '../../app/StoreContext';
+import { useFixBlock } from '../fixHooks';
 import { useFixVersions } from '../modrinthHooks';
 import { SubLegend } from './Plate';
 
@@ -33,6 +34,7 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
   const selectedJar = useApp((s) => (s.selection?.kind === 'jar' ? s.selection.id : null));
   const a = useActions();
   const versions = useFixVersions(instanceId);
+  const blocked = useFixBlock(instanceId);
   const names = useMemo(() => {
     const n: Record<string, string> = {};
     for (const j of result?.jars ?? []) n[j.id] = j.fileName;
@@ -87,12 +89,19 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
           {plannable.length ? (
             <div className="flex flex-wrap gap-2 px-4 py-2">
               {plannable.map((fix, i) => (
-                <Button key={i} size={24} variant={i === 0 ? 'primary' : 'default'} disabled={pending || orderOpen} onClick={() => void a.fix(findingId, fix, 'inspector')}>
+                <Button
+                  key={i}
+                  size={24}
+                  variant={i === 0 ? 'primary' : 'default'}
+                  disabled={pending || orderOpen || blocked !== null}
+                  onClick={() => void a.fix(findingId, fix, 'inspector')}
+                >
                   {fixLabel(fix, names, versions)}
                 </Button>
               ))}
             </div>
           ) : null}
+          {plannable.length > 0 && blocked ? <p className="px-4 pb-2 t-small text-fg-faint">{blocked}</p> : null}
           {fixError ? <ErrorRow error={fixError} className="border-t" /> : null}
           {steps.length ? (
             <ol className="flex flex-col gap-1 px-4 py-2 t-mono text-fg-dim">

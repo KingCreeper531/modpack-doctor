@@ -7,7 +7,7 @@
  * selection); the others stay `fg-faint`. Left/Right move between them (wrapping), Home/End jump
  * to the first/last; only the active tab is a tab stop (roving.ts).
  */
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode, Ref } from 'react';
 
 import { cx } from './cx';
 import { onRovingKeyDown } from './roving';
@@ -38,6 +38,8 @@ export interface PanelProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   flush?: boolean;
   bodyClassName?: string;
   children?: ReactNode;
+  /** The `<section>` (e.g. to move focus into a work order). */
+  ref?: Ref<HTMLElement>;
 }
 
 function Tabs({ tabs, tab, onTab, controls }: { tabs: readonly PanelTab[]; tab?: string | undefined; onTab?: ((id: string) => void) | undefined; controls?: string | undefined }) {
@@ -84,10 +86,11 @@ export function Panel({
   className,
   bodyClassName,
   children,
+  ref,
   ...rest
 }: PanelProps) {
   return (
-    <section className={cx('flex min-w-0 flex-col bg-panel', className)} {...rest}>
+    <section ref={ref} className={cx('flex min-w-0 flex-col bg-panel', className)} {...rest}>
       <header className="flex h-8 shrink-0 items-center gap-4 border-b border-line px-4">
         {tabs ? <Tabs tabs={tabs} tab={tab} onTab={onTab} controls={tabPanelId} /> : <h2 className="t-label text-fg-faint">{legend}</h2>}
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

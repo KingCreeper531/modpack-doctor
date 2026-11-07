@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 
 import { Shell } from '../screens/Shell';
+import { applyDevHooks } from './devHooks';
 import { createBackend } from './ipc';
 import { browserNotifier, deniedNotifier, tauriNotifier } from './notify';
 import { createAppStore, type AppStore } from './store';
@@ -35,7 +36,10 @@ function createDefaultStore(): AppStore {
   const backend = createBackend();
   const initialSelect = backend.kind === 'mock' ? new URLSearchParams(window.location.search).get('select') : null;
   const notifier = backend.kind === 'tauri' ? tauriNotifier() : backend.kind === 'mock' ? browserNotifier() : deniedNotifier();
-  return createAppStore({ backend, initialSelect, notifier });
+  const store = createAppStore({ backend, initialSelect, notifier });
+  // `?order=` / `?tab=` screenshot hooks (devHooks.ts); dead code, and dropped, in production.
+  if (import.meta.env.DEV && backend.kind === 'mock') applyDevHooks(store, window.location.search);
+  return store;
 }
 
 export interface AppProps {

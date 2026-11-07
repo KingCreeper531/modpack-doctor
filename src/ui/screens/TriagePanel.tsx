@@ -1,10 +1,11 @@
 /**
- * FINDINGS panel (DESIGN.md §6.2), with two legends as tabs:
+ * FINDINGS panel (DESIGN.md §6.2), with three legends as tabs:
  * - FINDINGS: one triage row per static finding, sorted by the checks (severity, code, file).
  *   Click expands inline and shows the finding in the inspector; chips select the jar. Fix
  *   buttons go through `plan_work_order`; a refusal renders inline. Scan failures render as an
  *   error row with a Retry button (§10).
  * - CRASHES (M4): crash reports and logs and their crash findings (CrashesView.tsx).
+ * - HISTORY (M6): backup snapshots of executed work orders and per-action undo (HistoryView.tsx).
  * Crash analysis lives here rather than in a fourth stacked panel so the workspace keeps the
  * §5 order (summary, scan grid, findings, mods) and still fits a 960×600 window.
  */
@@ -20,7 +21,10 @@ import { Pip } from '../components/Severity';
 import { TriageRow } from '../components/TriageRow';
 import { severityCounts } from '../app/derive';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
+import type { FindingsTab } from '../app/crashState';
 import { CrashesView } from './CrashesView';
+import { useFixBlock } from './fixHooks';
+import { HistoryView } from './HistoryView';
 import { useFixVersions } from './modrinthHooks';
 
 function StaticFindings({ instanceId }: { instanceId: string }) {
@@ -44,6 +48,7 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(expandRequest ? [expandRequest] : []));
   const listRef = useRef<HTMLDivElement>(null);
   const versions = useFixVersions(instanceId);
+  const blocked = useFixBlock(instanceId);
 
   // A finding selected from outside the list (URL hook, later the palette) opens and scrolls in.
   useEffect(() => {
@@ -112,7 +117,8 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
                 selectedJarId={selection?.kind === 'jar' ? selection.id : null}
                 onJarClick={a.revealJar}
                 onFix={(fix) => void a.fix(f.id, fix, 'triage')}
-                fixesDisabled={orderOpen || !!fixPending[f.id]}
+                fixesDisabled={orderOpen || !!fixPending[f.id] || blocked !== null}
+                fixHint={blocked}
                 // Shown once, next to the button that was pressed (the inspector shows its own).
                 fixError={fixErrorFrom[f.id] === 'triage' ? (fixErrors[f.id] ?? null) : null}
               />
@@ -124,7 +130,9 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
   );
 }
 
-export function TriagePanel({ instanceId, className }: { instanceId: string; className?: string }) {
+const TABS: readonly FindingsTab[] = ['findings', 'crashes', 'history'];
+
+export function TriagePanel({ instanceId, className, compact = false }: { instanceId: string; className?: string; compact?: boolean }) {
   const tab = useApp((st) => st.findingsTab[instanceId] ?? 'findings');
   const s = useAppShallow((st) => ({ status: st.scans[instanceId]?.status ?? 'idle', findings: st.scans[instanceId]?.findings }));
   const crash = useAppShallow((st) => {
@@ -137,10 +145,12 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
       alert: !!st.crashAlerts[instanceId],
     };
   });
+  const history = useAppShallow((st) => ({ status: st.history[instanceId]?.status ?? 'idle', count: st.history[instanceId]?.entries.length ?? 0 }));
   const a = useActions();
   const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
   const crashCounts = useMemo(() => (crash.findings ? severityCounts(crash.findings) : null), [crash.findings]);
   const findingsMeta = s.status === 'done' || s.findings?.length ? `${counts.error} E · ${counts.warning} W · ${counts.info} I` : undefined;
+  const historyMeta = history.status === 'done' ? plural(history.count, 'backup') : undefined;
   const crashMeta = crashCounts ? `${crashCounts.error} E · ${crashCounts.warning} W · ${crashCounts.info} I` : undefined;
   const tabs: PanelTab[] = [
     { id: 'findings', label: 'Findings' },
@@ -154,6 +164,11 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
         </>
       ),
     },
+    {
+      id: 'history',
+      label: 'History',
+      ...(history.status === 'done' ? { badge: <span className={tab === 'history' ? 'text-fg-dim' : 'text-fg-faint'}>{formatInt(history.count)}</span> } : {}),
+    },
   ];
   const panelId = `findings-panel-${instanceId}`;
   return (
@@ -161,9 +176,9 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
       legend="Findings"
       tabs={tabs}
       tab={tab}
-      onTab={(t) => a.setFindingsTab(instanceId, t === 'crashes' ? 'crashes' : 'findings')}
+      onTab={(t) => a.setFindingsTab(instanceId, TABS.includes(t as FindingsTab) ? (t as FindingsTab) : 'findings')}
       tabPanelId={panelId}
-      meta={tab === 'crashes' ? crashMeta : findingsMeta}
+      meta={tab === 'crashes' ? crashMeta : tab === 'history' ? historyMeta : findingsMeta}
       actions={
         tab === 'crashes' ? (
           <Button
@@ -174,13 +189,23 @@ export function TriagePanel({ instanceId, className }: { instanceId: string; cla
           >
             Refresh
           </Button>
+        ) : tab === 'history' ? (
+          <Button size={24} icon={<ArrowClockwise size={16} />} disabled={history.status === 'loading'} onClick={() => void a.loadBackups(instanceId)}>
+            Refresh
+          </Button>
         ) : undefined
       }
       flush
-      className={cx(className, tab === 'crashes' && 'h-[45%]')}
+      className={cx(className, tab === 'crashes' ? (compact ? 'h-[30%]' : 'h-[45%]') : compact ? 'max-h-[30%]' : 'max-h-[45%]')}
       bodyClassName={tab === 'crashes' ? 'flex min-h-0 flex-col' : 'overflow-y-auto'}
     >
-      {tab === 'crashes' ? <CrashesView instanceId={instanceId} /> : <StaticFindings instanceId={instanceId} />}
+      {tab === 'crashes' ? (
+        <CrashesView instanceId={instanceId} />
+      ) : tab === 'history' ? (
+        <HistoryView instanceId={instanceId} />
+      ) : (
+        <StaticFindings instanceId={instanceId} />
+      )}
     </Panel>
   );
 }

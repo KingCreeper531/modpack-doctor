@@ -8,7 +8,7 @@ import { MOCK_INSTANCES } from '../../app/mockData';
 
 afterEach(cleanup);
 
-const UNAVAILABLE_FIX = "Applying fixes isn't available in this version of Modpack Doctor yet.";
+const REFUSAL = 'Disable jei-1.20.1-forge-15.2.0.27.jar: mods/jei-1.20.1-forge-15.2.0.27.jar.disabled already exists.';
 
 /** happy-dom's viewport; the shell docks the inspector only when the window is wide enough. */
 function setViewport(width: number) {
@@ -91,29 +91,37 @@ describe('shell', () => {
     const inspector = screen.getByRole('complementary', { name: 'Inspector' });
     expect(within(inspector).getByRole('heading', { name: 'Two jars declare mod id jei' })).toBeTruthy();
 
+    const plan = vi.spyOn(m.backend.commands, 'planWorkOrder').mockResolvedValue({ status: 'error', error: { kind: 'conflict', message: REFUSAL, path: null } });
     const fix = within(screen.getByRole('list', { name: /Findings/ })).getByRole('button', { name: /^Disable jei/ });
     await act(async () => {
       fireEvent.click(fix);
       await until(() => !!m.store.getState().fixErrors.dup);
     });
-    // Rendered once (beside the triage button, not again in the inspector), neutrally.
-    const msg = screen.getAllByText(UNAVAILABLE_FIX);
+    // Rendered once (beside the triage button, not again in the inspector), as an error row.
+    const msg = screen.getAllByText(REFUSAL);
     expect(msg).toHaveLength(1);
     const row = msg[0]!.closest('[data-kind]')!;
-    expect(row.getAttribute('role')).toBe('status');
-    expect(row.textContent).not.toContain('internal');
-    expect(row.querySelector('.bg-err')).toBeNull();
-    expect(within(inspector).queryByText(UNAVAILABLE_FIX)).toBeNull();
-    // No promise about work orders while fixes can't run.
-    expect(screen.queryByText(/opens a work order/)).toBeNull();
+    expect(row.getAttribute('role')).toBe('alert');
+    expect(row.textContent).toContain('conflict');
+    expect(within(inspector).queryByText(REFUSAL)).toBeNull();
 
     // The inspector's own button shows the error in the inspector, and only there.
     await act(async () => {
       fireEvent.click(within(inspector).getByRole('button', { name: /^Disable jei/ }));
       await until(() => m.store.getState().fixErrorFrom.dup === 'inspector');
     });
-    expect(screen.getAllByText(UNAVAILABLE_FIX)).toHaveLength(1);
-    expect(within(inspector).getByText(UNAVAILABLE_FIX)).toBeTruthy();
+    expect(screen.getAllByText(REFUSAL)).toHaveLength(1);
+    expect(within(inspector).getByText(REFUSAL)).toBeTruthy();
+
+    // A plan that succeeds opens the work order in place of the mod table.
+    plan.mockRestore();
+    await act(async () => {
+      fireEvent.click(within(inspector).getByRole('button', { name: /^Disable jei/ }));
+      await until(() => m.store.getState().order !== null);
+    });
+    expect(m.store.getState().fixErrors.dup).toBeUndefined();
+    expect(screen.getByRole('region', { name: /^Work order \d+: Disable jei-1\.20\.1-forge-15\.2\.0\.27\.jar$/ })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Mods' })).toBeNull();
   });
 
   it('a culprit chip selects the jar and the inspector shows its facts', async () => {

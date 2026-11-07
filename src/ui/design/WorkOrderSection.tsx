@@ -80,9 +80,31 @@ export function WorkOrderSection() {
             />
           </div>
         </Spec>
-        <Spec label="Finished with a failure" note="done · failed (message inline) · skipped" className="w-full">
+        <Spec label="Finished with a failure" note="done · failed (message inline) · skipped; outcome line; completed ops read rolled back" className="w-full">
           <div className="border border-line">
             <WorkOrderPanel order={WORK_ORDER_RESTORE} statuses={STATUSES_FINISHED} phase="finished" rolledBack onExecute={() => undefined} onCancel={() => undefined} />
+          </div>
+        </Spec>
+        <Spec label="Game running" note="a warning line from game_running; Execute stays (Rust checks again and refuses)" className="w-full">
+          <div className="border border-line">
+            <WorkOrderPanel
+              order={WORK_ORDER_UNDO}
+              game={{ running: true, pids: [18244], reason: 'javaw.exe pid 18244 with --gameDir C:\\Users\\alex\\curseforge\\minecraft\\Instances\\All the Mods 9' }}
+              onExecute={() => undefined}
+              onCancel={() => undefined}
+            />
+          </div>
+        </Spec>
+        <Spec label="Expired" note="notFound on execute: Execute is gone, Plan again plans the same fix anew" className="w-full">
+          <div className="border border-line">
+            <WorkOrderPanel
+              order={WORK_ORDER_UNDO}
+              expired
+              error={{ kind: 'notFound', message: 'This work order expired — review the fixes again.', path: null }}
+              onPlanAgain={() => undefined}
+              onExecute={() => undefined}
+              onCancel={() => undefined}
+            />
           </div>
         </Spec>
       </SpecRow>

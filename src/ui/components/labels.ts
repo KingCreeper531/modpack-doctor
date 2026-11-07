@@ -1,5 +1,5 @@
 /** Display words for contract enums (launchers, probe results, fixes, severities). Pure. */
-import type { FixAction, Launcher, ProbeResult } from '../../bindings';
+import type { FileOp, FixAction, Launcher, ProbeResult } from '../../bindings';
 import type { Severity } from '../../core/model';
 import { basename, formatInt } from './format';
 
@@ -85,6 +85,18 @@ export function fixLabel(fix: FixAction, names: Readonly<Record<string, string>>
     case 'manual':
       return 'Show steps';
   }
+}
+
+/**
+ * Label of an action that ran (backup history): like `fixLabel`, but a `replace` or
+ * `installDependency` names the version its download op fetched (`Update Curios API to 5.9.1`).
+ */
+export function appliedActionLabel(action: FixAction, ops: readonly FileOp[], names: Readonly<Record<string, string>> = {}): string {
+  const dl = ops.find((o): o is Extract<FileOp, { op: 'download' }> => o.op === 'download');
+  if (dl && action.kind === 'replace') return `Update ${dl.projectTitle} to ${dl.versionNumber}`;
+  if (dl && action.kind === 'installDependency') return `Install ${dl.projectTitle} ${dl.versionNumber}`;
+  if (action.kind === 'manual') return 'Manual steps';
+  return fixLabel(action, names);
 }
 
 /** Severity a finding code's prefix implies (`E-` error, `W-` warning, `I-` info); `C-` implies none. */

@@ -123,23 +123,26 @@ describe('crashes panel', () => {
     expect(m.store.getState().crashes[ATM.id]!.pane).toBe('log');
   });
 
-  it('the FINDINGS / CRASHES tabs: Left/Right wrap, Home/End jump, only the active tab is a tab stop', async () => {
+  it('the FINDINGS / CRASHES / HISTORY tabs: Left/Right wrap, Home/End jump, only the active tab is a tab stop', async () => {
     const m = await renderApp();
     const findings = screen.getByRole('tab', { name: /Findings/ });
     findings.focus();
     fireEvent.keyDown(findings, { key: 'End' });
+    expect(m.store.getState().findingsTab[ATM.id]).toBe('history');
+    const history = screen.getByRole('tab', { name: /History/ });
+    expect(document.activeElement).toBe(history);
+    expect([screen.getByRole('tab', { name: /Findings/ }).tabIndex, screen.getByRole('tab', { name: /Crashes/ }).tabIndex, history.tabIndex]).toEqual([-1, -1, 0]);
+    fireEvent.keyDown(history, { key: 'ArrowLeft' });
     expect(m.store.getState().findingsTab[ATM.id]).toBe('crashes');
-    const crashes = screen.getByRole('tab', { name: /Crashes/ });
-    expect(document.activeElement).toBe(crashes);
-    expect([screen.getByRole('tab', { name: /Findings/ }).tabIndex, crashes.tabIndex]).toEqual([-1, 0]);
-    fireEvent.keyDown(crashes, { key: 'Home' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Crashes/ }));
+    fireEvent.keyDown(screen.getByRole('tab', { name: /Crashes/ }), { key: 'Home' });
     expect(m.store.getState().findingsTab[ATM.id]).toBe('findings');
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Findings/ }));
     fireEvent.keyDown(screen.getByRole('tab', { name: /Findings/ }), { key: 'ArrowLeft' });
-    expect(m.store.getState().findingsTab[ATM.id]).toBe('crashes');
+    expect(m.store.getState().findingsTab[ATM.id]).toBe('history');
     // Up/Down are not tab keys in a horizontal tab list.
-    fireEvent.keyDown(screen.getByRole('tab', { name: /Crashes/ }), { key: 'ArrowDown' });
-    expect(m.store.getState().findingsTab[ATM.id]).toBe('crashes');
+    fireEvent.keyDown(screen.getByRole('tab', { name: /History/ }), { key: 'ArrowDown' });
+    expect(m.store.getState().findingsTab[ATM.id]).toBe('history');
   });
 
   it('the tile order switch follows the same radio pattern', async () => {

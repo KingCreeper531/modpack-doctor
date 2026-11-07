@@ -60,6 +60,13 @@ export function hostOf(url: string): string {
   }
 }
 
+/** Local wall-clock stamp for history rows: `2026-11-05 14:32`. */
+export function formatStamp(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Two-digit op number for work-order rows: `01`, `02`, … `10`. */
 export function opNumber(index: number): string {
   return String(index + 1).padStart(2, '0');

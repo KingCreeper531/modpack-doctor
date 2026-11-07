@@ -111,11 +111,21 @@ describe('mock backend', () => {
 
   it('answers later-milestone commands exactly like Rust: a neutral unavailable error', async () => {
     const b = createMockBackend({ latencyMs: 0 });
-    const r = await b.commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
-    expect(r).toEqual({ status: 'error', error: { kind: 'unavailable', message: "Applying fixes isn't available in this version of Modpack Doctor yet.", path: null } });
-    expect(await b.commands.listBackups('x')).toMatchObject({ error: { kind: 'unavailable', message: "Backup history isn't available in this version of Modpack Doctor yet." } });
     const pack = MOCK_INSTANCES.find((i) => i.launcher === 'mrpack')!;
     expect(await b.commands.scanInstance(pack.id)).toMatchObject({ error: { kind: 'unavailable', message: "Scanning .mrpack files isn't available in this version of Modpack Doctor yet." } });
+    expect(await b.commands.saveReport('r', 'markdown', '')).toMatchObject({ error: { kind: 'unavailable' } });
+  });
+
+  it('answers the fix commands (M6) with readable refusals for bad input', async () => {
+    const b = createMockBackend({ latencyMs: 0 });
+    const r = await b.commands.planWorkOrder('x', { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, []);
+    expect(r).toMatchObject({ status: 'error', error: { kind: 'notFound' } });
+    expect(await b.commands.planWorkOrder(MOCK_INSTANCES[0]!.id, { mcVersion: '1.20.1', loader: { kind: 'forge', version: null } }, [])).toMatchObject({
+      error: { kind: 'invalid', message: 'No fix was given, so there is nothing to plan.' },
+    });
+    expect(await b.commands.listBackups('x')).toMatchObject({ error: { kind: 'notFound' } });
+    expect(await b.commands.planUndo('not-a-backup', null)).toMatchObject({ error: { kind: 'invalid' } });
+    expect(await b.commands.executeWorkOrder('9999')).toMatchObject({ error: { kind: 'notFound', message: 'This work order expired — review the fixes again.' } });
   });
 });
 
