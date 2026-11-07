@@ -134,6 +134,7 @@ function unknownReason(enabled: boolean, status: string | undefined, notice: str
   if (status === 'loading') return 'looking up…';
   if (status === 'idle' || status === undefined) return 'not looked up yet';
   if (notice === 'offline') return 'unknown (Modrinth unreachable)';
+  if (notice === 'rateLimited') return 'unknown (Modrinth rate limit)';
   return 'unknown (Modrinth lookup failed)';
 }
 

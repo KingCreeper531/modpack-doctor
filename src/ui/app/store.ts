@@ -760,7 +760,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
           // Restart once Rust has the new intent; the write's own handler may restart us first.
           while (mrWritesPending > 0) await mrWrites;
           if (mrTokens.get(id) !== token) return;
-          await enrich(id, { reason });
+          // As a settings restart: it may join the run the settings handler already started for
+          // this key instead of superseding it (a 'refresh'/'retry' reason would start a second one).
+          await enrich(id, { reason: 'settings' });
           if (mrTokens.get(id) === token) {
             bump(mrTokens, id);
             patchMr(id, (m) => (m.status === 'loading' ? { ...emptyModrinth(), icons: m.icons } : m));
