@@ -311,6 +311,19 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       host is not in Modrinth's allowlist (`cdn.modrinth.com`, `github.com`,
       `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). Override jars
       get every static check. Packs never get fix actions (read-only); findings carry no fixes.
+    - Hardening (M7 review): a pack with duplicate entry names (also case-insensitive, except
+      folders) is refused whole; every entry is read with local/central header consistency
+      enforced (a mismatched entry is skipped with a `ScanIssue`); the end-of-central-directory
+      record(s) incl. ZIP64 are checked by hand before parsing (≤ 20 000 entries, central directory
+      ≤ 12 000 000 bytes). Only jars directly in `overrides/mods/`, `client-overrides/mods/`,
+      `server-overrides/mods/` are scanned; other jars under the override trees are `ScanIssue`s.
+      `downloads` keep every string URL ≤ 4 096 bytes (up to 64); anything else becomes a sentinel
+      that is never a valid URL (`invalid:too-long`, `invalid:not-a-string`, `invalid:not-a-list`,
+      `invalid:more-urls`) plus a `ScanIssue`, so W-MRPACK-DOWNLOAD always sees it. The read-only rule
+      pins the canonical path captured at open; if it later resolves elsewhere the pack is unreadable
+      until reopened. A `:` in a file name (alternate data stream) is never a pack or a report name.
+      Pack identity overrides are refused (`Invalid`): packs are session-only. Display names strip
+      control and Unicode format (bidi, zero-width) characters.
     - Also (M7, implementation limits): one override jar ≤ 256 MiB (skipped above); a drop handles
       at most 32 files; when `overrides/X` and `client-overrides/X`/`server-overrides/X` both exist,
       both are scanned and the shadowed one gets a `ScanIssue`; a pack's `modCount` = declared
