@@ -7,7 +7,8 @@
  * - `optional`/`recommended` dependencies (never fatal when absent);
  * - Quilt "any of" arrays (CONTRACTS invariant 13: they arrive as optional entries).
  * Fixes: `enable` a disabled jar that provides the id, when there is one; then manual steps naming
- * the mod id and the required range (`installDependency` arrives in M5).
+ * the mod id and the required range. `missingModIds` names the absent id, so `src/core/modrinth` can
+ * add an `installDependency` fix (M5).
  */
 import type { Dependency, FixAction, JarRecord } from '../../bindings';
 import type { Check, Finding } from '../model';
@@ -62,8 +63,8 @@ export const missingDepCheck: Check = {
         );
         const disabledText =
           disabled.length > 0 ? ` ${disabled.map((j) => j.fileName).join(', ')} would provide it but is disabled — re-enable it.` : '';
-        out.push(
-          makeFinding({
+        out.push({
+          ...makeFinding({
             code: 'E-MISSING-DEP',
             severity: 'error',
             title: `${name} requires "${dep.modId}"${versionText}, which is not installed`,
@@ -76,7 +77,9 @@ export const missingDepCheck: Check = {
             fixes,
             discriminator: `${e.mod.modId}->${dep.modId}`,
           }),
-        );
+          // The loader mod id as declared (lower-case), for `src/core/modrinth` installDependency.
+          missingModIds: [dep.modId.toLowerCase()],
+        });
       }
     }
     return out;
