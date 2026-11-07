@@ -251,13 +251,14 @@ function fixKey(fix: FixAction): string | null {
  * - `replace` for each culprit jar with an update in `ctx.updates` whose `downloadFile` is not
  *   null, on E-WRONG-LOADER, E-MC-RANGE, E-LOADER-RANGE and every C-* crash finding. Replace fixes
  *   go first (recommended), before existing fixes; no duplicates.
- * - `installDependency` for each of `finding.missingModIds` that has a resolution, first.
+ * - `installDependency` for each of `finding.missingModIds` that has a resolution, first — after
+ *   any existing `enable` fix (a disabled jar the user already has that provides the id).
  * Nothing changes when `ctx` is null/offline.
  *
  * `jars` (the scan's `JarRecord`s) maps culprit jar ids to sha1s, since `JarRef` carries no hash;
  * without it no `replace` fix can be offered. Only top-level, enabled jars are replaced (culprits
- * are always top-level). Order of new fixes: `installDependency` (in `missingModIds` order), then
- * `replace` (in culprit order), then the existing fixes minus any the new ones supersede (same
+ * are always top-level). Order: existing `enable` fixes, then `installDependency` (in
+ * `missingModIds` order), then `replace` (in culprit order), then the other existing fixes minus any the new ones supersede (same
  * jar for `replace`, same mod id for `installDependency`). Unchanged findings are returned as is.
  */
 export function enrichFindings(
@@ -303,6 +304,9 @@ export function enrichFindings(
       const key = fixKey(fix);
       return key === null || !keys.has(key);
     });
-    return { ...f, fixes: [...added, ...kept] };
+    // Re-enabling a jar the user already has beats downloading another copy.
+    const enables = kept.filter((fix) => fix.kind === 'enable');
+    const rest = kept.filter((fix) => fix.kind !== 'enable');
+    return { ...f, fixes: [...enables, ...added, ...rest] };
   });
 }

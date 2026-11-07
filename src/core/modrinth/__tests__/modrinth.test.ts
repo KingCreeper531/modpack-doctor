@@ -384,7 +384,7 @@ describe('enrichFindings', () => {
     expect(enrichFindings([f], ctx, {}, jars)[0]).toBe(f);
   });
 
-  it('adds installDependency for resolved missing ids first, then replace, then existing fixes', () => {
+  it('orders existing enable fixes, then installDependency for resolved ids, then replace, then the rest', () => {
     const enable: FixAction = { kind: 'enable', jarId: 'mods/architectury.jar' };
     const f = finding('C-MISSING-MANDATORY', {
       culprits: [sodiumRef],
@@ -393,10 +393,10 @@ describe('enrichFindings', () => {
     });
     const [out] = enrichFindings([f], ctx, resolutions, jars);
     expect(out?.fixes).toEqual([
+      enable,
       { kind: 'installDependency', modId: 'architectury', versionId: 'aRcH0913' },
       { kind: 'installDependency', modId: 'fabric-api', versionId: 'fApI0092' },
       replaceSodium,
-      enable,
       manualFix,
     ]);
     expect(out?.id).toBe(f.id);
@@ -406,6 +406,16 @@ describe('enrichFindings', () => {
   it('E-MISSING-DEP gets installDependency but no replace', () => {
     const f = finding('E-MISSING-DEP', { culprits: [sodiumRef], missingModIds: ['fabric-api'], fixes: [manualFix] });
     expect(enrichFindings([f], ctx, resolutions, jars)[0]?.fixes).toEqual([
+      { kind: 'installDependency', modId: 'fabric-api', versionId: 'fApI0092' },
+      manualFix,
+    ]);
+  });
+
+  it('an existing enable fix (the user already has a disabled provider) stays ahead of installDependency', () => {
+    const enable: FixAction = { kind: 'enable', jarId: 'mods/fabric-api.jar' };
+    const f = finding('E-MISSING-DEP', { culprits: [sodiumRef], missingModIds: ['fabric-api'], fixes: [manualFix, enable] });
+    expect(enrichFindings([f], ctx, resolutions, jars)[0]?.fixes).toEqual([
+      enable,
       { kind: 'installDependency', modId: 'fabric-api', versionId: 'fApI0092' },
       manualFix,
     ]);
