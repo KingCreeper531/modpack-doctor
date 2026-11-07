@@ -276,6 +276,45 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       the mod-table enable toggle (a one-op order). After an order executes, the instance is
       rescanned and Modrinth re-enriched.
 
+15. **`.mrpack` (M7).** Opened packs are read-only, never extracted to disk, never mutated.
+    - Opened by `pick_mrpack` (native file dialog, `.mrpack` filter) or by dropping a file on the
+      window (`WindowEvent::DragDrop` → `InstanceAdded` or `DropRejected`). Only regular files ending
+      in `.mrpack` (case-insensitive), at most 512 MiB. Opened packs live for the session only (not in
+      settings), survive rediscovery, and are removed with `remove_manual_instance`.
+    - PathGuard gains a read-only exact-file rule for each opened pack (like the hs_err rule): it
+      is not a root, `check_existing` accepts exactly that file, `check_new` nothing.
+    - `Instance`: `launcher: mrpack`, `root` = `gameDir` = the pack's absolute path, id from the path
+      like other instances, `metadataSource: mrpack`, MC version and loader from `dependencies`
+      (`minecraft`, `forge`, `neoforge`, `fabric-loader`, `quilt-loader`; unknown keys ignored).
+    - `scan_instance` on a pack: reads `modrinth.index.json` (formatVersion 1, game `minecraft`,
+      ≤ 8 MiB, ≤ 10 000 files) into `ScanResult.declared`, and scans every `.jar` under
+      `overrides/`, `client-overrides/`, `server-overrides/` in memory as `JarRecord`s whose `relPath`
+      is the path inside the zip. Zip safety: entries with `..`, absolute or drive paths,
+      backslashes, NUL, or reserved names are skipped as `ScanIssue`s; total uncompressed bytes
+      ≤ 2 GiB, compression ratio ≤ 200:1 per entry, ≤ 20 000 entries; symlink entries ignored. Index
+      problems (bad JSON, wrong formatVersion, unsafe `files[].path`, missing hashes) are `ScanIssue`s,
+      never a crash. No download ever happens.
+    - `src/core` checks declared files with Modrinth data (identified by sha1, like jars):
+      a version whose `loaders` exclude the pack loader → E-WRONG-LOADER; whose `gameVersions`
+      exclude the pack MC → E-MC-RANGE; a required dependency project not among the declared or
+      override files → E-MISSING-DEP; not identified → I-NOT-ON-MODRINTH; a `downloads` URL whose
+      host is not in Modrinth's allowlist (`cdn.modrinth.com`, `github.com`,
+      `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). Override jars
+      get every static check. Packs never get fix actions (read-only); findings carry no fixes.
+16. **Reports (M7).** `src/core/report` (frozen API in its `index.ts`) builds the report from the
+    same data the UI shows: instance, effective pack, scan summary, static + crash findings with
+    evidence, Modrinth match summary. Markdown and JSON (`schemaVersion: 1`). No absolute paths of
+    the user's home in the report: paths are shown relative to the game dir, and the game dir with
+    the home folder replaced by `~`. `save_report` opens the native save dialog with the sanitized
+    default name and the format's extension (`.md` / `.json`, enforced), contents ≤ 16 MiB, writes
+    temp + rename in the chosen folder. That path is the one write outside PathGuard roots, allowed
+    because the user picked it in a native dialog; nothing else may be written there.
+17. **Interaction (M7).** Shortcuts: Ctrl/Cmd+K palette, J/K next/previous finding, Enter expand,
+    Ctrl/Cmd+R rescan, Esc closes the top-most layer. Shortcuts never fire while typing in an input,
+    and never execute a work order (Enter stays bound to DESIGN §6.4's rule). Context menus are
+    native Tauri menus (`@tauri-apps/api/menu`, `core:menu:default`) under Tauri and a DESIGN-styled
+    DOM menu in the browser dev build; every menu item that mutates files only *plans* a work order.
+
 ## Commands
 
 | Command | Args | Returns | Events | Milestone |
@@ -324,6 +363,7 @@ Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `
 | `I-SPLIT-PKG` | info | same, on Fabric/Quilt (no module layer) |
 | `E-INCOMPAT` | error (warning for Fabric `conflicts` / NeoForge `discouraged`) | a declared incompatibility entry is present and in range |
 | `W-CLIENT-ON-SERVER` | warning | client-only mod in a server instance |
+| `W-MRPACK-DOWNLOAD` | warning | a `.mrpack` index file lists a download URL whose host is outside Modrinth's allowlist (invariant 15) |
 | `W-CORRUPT-JAR` | warning | jar unreadable or its metadata is invalid |
 | `I-NOT-ON-MODRINTH` | info | hash not found on Modrinth (possibly CurseForge or manual); never raised for `failed` lookups |
 | `W-JAVA-CLASS` | warning | jar's class files need a newer Java than the pack's MC version ships with |
