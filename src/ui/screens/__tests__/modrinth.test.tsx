@@ -169,7 +169,7 @@ describe('Modrinth in the app', () => {
     await act(async () => {
       await until(() => m.store.getState().modrinth[ATM.id]?.status === 'done');
     });
-    const notice = screen.getByText('Modrinth unreachable — static checks only');
+    const notice = screen.getByTitle('Modrinth unreachable — static checks only');
     expect(notice.className).toContain('text-fg-dim');
     expect(notice.querySelector('.bg-info')).not.toBeNull();
     act(() => m.store.getState().select({ kind: 'jar', id: CREATE }));
@@ -181,7 +181,7 @@ describe('Modrinth in the app', () => {
     await act(async () => {
       await until(() => m.store.getState().modrinth[ATM.id]?.notice?.kind === 'rateLimited');
     });
-    expect(screen.getByText(/^Modrinth rate limit — retrying in [3-5] s$/)).toBeTruthy();
+    expect(screen.getByTitle(/^Modrinth rate limit — retrying in [3-5] s$/)).toBeTruthy();
   });
 
   it('rail settings switch Modrinth off (a quiet segment) and betas on', async () => {

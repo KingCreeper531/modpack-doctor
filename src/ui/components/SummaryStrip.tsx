@@ -83,7 +83,7 @@ export function SummaryStrip({
   if (modrinthOff) segments.push({ key: 'mr-off', node: <span className="text-fg-faint">Modrinth off</span> });
 
   return (
-    <div className={cx('flex h-8 min-w-0 items-center gap-4 t-mono', className)}>
+    <div className={cx('@container flex h-8 min-w-0 items-center gap-4 t-mono', className)}>
       <p className="min-w-0 truncate">
         {segments.map((s, i) => (
           <Fragment key={s.key}>
@@ -93,11 +93,24 @@ export function SummaryStrip({
         ))}
       </p>
       {offline && !modrinthOff ? (
-        <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status">
+        // The pack's own counts matter more: a narrow strip shows only the head ("Modrinth
+        // unreachable"); the part after the dash appears when there is room, and in the title.
+        <p className="flex shrink-0 items-center gap-2 text-fg-dim" role="status" title={offlineNotice}>
           <Pip tone="info" />
-          {offlineNotice}
+          <NoticeText text={offlineNotice} />
         </p>
       ) : null}
     </div>
+  );
+}
+
+function NoticeText({ text }: { text: string }) {
+  const cut = text.indexOf(' — ');
+  if (cut < 0) return <span className="whitespace-nowrap">{text}</span>;
+  return (
+    <span className="whitespace-nowrap">
+      {text.slice(0, cut)}
+      <span className="hidden @min-[860px]:inline">{text.slice(cut)}</span>
+    </span>
   );
 }
