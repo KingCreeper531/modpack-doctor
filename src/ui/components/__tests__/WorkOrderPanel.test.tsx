@@ -58,6 +58,36 @@ describe('WorkOrderPanel keyboard gating (DESIGN §6.4)', () => {
     expect((screen.getByRole('button', { name: 'Executing' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('ignores an auto-repeated Enter (held on a History Undo), on the panel and on a focused Execute', () => {
+    const { onExecute, panel } = setup(WORK_ORDER_UNDO);
+    expect(fireEvent.keyDown(panel, { key: 'Enter', repeat: true })).toBe(false);
+    expect(onExecute).not.toHaveBeenCalled();
+    const execute = screen.getByRole('button', { name: /Execute/ });
+    execute.focus();
+    // preventDefault: no native click from the held key either.
+    expect(fireEvent.keyDown(execute, { key: 'Enter', repeat: true })).toBe(false);
+    expect(onExecute).not.toHaveBeenCalled();
+    // A fresh press still works.
+    fireEvent.keyDown(panel, { key: 'Enter' });
+    expect(onExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Enter whose target is outside the panel (a History Undo button, the page)', () => {
+    const onExecute = vi.fn();
+    render(
+      <>
+        <button type="button">Undo</button>
+        <WorkOrderPanel order={WORK_ORDER_UNDO} onExecute={onExecute} onCancel={() => undefined} autoFocus />
+      </>,
+    );
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Undo' }), { key: 'Enter' });
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(onExecute).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByLabelText(/^Work order 0413/), { key: 'Enter' });
+    expect(onExecute).toHaveBeenCalledTimes(1);
+  });
+
   it('never executes an undo by Enter while it is running', () => {
     const { onExecute, panel } = setup(WORK_ORDER_UNDO, 'running');
     fireEvent.keyDown(panel, { key: 'Enter' });
@@ -118,13 +148,44 @@ describe('WorkOrderPanel rendering', () => {
     const rows = screen.getAllByRole('listitem').map((li) => li.textContent);
     expect(rows).toHaveLength(7);
     expect(rows[0]).toBe('01renamemods/rubidium-0.7.1.jar → mods/rubidium-0.7.1.jar.disabledpending');
-    expect(rows[1]).toBe('02downloadsodium 0.5.11 (312 KB) from cdn.modrinth.com → mods/sodium-0.5.11.jarreplaces mods/sodium-0.5.8.jarpending');
+    const dl = WORK_ORDER_FIX.ops[1]!.op;
+    const url = dl.op === 'download' ? dl.url : '';
+    expect(url).toMatch(/^https:\/\/cdn\.modrinth\.com\//);
+    expect(rows[1]).toBe(`02downloadsodium 0.5.11 (312 KB) from cdn.modrinth.com → mods/sodium-0.5.11.jarreplaces mods/sodium-0.5.8.jar${url}pending`);
     expect(rows[2]).toBe('03backupmods/sodium-0.5.8.jar → backup snapshotpending');
     expect(rows[4]).toBe('05restoremods/sodium-0.5.8.jar → mods/sodium-0.5.8.jarexpects absentpending');
     expect(rows[5]).toBe('06removemods/sodium-0.5.11.jar → backup snapshotcreated by fix · sha1 4f2c9e1apending');
     expect(screen.getByText(WORK_ORDER_FIX.backupDir)).toBeTruthy();
     expect(screen.getByText('manual step: set the Java runtime to Java 21 if sodium still fails')).toBeTruthy();
     expect(screen.getByText(`fix · 7 ops`)).toBeTruthy();
+  });
+
+  it('a download row shows host + size in its main line and the full CDN URL as a truncated detail line', () => {
+    render(<WorkOrderPanel order={WORK_ORDER_FIX} onExecute={() => undefined} onCancel={() => undefined} />);
+    const dl = WORK_ORDER_FIX.ops[1]!.op;
+    if (dl.op !== 'download') throw new Error('fixture changed');
+    const row = screen.getAllByRole('listitem')[1]!;
+    expect(row.textContent).toContain('(312 KB) from cdn.modrinth.com');
+    const line = screen.getByText(dl.url);
+    expect(line.getAttribute('title')).toBe(dl.url);
+    expect(line.className).toContain('truncate');
+    expect(line.className).toContain('text-fg-faint');
+    expect(row.contains(line)).toBe(true);
+    // Only downloads have a source URL line.
+    const downloads = WORK_ORDER_FIX.ops.filter((p) => p.op.op === 'download').length;
+    expect(WORK_ORDER_FIX.ops.length).toBeGreaterThan(downloads);
+    expect(document.querySelectorAll('[data-role="source-url"]')).toHaveLength(downloads);
+  });
+
+  it('a message on a completed op (a rollback step that failed) shows under it; the plain "rolled back" mark does not', () => {
+    const statuses: OpStatus[] = [
+      { orderId: WORK_ORDER_FIX.id, index: 0, state: 'done', message: 'Rollback failed: mods/rubidium-0.7.1.jar.disabled is locked.' },
+      { orderId: WORK_ORDER_FIX.id, index: 1, state: 'done', message: 'rolled back' },
+      { orderId: WORK_ORDER_FIX.id, index: 2, state: 'failed', message: 'locked' },
+    ];
+    render(<WorkOrderPanel order={WORK_ORDER_FIX} statuses={statuses} phase="finished" onExecute={() => undefined} onCancel={() => undefined} />);
+    expect(screen.getByText('Rollback failed: mods/rubidium-0.7.1.jar.disabled is locked.')).toBeTruthy();
+    expect(screen.getAllByRole('listitem')[1]!.textContent).not.toContain('rolled backdone');
   });
 
   it('a running game is a warning line before Execute, which stays enabled (Rust refuses)', () => {

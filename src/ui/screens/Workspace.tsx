@@ -15,6 +15,7 @@ import { severityCounts } from '../app/derive';
 import { noticeParts } from '../app/modrinthState';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { useInspectorIsDrawer } from './drawer';
+import { interruptedCount } from './HistoryView';
 import { useNow } from './hooks';
 import { ModsPanel } from './ModsPanel';
 import { ScanPanel } from './ScanPanel';
@@ -41,6 +42,8 @@ function Summary({ instance }: { instance: Instance }) {
   const now = useNow(1000, s.status === 'done' || retryAt !== null, retryAt);
   const noticeLine = modrinthEnabled ? noticeParts(notice, now) : null;
   const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
+  const interrupted = useApp((st) => interruptedCount(st.history[instance.id]?.entries));
+  const a = useActions();
   const modCount = s.result ? s.result.jars.filter((j) => j.depth === 0).length : s.stubCount || instance.modCount;
   return (
     <SummaryStrip
@@ -54,6 +57,7 @@ function Summary({ instance }: { instance: Instance }) {
       offline={noticeLine !== null}
       {...(noticeLine ? { offlineNotice: noticeLine } : {})}
       modrinthOff={!modrinthEnabled}
+      interrupted={interrupted ? { count: interrupted, onOpen: () => a.setFindingsTab(instance.id, 'history') } : null}
     />
   );
 }

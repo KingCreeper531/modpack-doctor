@@ -24,7 +24,7 @@ import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import type { FindingsTab } from '../app/crashState';
 import { CrashesView } from './CrashesView';
 import { useFixBlock } from './fixHooks';
-import { HistoryView } from './HistoryView';
+import { HistoryView, interruptedCount } from './HistoryView';
 import { useFixVersions } from './modrinthHooks';
 
 function StaticFindings({ instanceId }: { instanceId: string }) {
@@ -145,7 +145,11 @@ export function TriagePanel({ instanceId, className, compact = false }: { instan
       alert: !!st.crashAlerts[instanceId],
     };
   });
-  const history = useAppShallow((st) => ({ status: st.history[instanceId]?.status ?? 'idle', count: st.history[instanceId]?.entries.length ?? 0 }));
+  const history = useAppShallow((st) => ({
+    status: st.history[instanceId]?.status ?? 'idle',
+    count: st.history[instanceId]?.entries.length ?? 0,
+    interrupted: interruptedCount(st.history[instanceId]?.entries),
+  }));
   const a = useActions();
   const counts = useMemo(() => severityCounts(s.findings ?? []), [s.findings]);
   const crashCounts = useMemo(() => (crash.findings ? severityCounts(crash.findings) : null), [crash.findings]);
@@ -167,7 +171,16 @@ export function TriagePanel({ instanceId, className, compact = false }: { instan
     {
       id: 'history',
       label: 'History',
-      ...(history.status === 'done' ? { badge: <span className={tab === 'history' ? 'text-fg-dim' : 'text-fg-faint'}>{formatInt(history.count)}</span> } : {}),
+      ...(history.status === 'done'
+        ? {
+            badge: (
+              <>
+                <span className={tab === 'history' ? 'text-fg-dim' : 'text-fg-faint'}>{formatInt(history.count)}</span>
+                {history.interrupted ? <Pip tone="error" label="interrupted work order" /> : null}
+              </>
+            ),
+          }
+        : {}),
     },
   ];
   const panelId = `findings-panel-${instanceId}`;

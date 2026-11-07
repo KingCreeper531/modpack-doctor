@@ -24,6 +24,18 @@
  *   an update of Curios API (undo = remove the new jar + restore the old one), a removal plus a
  *   disable whose jar was renamed back by hand since (its undo is refused), and an older order
  *   that is fully undone.
+ * - Status (CONTRACTS invariant 14, write-ahead): a fix order's snapshot is listed `incomplete`
+ *   from before its first op; it ends `complete`, `rolledBack` (every completed op reversed) or
+ *   stays `incomplete` (a rollback step failed: `interrupted`). `plan_undo(id, null)` on an
+ *   incomplete snapshot plans a recovery from where the files actually are (only the ops whose
+ *   effect is in place are reversed; the others become notes); per-action undo is refused there.
+ *   A recovery that runs to the end leaves the snapshot `complete` with every action undone.
+ * - Create: Above and Beyond starts with one seeded `incomplete` snapshot: "remove the older
+ *   Create, keep 0.3.2g; disable <a filler mod>", interrupted after the removal (the old Create
+ *   is in the snapshot, the disable never ran). Its recovery restores the old Create.
+ * - InstallDependency is bound (CONTRACTS invariant 14): the mod id must be a `required`
+ *   dependency of an enabled top-level jar that nothing enabled provides (built-ins, `provides`,
+ *   nested jars), and the version's project must be the one `resolve_mod_id` answers for it.
  */
 import type {
   AppError,
@@ -41,10 +53,11 @@ import type {
   WorkOrder,
   WorkOrderResult,
 } from '../../bindings';
+import { BUILTIN_DEPENDENCIES } from '../../core/checks/builtins';
 import { downloadFile, modrinthLoaders } from '../../core/modrinth';
 import type { Result } from './ipc';
 import { mockJarAt, mockJars, type MockModSpec } from './mockData';
-import { mockIdentifiedVersion, mockRegisterJar, mockVersionById } from './mockModrinth';
+import { mockIdentifiedVersion, mockRegisterJar, mockResolveModId, mockVersionById } from './mockModrinth';
 
 /** Orders expire this long after planning (CONTRACTS invariant 14). */
 export const ORDER_TTL_MS = 15 * 60_000;
@@ -53,6 +66,12 @@ export const EXPIRED_MESSAGE = 'This work order expired — review the fixes aga
 
 /** The instance with the seeded backup history (All the Mods 9). */
 export const SEEDED_HISTORY_INSTANCE = '3f9c2a71d0b84e15';
+
+/** The instance with a seeded interrupted (`incomplete`) snapshot (Create: Above and Beyond). */
+export const SEEDED_INTERRUPTED_INSTANCE = 'c04d9e2b61a8f735';
+
+/** The jar the seeded interrupted order had moved into its snapshot. */
+export const SEEDED_INTERRUPTED_JAR = 'mods/create-mc1.16.5_v0.3.2f.jar';
 
 const APP_DATA = 'C:\\Users\\alex\\AppData\\Roaming\\io.github.kingcreeper531.modpackdoctor';
 
@@ -74,6 +93,11 @@ export interface MockFixOptions {
   expireFirst: boolean;
   /** `gamerunning`: every execute is refused. */
   gameRunning: boolean;
+  /**
+   * `interrupted`: the 2nd op of every fix order with two or more ops fails and reversing the 1st
+   * fails too, so the snapshot stays `incomplete` (what an interruption leaves behind).
+   */
+  interrupt?: boolean;
   /** Screenshot hook: the op at this index starts running and never finishes. */
   holdOpAt: number | null;
 }
@@ -106,14 +130,19 @@ interface Snapshot {
   files: Map<string, JarRecord[]>;
   /** sha1 of each touched path after the order ran; null = absent. */
   after: Map<string, string | null>;
+  /** Indexes into `entry.ops` whose effect is in place (completed and not reversed). */
+  live: Set<number>;
 }
 
 interface Stored {
   order: WorkOrder;
   plannedAt: number;
   pre: Pre[];
-  /** Undo orders: the snapshot and the original action index of each of `order.actions`. */
-  undo: { backupId: string; indexes: number[] } | null;
+  /**
+   * Undo orders: the snapshot and the original action index of each of `order.actions`.
+   * `recovery`: planned from an `incomplete` snapshot.
+   */
+  undo: { backupId: string; indexes: number[]; recovery?: boolean } | null;
 }
 
 const ok = <T>(data: T): Result<T> => ({ status: 'ok', data });
@@ -231,6 +260,30 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
     };
   }
 
+  /**
+   * Why `installDependency(modId)` is not bound to this instance, or null (CONTRACTS invariant 14,
+   * "Bound intents"): a `required` dependency declared by an enabled top-level jar, provided by
+   * nothing enabled (mod ids and `provides` at any depth, built-ins), and the version's project
+   * is the one `resolve_mod_id` answers for the id.
+   */
+  function unboundDependency(instanceId: string, pack: PackIdentity, modId: string, projectId: string): string | null {
+    const want = modId.toLowerCase();
+    const enabled = jarsOf(instanceId).filter((j) => !j.disabled);
+    const builtin =
+      Object.hasOwn(BUILTIN_DEPENDENCIES, want) || (want === 'mixinextras' && (pack.loader.kind === 'fabric' || pack.loader.kind === 'quilt'));
+    const provided = builtin || enabled.some((j) => j.mods.some((m) => m.modId.toLowerCase() === want || m.provides.some((p) => p.toLowerCase() === want)));
+    if (provided) return `"${modId}" is already provided in this instance, so it is not installed again.`;
+    const required = enabled.some(
+      (j) => j.depth === 0 && j.mods.some((m) => m.deps.some((d) => d.kind === 'required' && d.modId.toLowerCase() === want)),
+    );
+    if (!required) return `no enabled mod in this instance requires "${modId}", so it is not installed. Rescan the instance and review the fixes again.`;
+    const resolved = mockResolveModId(want);
+    if (!resolved || resolved.id !== projectId) {
+      return `that version belongs to a different Modrinth project than the one "${modId}" resolves to, so it is not installed.`;
+    }
+    return null;
+  }
+
   interface Planned {
     ops: FileOp[];
     pre: Pre[];
@@ -314,6 +367,10 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
         const dir = old ? dirOf(old.path) : 'mods';
         const dest = `${dir}/${file.filename}`;
         if (present.has(dest)) return exists(dest, 'the download');
+        if (action.kind === 'installDependency') {
+          const why = unboundDependency(id, pack, action.modId, v.projectId);
+          if (why) return refuse('invalid', why);
+        }
         const oldMeta = old?.mods[0];
         const mod: MockModSpec = {
           modId: info.modId,
@@ -420,10 +477,13 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
 
   /** Reverse ops of one action of a snapshot, checked against the instance as it is now. */
   function reverse(snap: Snapshot, index: number, present: Present): Result<{ ops: FileOp[]; pre: Pre[] }> {
-    const instanceId = snap.entry.instanceId;
     const action = snap.entry.actions[index]!;
     const forward = snap.entry.ops.filter((o) => o.actionIndex === index).map((o) => o.op);
-    const name = `Undo of "${label(instanceId, action, forward)}"`;
+    return reverseOps(snap, forward, `Undo of "${label(snap.entry.instanceId, action, forward)}"`, present);
+  }
+
+  /** Reverse ops of `forward` (latest first), each checked against the recorded "after" state. */
+  function reverseOps(snap: Snapshot, forward: readonly FileOp[], name: string, present: Present): Result<{ ops: FileOp[]; pre: Pre[] }> {
     const changed = (why: string, path: string) =>
       fail('conflict', `${name} was not planned: ${why} Undoing it now would overwrite that change.`, path);
     const ops: FileOp[] = [];
@@ -469,11 +529,55 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
     return ok({ ops, pre });
   }
 
+  /**
+   * Recovery of an `incomplete` snapshot: reverse every op whose effect is in place (latest
+   * first), from where the files are now; ops that never took effect become notes.
+   */
+  function planRecovery(snap: Snapshot): Result<WorkOrder> {
+    const e = snap.entry;
+    const present: Present = new Map(jarsOf(e.instanceId).filter((j) => j.depth === 0).map((j) => [j.path, j.sha1]));
+    const name = `Recovery of "${e.title}"`;
+    const ops: PlannedOp[] = [];
+    const pre: Pre[] = [];
+    for (const k of [...snap.live].sort((a, b) => b - a)) {
+      const forward = e.ops[k];
+      if (!forward) continue;
+      const r = reverseOps(snap, [forward.op], name, present);
+      if (r.status === 'error') return r;
+      ops.push(...r.data.ops.map((op) => ({ actionIndex: forward.actionIndex, op })));
+      pre.push(...r.data.pre);
+    }
+    const notes = e.ops.flatMap((o, k) =>
+      snap.live.has(k) ? [] : [`Operation ${String(k + 1).padStart(2, '0')} (${opText(o.op)}) did not take effect; nothing to recover for it.`],
+    );
+    return ok(
+      store(
+        {
+          id: String(++nextOrder),
+          instanceId: e.instanceId,
+          kind: 'undo',
+          title: `Recover: ${lowerFirst(e.title)}`,
+          actions: e.actions,
+          ops,
+          notes,
+          backupDir: snap.dir,
+        },
+        pre,
+        { backupId: e.id, indexes: e.actions.map((_, i) => i), recovery: true },
+      ),
+    );
+  }
+
   function planUndo(backupId: string, actionIndexes: number[] | null): Result<WorkOrder> {
     if (!/^[0-9a-f]{16}\/[0-9]+$/.test(backupId)) return fail('invalid', `${backupId} is not a backup id.`);
     const snap = findSnapshot(backupId);
     if (!snap) return fail('notFound', 'This backup is not in the history any more. Refresh the history and try again.');
     const e = snap.entry;
+    if (e.status === 'incomplete') {
+      if (actionIndexes !== null) return fail('invalid', 'This work order was interrupted: recover it as a whole with Recover, not one action at a time.');
+      return planRecovery(snap);
+    }
+    if (e.status === 'rolledBack') return fail('invalid', 'This work order was rolled back: its files are as they were, so there is nothing to undo.');
     const remaining = e.actions.map((_, i) => i).filter((i) => !e.undoneActions.includes(i));
     const wanted = actionIndexes ?? remaining;
     if (!wanted.length) return fail('invalid', 'Every action of this work order is undone already.');
@@ -520,6 +624,36 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
   }
 
   // ── Execution ───────────────────────────────────────────────────────────────
+
+  /** Where an op left its file (the path a failed rollback step names). */
+  function opPath(op: FileOp): string {
+    switch (op.op) {
+      case 'rename':
+      case 'restore':
+        return op.to;
+      case 'moveToBackup':
+      case 'removeCreated':
+        return op.path;
+      case 'download':
+        return op.dest;
+    }
+  }
+
+  /** One op in a few words, for recovery notes. */
+  function opText(op: FileOp): string {
+    switch (op.op) {
+      case 'rename':
+        return `rename ${op.from}`;
+      case 'moveToBackup':
+        return `backup ${op.path}`;
+      case 'download':
+        return `download ${op.dest}`;
+      case 'restore':
+        return `restore ${op.to}`;
+      case 'removeCreated':
+        return `remove ${op.path}`;
+    }
+  }
 
   /** Readable failure for the scripted `fixfail` op. */
   function scriptedFailure(op: FileOp): string {
@@ -629,7 +763,10 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
         dir: snapshotDir(id, ms),
         files: new Map(),
         after: new Map(),
+        live: new Set(),
       };
+      // Listed `incomplete` from now on: an interruption leaves exactly that behind.
+      snapshotsOf(id).unshift(snap);
     }
     const states: Array<{ state: OpState; message: string | null }> = order.ops.map(() => ({ state: 'pending', message: null }));
     const emit = (index: number, state: OpState, message: string | null = null) => {
@@ -637,7 +774,9 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
       deps.emit({ orderId: order.id, index, state, message });
     };
     const reverts: Array<{ index: number; revert: () => void }> = [];
-    const failAt = opts.failSecondOp ? Math.min(1, order.ops.length - 1) : -1;
+    // `interrupted`: op 02 fails and reversing op 01 fails too (fix orders of two or more ops).
+    const interrupt = !!opts.interrupt && !undo && order.ops.length >= 2;
+    const failAt = interrupt ? 1 : opts.failSecondOp ? Math.min(1, order.ops.length - 1) : -1;
     let failed = -1;
     for (const [i, planned] of order.ops.entries()) {
       emit(i, 'running');
@@ -650,24 +789,39 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
         break;
       }
       reverts.push({ index: i, revert: apply(snap, planned.op, pre[i]!, !undo) });
+      if (!undo) snap.live.add(i);
       emit(i, 'done');
     }
     let rolledBack = false;
     if (failed >= 0) {
+      let stuck = false;
       for (const r of [...reverts].reverse()) {
         await deps.sleep(opts.opMs / 2);
+        if (interrupt && r.index === 0) {
+          stuck = true;
+          const path = opPath(order.ops[r.index]!.op);
+          emit(r.index, 'done', `Rollback failed: ${path} is locked by another program (os error 32), so it stays as this order left it. Recover it from History.`);
+          continue;
+        }
         r.revert();
+        if (!undo) snap.live.delete(r.index);
         emit(r.index, 'done', 'rolled back');
         rolledBack = true;
       }
+      if (stuck) rolledBack = false;
       for (let k = failed + 1; k < order.ops.length; k++) emit(k, 'skipped');
     }
     if (undo) {
       if (failed < 0) snap.entry.undoneActions = [...new Set([...snap.entry.undoneActions, ...undo.indexes])].sort((a, b) => a - b);
+      // A finished recovery: every file is back where it was before the order.
+      if (failed < 0 && undo.recovery) {
+        snap.live.clear();
+        snap.entry.status = 'complete';
+      }
     } else {
+      snap.entry.status = failed < 0 ? 'complete' : snap.live.size === 0 ? 'rolledBack' : 'incomplete';
       // A rolled-back order leaves nothing to undo: its snapshot is listed with every action undone.
-      if (failed >= 0) snap.entry.undoneActions = order.actions.map((_, i) => i);
-      snapshotsOf(id).unshift(snap);
+      if (snap.entry.status === 'rolledBack') snap.entry.undoneActions = order.actions.map((_, i) => i);
     }
     return {
       orderId: order.id,
@@ -691,18 +845,65 @@ export function createMockFix(opts: MockFixOptions, deps: MockFixDeps) {
   // ── Seeded history (All the Mods 9) ─────────────────────────────────────────
 
   function seed(instanceId: string) {
-    if (instanceId !== SEEDED_HISTORY_INSTANCE || seededFor.has(instanceId)) return;
+    if (seededFor.has(instanceId)) return;
     seededFor.add(instanceId);
+    if (instanceId === SEEDED_HISTORY_INSTANCE) seedHistory(instanceId);
+    if (instanceId === SEEDED_INTERRUPTED_INSTANCE) seedInterrupted(instanceId);
+  }
+
+  type SeedFiles = Array<[string, JarRecord]>;
+  type SeedAfter = Array<[string, string | null]>;
+
+  function seeded(instanceId: string, ms: number, actions: FixAction[], ops: PlannedOp[], undone: number[], files: SeedFiles, after: SeedAfter): Snapshot {
+    return {
+      entry: { id: `${instanceId}/${ms}`, instanceId, createdAtMs: ms, title: title(instanceId, actions, ops), actions, ops, undoneActions: undone, status: 'complete' },
+      dir: snapshotDir(instanceId, ms),
+      files: new Map(files.map(([p, j]) => [`files/${p}`, [j]])),
+      after: new Map(after),
+      live: new Set(ops.map((_, k) => k)),
+    };
+  }
+
+  /**
+   * Create: Above and Beyond, 40 minutes ago: "remove the older Create (keep 0.3.2g), disable a
+   * filler mod", interrupted after op 01. The old Create is in the snapshot; op 02 never ran.
+   */
+  function seedInterrupted(instanceId: string) {
+    const keep = topAt(instanceId, 'mods/create-mc1.16.5_v0.3.2g.jar');
+    const other = jarsOf(instanceId)
+      .filter((j) => j.depth === 0 && !j.disabled && j !== keep)
+      .sort((a, b) => a.fileName.localeCompare(b.fileName))[0];
+    if (!keep || !other) return;
+    const old = mockJarAt(
+      SEEDED_INTERRUPTED_JAR,
+      { modId: 'create', version: 'mc1.16.5_v0.3.2f', name: 'Create', loader: 'forge', mc: '[1.16.5,1.17)' },
+      { mcVersion: '1.16.5', sizeBytes: keep.size - 20_480 },
+    );
+    const snap = seeded(
+      instanceId,
+      born - 40 * 60_000,
+      [
+        { kind: 'removeDuplicate', keep: keep.id, remove: SEEDED_INTERRUPTED_JAR },
+        { kind: 'disable', jarId: other.id },
+      ],
+      [
+        { actionIndex: 0, op: { op: 'moveToBackup', path: SEEDED_INTERRUPTED_JAR } },
+        { actionIndex: 1, op: { op: 'rename', from: other.path, to: `${other.path}.disabled` } },
+      ],
+      [],
+      [[SEEDED_INTERRUPTED_JAR, old]],
+      [[SEEDED_INTERRUPTED_JAR, null]],
+    );
+    snap.entry.status = 'incomplete';
+    snap.live = new Set([0]);
+    backups.set(instanceId, [snap]);
+  }
+
+  function seedHistory(instanceId: string) {
     const H = 3_600_000;
     const list: Snapshot[] = [];
-    const add = (agoMs: number, actions: FixAction[], ops: PlannedOp[], undone: number[], files: Array<[string, JarRecord]>, after: Array<[string, string | null]>) => {
-      const ms = born - agoMs;
-      list.push({
-        entry: { id: `${instanceId}/${ms}`, instanceId, createdAtMs: ms, title: title(instanceId, actions, ops), actions, ops, undoneActions: undone, status: 'complete' },
-        dir: snapshotDir(instanceId, ms),
-        files: new Map(files.map(([p, j]) => [`files/${p}`, [j]])),
-        after: new Map(after),
-      });
+    const add = (agoMs: number, actions: FixAction[], ops: PlannedOp[], undone: number[], files: SeedFiles, after: SeedAfter) => {
+      list.push(seeded(instanceId, born - agoMs, actions, ops, undone, files, after));
     };
     const forge = (modId: string, version: string, name: string): MockModSpec => ({ modId, version, name, loader: 'forge', mc: '[1.20.1,1.21)' });
 

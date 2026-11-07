@@ -48,8 +48,11 @@
  * order only) → the `WorkOrderResult` (statuses, `rolledBack`, backup id) → rescan (which re-runs
  * the checks and Modrinth) and a history reload; the panel stays until Close. A refused execute
  * keeps the order open: `gameRunning` / `conflict` can be retried, `notFound` (expired) offers
- * Plan again. Undo: `list_backups` per instance (History tab) → `plan_undo(backupId, indexes)`
- * → the same panel (`kind: undo`); refusals land in `undoErrors` per action.
+ * Plan again. Undo: `list_backups` per instance (when it is opened, so an `incomplete` backup can
+ * be announced, and on the History tab) → `plan_undo(backupId, indexes)` → the same panel
+ * (`kind: undo`); refusals land in `undoErrors` per action. Recover of an interrupted backup is
+ * `plan_undo(backupId, null)` (Rust plans the recovery). The UI never closes or reloads the
+ * window itself; while an order executes Rust refuses the window close natively.
  *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
@@ -309,7 +312,10 @@ export interface AppState {
   /** Plan an expired order again from the same fix or undo request. */
   planAgain(): Promise<void>;
   loadBackups(id: string): Promise<void>;
-  /** Plan undoing some actions of a backup (`null`: every remaining one) and open the order. */
+  /**
+   * Plan undoing some actions of a backup (`null`: every remaining one; on an `incomplete`
+   * backup, its recovery) and open the order.
+   */
   undo(backupId: string, actionIndexes: number[] | null): Promise<void>;
   dismissUndoError(key: string): void;
   addFolder(): Promise<void>;
@@ -1301,6 +1307,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
         }
         const cs = get().crashes[id]?.sourcesStatus;
         if (!cs || cs === 'idle') void get().loadLogSources(id);
+        // The history too: an interrupted (`incomplete`) backup is announced in the summary strip.
+        const hs = get().history[id]?.status;
+        if (!hs || hs === 'idle') void get().loadBackups(id);
       },
 
       async scan(id) {

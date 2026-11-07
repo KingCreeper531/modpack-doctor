@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FixAction, OpStatus } from '../../../bindings';
 import { fixBlockReason } from '../derive';
 import { MOCK_INSTANCES } from '../mockData';
-import { EXPIRED_MESSAGE } from '../mockFix';
+import { EXPIRED_MESSAGE, SEEDED_INTERRUPTED_INSTANCE, SEEDED_INTERRUPTED_JAR } from '../mockFix';
 import { mockFindUpdates, mockProjectVersions, mockResolveModId } from '../mockModrinth';
 import type { MockOptions } from '../mockIpc';
 import { undoKey } from '../store';
@@ -345,5 +345,126 @@ describe('backup history and undo', () => {
     spy.mockRestore();
     await m.store.getState().loadBackups(ATM.id);
     expect(m.store.getState().history[ATM.id]?.status).toBe('done');
+  });
+});
+
+describe('bound intents: installDependency (CONTRACTS invariant 14)', () => {
+  it('refuses a mod id that no enabled mod requires, like Rust, naming the action', async () => {
+    const m = await ready();
+    const p = mockResolveModId('botarium')!;
+    const v = mockProjectVersions(p.id, ['forge'], ['1.20.1'])[0]!;
+    await m.store.getState().fix('unbound', { kind: 'installDependency', modId: 'unrelated_mod', versionId: v.id });
+    expect(m.store.getState().order).toBeNull();
+    expect(m.store.getState().fixErrors.unbound).toMatchObject({
+      kind: 'invalid',
+      message: 'Install Botarium 2.3.4: no enabled mod in this instance requires "unrelated_mod", so it is not installed. Rescan the instance and review the fixes again.',
+    });
+  });
+
+  it('refuses a mod id that is already provided (an installed jar declares it)', async () => {
+    const m = await ready();
+    const cloth = mockResolveModId('cloth_config')!;
+    const v = mockProjectVersions(cloth.id, ['forge'], ['1.20.1'])[0]!;
+    await m.store.getState().fix('provided', { kind: 'installDependency', modId: 'cloth_config', versionId: v.id });
+    expect(m.store.getState().fixErrors.provided?.message).toMatch(/: "cloth_config" is already provided in this instance, so it is not installed again\.$/);
+  });
+
+  it('refuses a version of another project than the one the mod id resolves to', async () => {
+    const m = await ready();
+    const cloth = mockResolveModId('cloth_config')!;
+    const v = mockProjectVersions(cloth.id, ['forge'], ['1.20.1'])[0]!;
+    await m.store.getState().fix('other', { kind: 'installDependency', modId: 'botarium', versionId: v.id });
+    expect(m.store.getState().fixErrors.other?.message).toMatch(/that version belongs to a different Modrinth project than the one "botarium" resolves to/);
+  });
+
+  it('plans a real missing required dependency (Ad Astra needs botarium)', async () => {
+    const m = await ready();
+    await m.store.getState().fix('dep', botarium('1.20.1', 'forge'));
+    expect(m.store.getState().fixErrors.dep).toBeUndefined();
+    expect(m.store.getState().order?.order.title).toBe('Install Botarium 2.3.4');
+  });
+});
+
+describe('backup status and recovery (write-ahead, CONTRACTS invariant 14)', () => {
+  const CABIN = MOCK_INSTANCES.find((i) => i.id === SEEDED_INTERRUPTED_INSTANCE)!;
+
+  async function finishOn(m: M, id: string) {
+    await m.store.getState().executeOrder();
+    await until(() => m.store.getState().scans[id]?.status === 'done' && m.store.getState().history[id]?.status === 'done');
+  }
+
+  it('a fix order is listed incomplete while it runs and complete once done', async () => {
+    const m = await ready({ opMs: 30 });
+    await m.store.getState().fix('k', lithoReplace(m));
+    const run = m.store.getState().executeOrder();
+    await until(() => (m.store.getState().order?.statuses.length ?? 0) > 0);
+    const during = await m.backend.commands.listBackups(ATM.id);
+    expect(during.status === 'ok' && during.data[0]!.status).toBe('incomplete');
+    await run;
+    await until(() => m.store.getState().history[ATM.id]?.status === 'done' && m.store.getState().history[ATM.id]!.entries[0]!.status === 'complete');
+    expect(m.store.getState().history[ATM.id]!.entries[0]).toMatchObject({ id: m.store.getState().order!.backupId, status: 'complete' });
+  });
+
+  it('fixfail: a fully rolled-back order is listed rolledBack and cannot be undone', async () => {
+    const m = await ready({ scenario: 'fixfail' });
+    await m.store.getState().fix('r', lithoReplace(m));
+    await finish(m);
+    const entry = m.store.getState().history[ATM.id]!.entries[0]!;
+    expect(entry.status).toBe('rolledBack');
+    const r = await m.backend.commands.planUndo(entry.id, null);
+    expect(r).toMatchObject({ status: 'error', error: { kind: 'invalid', message: expect.stringContaining('rolled back') } });
+  });
+
+  it('interrupted: op 02 fails and reversing op 01 fails too, so the backup stays incomplete; Recover restores the files and leaves it complete', async () => {
+    const m = await ready({ scenario: 'interrupted' });
+    const before = paths(m).sort();
+    await m.store.getState().fix('r', lithoReplace(m));
+    await finish(m);
+    const o = m.store.getState().order!;
+    expect(o.rolledBack).toBe(false);
+    expect(o.statuses.map((s) => s.state)).toEqual(['done', 'failed']);
+    expect(o.statuses[0]!.message).toMatch(/^Rollback failed: mods\/lithostitched-1\.0\.9\.jar is locked/);
+    // The new jar stayed: the files are not as they were.
+    expect(paths(m)).toContain('mods/lithostitched-1.0.9.jar');
+    const entry = m.store.getState().history[ATM.id]!.entries[0]!;
+    expect(entry).toMatchObject({ id: o.backupId, status: 'incomplete', undoneActions: [] });
+    await m.store.getState().cancelOrder();
+
+    // Per-action undo is refused; Recover (plan_undo(id, null)) plans the recovery.
+    expect(await m.backend.commands.planUndo(entry.id, [0])).toMatchObject({ status: 'error', error: { kind: 'invalid' } });
+    await m.store.getState().undo(entry.id, null);
+    const rec = m.store.getState().order!;
+    expect(rec.order.kind).toBe('undo');
+    expect(rec.order.title).toBe('Recover: update Lithostitched to 1.0.9');
+    expect(rec.order.ops).toEqual([{ actionIndex: 0, op: expect.objectContaining({ op: 'removeCreated', path: 'mods/lithostitched-1.0.9.jar' }) }]);
+    expect(rec.order.notes).toEqual([`Operation 02 (backup ${LITHO}) did not take effect; nothing to recover for it.`]);
+    await finish(m);
+    expect(m.store.getState().order!.statuses.map((s) => s.state)).toEqual(['done']);
+    expect(paths(m).sort()).toEqual(before);
+    expect(m.store.getState().history[ATM.id]!.entries.find((e) => e.id === entry.id)).toMatchObject({ status: 'complete', undoneActions: [0] });
+  });
+
+  it('the seeded interrupted backup (Create: Above and Beyond) recovers the jar it had moved into the snapshot', async () => {
+    const m = await ready({}, CABIN.id);
+    await until(() => m.store.getState().history[CABIN.id]?.status === 'done');
+    const [entry] = m.store.getState().history[CABIN.id]!.entries;
+    expect(entry).toMatchObject({ status: 'incomplete', undoneActions: [] });
+    expect(paths(m, CABIN.id)).not.toContain(SEEDED_INTERRUPTED_JAR);
+    await m.store.getState().undo(entry!.id, null);
+    const rec = m.store.getState().order!;
+    expect(rec.order).toMatchObject({ kind: 'undo', title: expect.stringMatching(/^Recover: remove create-mc1\.16\.5_v0\.3\.2f\.jar/) });
+    expect(rec.order.ops).toEqual([
+      { actionIndex: 0, op: { op: 'restore', backupPath: `files/${SEEDED_INTERRUPTED_JAR}`, to: SEEDED_INTERRUPTED_JAR, expectAbsentOrSha1: null } },
+    ]);
+    expect(rec.order.notes).toHaveLength(1);
+    await finishOn(m, CABIN.id);
+    expect(scanPaths(m, CABIN.id)).toContain(SEEDED_INTERRUPTED_JAR);
+    expect(m.store.getState().history[CABIN.id]!.entries[0]).toMatchObject({ status: 'complete', undoneActions: [0, 1] });
+  });
+
+  it('opening an instance loads its history (so an interrupted backup can be announced)', async () => {
+    const m = await ready({}, CABIN.id);
+    await until(() => m.store.getState().history[CABIN.id]?.status === 'done');
+    expect(m.store.getState().history[CABIN.id]!.entries.some((e) => e.status === 'incomplete')).toBe(true);
   });
 });

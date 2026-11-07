@@ -6,7 +6,7 @@ import { appliedActionLabel, fixLabel, probeResult } from '../labels';
 import { buildLogRows, excerptLines, gutterChars } from '../logModel';
 import { matchMask, matchRuns } from '../paletteModel';
 import { rovingIndex } from '../roving';
-import { describeOp, enterExecutes, orderOutcome, refusalText } from '../workOrderModel';
+import { describeOp, enterExecutes, orderOutcome, panelKeyAction, refusalText } from '../workOrderModel';
 
 describe('format', () => {
   it('formats numbers, sizes and times', () => {
@@ -130,8 +130,35 @@ describe('work order', () => {
       subject: 'sodium 0.5.11 (312 KB) from cdn.modrinth.com',
       target: 'mods/sodium-0.5.11.jar',
       detail: 'replaces mods/sodium-0.5.8.jar',
+      // The full source URL (CONTRACTS invariant 14): the host alone is not enough.
+      url: 'https://cdn.modrinth.com/data/AANobbMI/versions/x/sodium.jar',
     });
-    expect(describeOp(rename.op)).toMatchObject({ verb: 'rename', subject: 'mods/a.jar.disabled', target: 'mods/a.jar' });
+    expect(describeOp(rename.op)).toMatchObject({ verb: 'rename', subject: 'mods/a.jar.disabled', target: 'mods/a.jar', url: null });
+  });
+
+  it('panel keys: only fresh presses inside the panel count; Enter executes only when allowed', () => {
+    const key = (k: string, extra: Partial<{ repeat: boolean; inside: boolean; onButton: boolean }> = {}) => ({
+      key: k,
+      repeat: false,
+      inside: true,
+      onButton: false,
+      ...extra,
+    });
+    const review = { phase: 'review' as const, enter: true };
+    expect(panelKeyAction(key('Enter'), review)).toBe('execute');
+    // Held Enter (auto-repeat): a History Undo pressed and held must not plan and then execute.
+    expect(panelKeyAction(key('Enter', { repeat: true }), review)).toBeNull();
+    // A key whose target is not inside the panel (e.g. bubbled through a portal).
+    expect(panelKeyAction(key('Enter', { inside: false }), review)).toBeNull();
+    expect(panelKeyAction(key('Escape', { inside: false }), review)).toBeNull();
+    expect(panelKeyAction(key('Enter', { onButton: true }), review)).toBeNull();
+    expect(panelKeyAction(key('Enter'), { phase: 'review', enter: false })).toBeNull();
+    expect(panelKeyAction(key('Enter'), { phase: 'running', enter: true })).toBeNull();
+    expect(panelKeyAction(key('Enter'), { phase: 'finished', enter: true })).toBeNull();
+    expect(panelKeyAction(key('Escape'), review)).toBe('cancel');
+    expect(panelKeyAction(key('Escape'), { phase: 'running', enter: true })).toBeNull();
+    expect(panelKeyAction(key('Escape', { repeat: true }), review)).toBeNull();
+    expect(panelKeyAction(key('a'), review)).toBeNull();
   });
 
   it('says what a finished order did', () => {
