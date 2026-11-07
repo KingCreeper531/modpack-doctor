@@ -2,22 +2,35 @@
 //! disk, never mutated, and nothing is ever downloaded.
 //!
 //! - [`check_pack_file`] decides whether a picked or dropped path may be opened: a regular file
-//!   named `*.mrpack` (case-insensitive) of at most [`MAX_PACK_BYTES`].
+//!   named `*.mrpack` (case-insensitive) of at most [`MAX_PACK_BYTES`], with no `:` in any name
+//!   (an NTFS alternate data stream such as `notes.txt:x.mrpack` is never a pack).
 //! - [`describe_pack`] builds the `Instance` (`launcher: mrpack`, `root` = `gameDir` = the pack's
 //!   canonical path, id from that path, MC version and loader from the index `dependencies`).
 //! - [`scan_pack`] reads `modrinth.index.json` into `ScanResult.declared` and scans every `.jar`
-//!   under `overrides/`, `client-overrides/` and `server-overrides/` in memory. Jar ids and
-//!   paths are the paths inside the zip.
+//!   directly in `overrides/mods/`, `client-overrides/mods/` and `server-overrides/mods/` in
+//!   memory (loaders load nothing else). Other jars in the override folders are listed as
+//!   `ScanIssue`s, not scanned. Jar ids and paths are the paths inside the zip.
 //!
-//! Zip safety ([`archive`]): entries whose path has `..`, is absolute or drive-prefixed, contains
-//! a backslash or NUL, or uses a Windows reserved name are skipped as `ScanIssue`s, as are symlink
-//! entries. Whole-archive limits: at most [`MAX_ENTRIES`] entries and [`MAX_TOTAL_UNCOMPRESSED`]
-//! declared unpacked bytes (otherwise nothing is read). Every entry read must have a compression
-//! ratio of at most [`MAX_RATIO`]:1, must not inflate past the size it declares, and is charged to
-//! a per-scan budget of [`MAX_TOTAL_UNCOMPRESSED`]. The index is read only up to
-//! [`MAX_INDEX_BYTES`] and may list at most [`MAX_INDEX_FILES`] files; an override jar is read
-//! only up to [`MAX_OVERRIDE_JAR_BYTES`]. Every problem is a `ScanIssue`; only a pack file that
-//! cannot be opened at all is an error.
+//! Zip safety ([`archive`]): before the zip library parses anything, the end-of-central-directory
+//! records (ZIP64 included) are read by hand and the pack is refused when they announce more than
+//! [`MAX_ENTRIES`] entries or a central directory over [`MAX_CD_BYTES`]. A pack with duplicate
+//! entry names (exactly, or differing only in letter case) is refused as a whole: which copy a
+//! tool uses differs between tools, so nothing in it would be trustworthy. Entries whose path has
+//! `..`, is absolute or drive-prefixed, contains a backslash or NUL, or uses a Windows reserved
+//! name are skipped as `ScanIssue`s, as are symlink entries and entries whose local header
+//! disagrees with the central directory (name, sizes, …; checked for every entry, and again when
+//! one is read). Whole-archive limits: at most [`MAX_ENTRIES`] entries and
+//! [`MAX_TOTAL_UNCOMPRESSED`] declared unpacked bytes (otherwise nothing is read). Every entry read
+//! must have a compression ratio of at most [`MAX_RATIO`]:1, must not inflate past the size it
+//! declares, and is charged to a per-scan budget of [`MAX_TOTAL_UNCOMPRESSED`]. The index is read
+//! only up to [`MAX_INDEX_BYTES`] and may list at most [`MAX_INDEX_FILES`] files; an override jar
+//! is read only up to [`MAX_OVERRIDE_JAR_BYTES`]. Every problem is a `ScanIssue`; only a pack file
+//! that cannot be opened at all is an error.
+//!
+//! Index ([`index`]): download links are never dropped silently; a link that cannot be kept
+//! verbatim becomes a sentinel string that is not a URL (see [`index::TOO_LONG`] and friends), so
+//! `src/core` flags it as outside the allowlist. A `files[].path` listed twice keeps the last
+//! entry (what installers end up writing), with a `ScanIssue`.
 //!
 //! Override precedence (the Modrinth installer copies `overrides/` first, then `client-overrides/`
 //! or `server-overrides/` over it): a jar present in both `overrides/` and a side folder is
@@ -56,6 +69,8 @@ pub const MAX_INDEX_BYTES: u64 = 8 * MIB;
 pub const MAX_INDEX_FILES: usize = 10_000;
 /// Most zip entries in a pack.
 pub const MAX_ENTRIES: usize = 20_000;
+/// Largest central directory accepted (bytes): [`MAX_ENTRIES`] generous 600-byte headers.
+pub const MAX_CD_BYTES: u64 = MAX_ENTRIES as u64 * 600;
 /// Most unpacked bytes, declared over all entries and actually read per scan.
 pub const MAX_TOTAL_UNCOMPRESSED: u64 = 2 * 1024 * MIB;
 /// Highest compression ratio (unpacked : packed) of an entry that is read.
@@ -65,22 +80,61 @@ pub const MAX_OVERRIDE_JAR_BYTES: u64 = 256 * MIB;
 /// Unsafe entries reported individually; the rest are summed up in one issue.
 pub const MAX_ENTRY_ISSUES: usize = 100;
 pub const INDEX_NAME: &str = "modrinth.index.json";
-/// Folders whose jars are scanned, in the order the Modrinth installer applies them.
+/// Override folders, in the order the Modrinth installer applies them.
 pub const OVERRIDE_DIRS: [&str; 3] = ["overrides/", "client-overrides/", "server-overrides/"];
+/// The folders whose jars are scanned: `mods/` directly inside each override folder.
+pub const OVERRIDE_MOD_DIRS: [&str; 3] = ["overrides/mods/", "client-overrides/mods/", "server-overrides/mods/"];
 const EXTENSION: &str = ".mrpack";
 
 pub(crate) fn issue(subject: &str, message: String) -> ScanIssue {
     ScanIssue { subject: subject.to_string(), message }
 }
 
-/// A path or string from the pack made safe to show: control characters replaced, at most 200
-/// characters.
+/// A path or string from the pack made safe to show: control and invisible format characters
+/// (see [`is_hidden_char`]) replaced by `?`, at most 200 characters.
 pub(crate) fn display_name(s: &str) -> String {
-    let mut out: String = s.chars().take(200).map(|c| if c.is_control() { '?' } else { c }).collect();
+    let mut out: String = s.chars().take(200).map(|c| if is_hidden_char(c) { '?' } else { c }).collect();
     if s.chars().count() > 200 {
         out.push('…');
     }
     out
+}
+
+/// Control characters and the invisible Unicode format characters (category Cf) that can
+/// disguise text: bidi embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069, U+061C,
+/// U+200E/U+200F), zero-width characters (U+200B–U+200D, U+2060–U+2064), the BOM U+FEFF, soft
+/// hyphen, interlinear annotations, tag characters, and the rest of Cf.
+pub(crate) fn is_hidden_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c as u32,
+            0x00AD
+                | 0x0600..=0x0605
+                | 0x061C
+                | 0x06DD
+                | 0x070F
+                | 0x0890..=0x0891
+                | 0x08E2
+                | 0x180E
+                | 0x200B..=0x200F
+                | 0x202A..=0x202E
+                | 0x2060..=0x2064
+                | 0x2066..=0x206F
+                | 0xFEFF
+                | 0xFFF9..=0xFFFB
+                | 0x110BD
+                | 0x110CD
+                | 0x13430..=0x1343F
+                | 0x1BCA0..=0x1BCA3
+                | 0x1D173..=0x1D17A
+                | 0xE0001
+                | 0xE0020..=0xE007F
+        )
+}
+
+/// `s` without control and invisible format characters.
+pub(crate) fn strip_hidden(s: &str) -> String {
+    s.chars().filter(|c| !is_hidden_char(*c)).collect()
 }
 
 /// True for `*.mrpack` (ASCII case-insensitive).
@@ -97,6 +151,9 @@ pub fn check_pack_meta(name: &str, is_dir: bool, is_file: bool, len: u64) -> std
     if !is_file {
         return Err("it is not a regular file.".into());
     }
+    if name.contains(':') {
+        return Err(ADS_REASON.into());
+    }
     if !has_mrpack_extension(name) {
         return Err("only Modrinth modpacks (.mrpack files) and instance folders can be added.".into());
     }
@@ -106,23 +163,43 @@ pub fn check_pack_meta(name: &str, is_dir: bool, is_file: bool, len: u64) -> std
     Ok(())
 }
 
+const ADS_REASON: &str =
+    "its name contains \":\", which on Windows names a hidden stream inside another file, not a pack file.";
+
+/// True when a name of `path` (after the drive or `\\?\` prefix) contains `:`, which on NTFS
+/// addresses an alternate data stream (`notes.txt:x.mrpack`).
+pub fn has_stream_colon(path: &Path) -> bool {
+    path.components().any(|c| matches!(c, std::path::Component::Normal(n) if n.to_string_lossy().contains(':')))
+}
+
 /// Whether `path` may be opened as a pack; returns its canonical path. Links are followed, and
-/// both the given and the resolved file name must end in `.mrpack`.
+/// both the given and the resolved file name must end in `.mrpack`; no name may contain `:`
+/// (alternate data streams).
 pub fn check_pack_file(path: &Path) -> std::result::Result<PathBuf, String> {
+    if has_stream_colon(path) {
+        return Err(ADS_REASON.into());
+    }
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let meta = std::fs::metadata(path).map_err(|e| format!("it could not be read ({e})."))?;
     check_pack_meta(&name, meta.is_dir(), meta.is_file(), meta.len())?;
     let canon = dunce::canonicalize(path).map_err(|e| format!("it could not be read ({e})."))?;
+    if has_stream_colon(&canon) {
+        return Err(ADS_REASON.into());
+    }
     let canon_name = canon.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let meta = std::fs::metadata(&canon).map_err(|e| format!("it could not be read ({e})."))?;
     check_pack_meta(&canon_name, meta.is_dir(), meta.is_file(), meta.len())?;
     Ok(canon)
 }
 
-/// Open the pack's zip. Err is a readable sentence.
+/// Open the pack's zip: the end-of-central-directory records are checked by hand first
+/// ([`archive::check_central_directory`]), so the zip library never parses an oversized central
+/// directory. Err is a readable sentence.
 fn open_zip(canon: &Path) -> std::result::Result<ZipArchive<BufReader<File>>, String> {
     let file = File::open(canon).map_err(|e| format!("The pack could not be read: {e}."))?;
-    ZipArchive::new(BufReader::new(file)).map_err(|e| format!("The pack is not a valid .mrpack (zip) file: {e}."))
+    let mut reader = BufReader::new(file);
+    archive::check_central_directory(&mut reader)?;
+    ZipArchive::new(reader).map_err(|e| format!("The pack is not a valid .mrpack (zip) file: {e}."))
 }
 
 /// Read and parse the index (problems appended to `issues`).
@@ -149,11 +226,11 @@ fn read_index(
 /// unusable the name is the file name and the metadata is left to inference.
 pub fn describe_pack(canon: &Path) -> Instance {
     let file_name = canon.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let stem = file_name.get(..file_name.len().saturating_sub(EXTENSION.len())).unwrap_or(&file_name).to_string();
+    let stem = file_name.get(..file_name.len().saturating_sub(EXTENSION.len())).unwrap_or(&file_name);
     let shown = canon.display().to_string();
     let mut inst = Instance {
         id: discovery::instance_id(canon, Os::current()),
-        name: if stem.trim().is_empty() { file_name.clone() } else { stem },
+        name: index::clean_name(stem).unwrap_or_else(|| display_name(&file_name)),
         launcher: Launcher::Mrpack,
         root: shown.clone(),
         game_dir: shown,
@@ -164,7 +241,7 @@ pub fn describe_pack(canon: &Path) -> Instance {
         mod_count: 0,
     };
     let Ok(mut zip) = open_zip(canon) else { return inst };
-    let listing = archive::list(&zip);
+    let listing = archive::list(&mut zip);
     if listing.refused {
         return inst;
     }
@@ -212,8 +289,15 @@ pub fn scan_pack(
         res.duration_ms = u32::try_from(t0.elapsed().as_millis()).unwrap_or(u32::MAX);
         res
     };
-    // The file was checked when it was opened; it may have changed since.
-    if let Err(why) = check_pack_meta("pack.mrpack", meta.is_dir(), meta.is_file(), meta.len()) {
+    // The file was checked when it was opened; it may have changed since. The guard compares
+    // against the canonical path captured at opening, so this is the resolved name.
+    let resolved_name = canon.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let still_ok = if has_stream_colon(&canon) {
+        Err(ADS_REASON.to_string())
+    } else {
+        check_pack_meta(&resolved_name, meta.is_dir(), meta.is_file(), meta.len())
+    };
+    if let Err(why) = still_ok {
         res.issues.push(issue("", format!("The pack was not scanned: {why}")));
         on_start(&[]);
         return Ok(finish(res));
@@ -226,7 +310,7 @@ pub fn scan_pack(
             return Ok(finish(res));
         }
     };
-    let listing = archive::list(&zip);
+    let listing = archive::list(&mut zip);
     res.issues.extend(listing.issues.iter().cloned());
     if listing.refused {
         on_start(&[]);

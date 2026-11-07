@@ -47,7 +47,7 @@ impl Harness {
     /// What `set_settings` does with `{ modrinthEnabled }`.
     fn set_enabled(&self, enabled: bool) {
         let patch = SettingsPatch { modrinth_enabled: Some(enabled), ..SettingsPatch::default() };
-        self.st.settings.update(|s| crate::settings::apply_patch(s, patch, &HashSet::new())).unwrap();
+        self.st.settings.update(|s| crate::settings::apply_patch(s, patch, &HashSet::new(), &HashSet::new())).unwrap();
         assert_eq!(self.st.settings.get().modrinth_enabled, enabled);
     }
 

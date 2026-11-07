@@ -18,6 +18,8 @@ use super::{Cmd, ScanSink};
 
 /// Most files handled from one drop; the rest are rejected.
 pub const MAX_DROPPED_FILES: usize = 32;
+/// Most `DropRejected` events emitted one by one per drop; the rest are summed up in one more.
+pub const MAX_DROP_REJECTIONS: usize = 3;
 
 /// Opens a native file picker filtered to `.mrpack`; registers it as an Mrpack instance.
 #[tauri::command]
@@ -87,8 +89,38 @@ pub(crate) fn open_dropped(st: &AppState, paths: &[PathBuf]) -> Vec<std::result:
         .collect()
 }
 
-/// `WindowEvent::DragDrop` → `InstanceAdded` per opened pack, `DropRejected` per refused path.
-/// Runs in the background so the window event loop never waits for the scope lock or the disk.
+/// What one drop emits: every opened pack (`InstanceAdded`, in order), then at most
+/// [`MAX_DROP_REJECTIONS`] rejections one by one and, when there were more, one summary
+/// rejection for the rest. Rejections come last so the UI (which shows the latest and clears it
+/// on `InstanceAdded`) keeps showing one.
+pub(crate) fn drop_events(
+    outcomes: Vec<std::result::Result<Instance, DropRejected>>,
+) -> (Vec<InstanceAdded>, Vec<DropRejected>) {
+    let mut added = Vec::new();
+    let mut rejected = Vec::new();
+    let mut more = 0usize;
+    for outcome in outcomes {
+        match outcome {
+            Ok(instance) => added.push(InstanceAdded { instance }),
+            Err(r) if rejected.len() < MAX_DROP_REJECTIONS => rejected.push(r),
+            Err(_) => more += 1,
+        }
+    }
+    if more > 0 {
+        let files = if more == 1 { "1 more file was".to_string() } else { format!("{more} more files were") };
+        rejected.push(DropRejected {
+            name: "The rest of this drop".into(),
+            reason: format!(
+                "{files} refused as well (only .mrpack files are opened, at most {MAX_DROPPED_FILES} per drop)."
+            ),
+        });
+    }
+    (added, rejected)
+}
+
+/// `WindowEvent::DragDrop` → `InstanceAdded` per opened pack, then a few `DropRejected` (see
+/// [`drop_events`]). Runs in the background so the window event loop never waits for the scope
+/// lock or the disk.
 pub fn handle_drop<R: Runtime>(app: AppHandle<R>, paths: Vec<PathBuf>) {
     if paths.is_empty() {
         return;
@@ -104,12 +136,10 @@ pub fn handle_drop<R: Runtime>(app: AppHandle<R>, paths: Vec<PathBuf>) {
                 return;
             }
         };
-        for outcome in outcomes {
-            let emitted = match outcome {
-                Ok(instance) => InstanceAdded { instance }.emit(&app),
-                Err(rejected) => rejected.emit(&app),
-            };
-            if let Err(e) = emitted {
+        let (added, rejected) = drop_events(outcomes);
+        let emitted = added.into_iter().map(|a| a.emit(&app)).chain(rejected.into_iter().map(|r| r.emit(&app)));
+        for result in emitted {
+            if let Err(e) = result {
                 eprintln!("drop: could not emit the result: {e}");
             }
         }
