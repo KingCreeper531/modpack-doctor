@@ -24,6 +24,10 @@ tauri-plugin-opener = "2.7.2"
 tauri-plugin-notification = "2.8.0"
 # One app process (CONTRACTS invariant 14): a second launch focuses the running window.
 tauri-plugin-single-instance = "2.5.5"
+# User-initiated, signed self-updates from GitHub Releases (CONTRACTS invariant 18). Rust-side only.
+tauri-plugin-updater = "2.14.1"
+# RFC 3339 release dates for `UpdateInfo` (already in the tree through the updater).
+time = { version = "0.3", features = ["formatting"] }
 # Exact pins REQUIRED: pre-release family with `=` deps between them (docs/research/tauri.md).
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-typescript = "=0.0.13"

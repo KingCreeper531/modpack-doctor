@@ -114,7 +114,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        // tauri-plugin-updater is registered in M8, together with the signing pubkey.
+        // Rust-side only (no JS permission): `check_update` / `install_update` drive it when the
+        // user asks; config (pubkey, GitHub endpoint) is `plugins.updater` in tauri.conf.json.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
