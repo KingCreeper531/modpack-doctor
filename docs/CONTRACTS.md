@@ -309,7 +309,11 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       another loader family are skipped); a repeated `files[].path` → the last entry counts (what
       installers write) plus a `ScanIssue`; not identified → I-NOT-ON-MODRINTH; a `downloads` URL whose
       host is not in Modrinth's allowlist (`cdn.modrinth.com`, `github.com`,
-      `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). Override jars
+      `raw.githubusercontent.com`, `gitlab.com`) → **W-MRPACK-DOWNLOAD** (warning). An override jar's required
+      dependency counts as present when a declared `mods/` file for the pack side is that Modrinth
+      project (slug = mod id, `-` ≡ `_`) or is named `<id>-<version>.jar`; while the pack declares
+      mod files that can't be confirmed, its E-MISSING-DEP is a **warning** saying so (never "not
+      installed"). Override jars
       get every static check. Packs never get fix actions (read-only); findings carry no fixes.
     - Hardening (M7 review): a pack with duplicate entry names (also case-insensitive, except
       folders) is refused whole; every entry is read with local/central header consistency
@@ -422,7 +426,7 @@ Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `
 | `E-MC-RANGE` | error | declared Minecraft range excludes the pack's MC version |
 | `E-LOADER-RANGE` | error | declared loader-dependency range excludes the pack's loader version |
 | `E-DEP-RANGE` | error | dependency present, but its version is outside the declared range |
-| `E-MISSING-DEP` | error | required dependency absent. Built-ins count as present: `minecraft`, `java`, `forge`, `neoforge`, `fml`, `mcp`, `javafml`, `lowcodefml`, `fabricloader`, `fabric-loader`, `quilt_loader`, `quilt-loader`, plus `mixinextras` only where the loader bundles it (`src/core/checks/builtins.ts`). `fabric` is **not** built in, because that id is Fabric API. `provides` and nested jars also count as present |
+| `E-MISSING-DEP` | error | required dependency absent. Built-ins count as present: `minecraft`, `java`, `forge`, `neoforge`, `fml`, `mcp`, `javafml`, `lowcodefml`, `fabricloader`, `fabric-loader`, `quilt_loader`, `quilt-loader`, plus `mixinextras` only where the loader bundles it (`src/core/checks/builtins.ts`). `fabric` is **not** built in, because that id is Fabric API. `provides` and nested jars also count as present. When a top-level jar declares the id but isn't used (disabled, damaged, another loader's build, other side), the title names that jar and the reason instead of "not installed" |
 | `E-DUP-ID` | error | two active top-level jars declare the same mod id (identical nested libraries are de-duplicated) |
 | `E-SPLIT-PKG` | error | same Java package in the own classes of ≥ 2 top-level jars, on Forge/NeoForge (JPMS `ResolutionException`) |
 | `I-SPLIT-PKG` | info | same, on Fabric/Quilt (no module layer) |
