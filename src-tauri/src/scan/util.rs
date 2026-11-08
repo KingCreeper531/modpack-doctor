@@ -11,6 +11,9 @@ pub(crate) struct Parsed {
     pub mods: Vec<ModMeta>,
     pub mixins: Vec<String>,
     pub nested: Vec<NestedDecl>,
+    /// `mcmod.info` only: mod ids whose entry sets `"useDependencyInformation": true` (FML then
+    /// takes dependencies from `mcmod.info` instead of the `@Mod` annotation).
+    pub uses_dependency_information: Vec<String>,
 }
 
 /// A nested jar declared by the parent's metadata.

@@ -41,10 +41,21 @@
 //!   one `Dependency`, so each alternative becomes an individually Optional dependency.
 //! - Legacy `mcmod.info`: `mc_range` is always None (FML never enforces `mcversion`), and
 //!   `deps` / `loader_range` are emitted only for entries with `"useDependencyInformation": true`
-//!   (FML's own gate). The enforced `@Mod` annotation data is not parsed yet.
+//!   (FML's own gate).
+//! - Legacy `@Mod` annotations (`annotation.rs`): top-level jars without 1.13+/Fabric/Quilt
+//!   metadata (and not coremod/tweaker-only jars) have their class files searched for a
+//!   class-level `@Mod` (`net.minecraftforge.fml.common.Mod` or 1.7.10's
+//!   `cpw.mods.fml.common.Mod`) carrying a `modid`. Each one yields a `Legacyforge` `ModMeta`
+//!   whose `metadata_file` is the class path (`com/example/MyMod.class`), merged with the
+//!   `mcmod.info` entry of the same id (`annotation::merge` documents the rule). The same pass
+//!   reads `@API(provides = …)` package annotations (added to the jar's entry as `provides`) and,
+//!   in `FMLCorePlugin` jars, coremod `DummyModContainer` ids set as string literals (own
+//!   entries). Limits: classes over 512 KiB are skipped, ≤ 64 MiB of classes and ≤ 65 536 class
+//!   files are read and ≤ 64 findings kept per jar; stopping early adds a `ScanIssue`.
 //!
 //! Jar ids come only from `crate::jar_id` (`top_level_ids`, `nested_id`).
 
+mod annotation;
 mod fabric;
 mod forge;
 mod jar;
@@ -57,6 +68,8 @@ mod util;
 mod perf;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_annotation;
 #[cfg(test)]
 mod tests_limits;
 #[cfg(test)]

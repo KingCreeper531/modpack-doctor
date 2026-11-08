@@ -1,5 +1,6 @@
 //! Analysis of one jar held in memory: hashes, metadata, packages, class versions, module
-//! name, and recursion into nested jars under a per-top-level-jar zip-bomb budget.
+//! name, legacy `@Mod` annotations, and recursion into nested jars under a per-top-level-jar
+//! zip-bomb budget.
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::{Cursor, Read};
@@ -10,7 +11,7 @@ use zip::ZipArchive;
 
 use super::forge::{parse_mods_toml, Manifest};
 use super::util::{decode_text, NestedDecl, Parsed};
-use super::{fabric, legacy, module_info, quilt, MAX_NESTED_DEPTH};
+use super::{annotation, fabric, legacy, module_info, quilt, MAX_NESTED_DEPTH};
 use crate::jar_id;
 use crate::model::{JarRecord, JarStatus, LoaderKind, MetadataError, ScanIssue};
 
@@ -31,10 +32,27 @@ pub(crate) struct Limits {
     pub inflated_budget: u64,
     /// Most nested-jar records produced under one top-level jar.
     pub max_nested_records: u32,
+    /// `@Mod` search: largest class file read (bigger ones are skipped).
+    pub class_cap: u64,
+    /// `@Mod` search: total class bytes inflated for one top-level jar (separate from
+    /// `inflated_budget`; only top-level jars are searched).
+    pub class_budget: u64,
+    /// `@Mod` search: most class files read for one top-level jar.
+    pub max_class_reads: u32,
+    /// `@Mod` search: most annotations kept for one jar.
+    pub max_mod_annotations: usize,
 }
 
-pub(crate) const DEFAULT_LIMITS: Limits =
-    Limits { metadata_cap: 8 * MIB, nested_cap: 64 * MIB, inflated_budget: 256 * MIB, max_nested_records: 512 };
+pub(crate) const DEFAULT_LIMITS: Limits = Limits {
+    metadata_cap: 8 * MIB,
+    nested_cap: 64 * MIB,
+    inflated_budget: 256 * MIB,
+    max_nested_records: 512,
+    class_cap: 512 * 1024,
+    class_budget: 64 * MIB,
+    max_class_reads: 65_536,
+    max_mod_annotations: 64,
+};
 
 /// Remaining allowance while scanning one top-level jar.
 #[derive(Debug)]
@@ -42,6 +60,7 @@ pub(crate) struct Budget {
     limits: Limits,
     inflated_left: u64,
     records_left: u32,
+    class_left: u64,
     inflated_reported: bool,
     records_reported: bool,
 }
@@ -52,6 +71,7 @@ impl Budget {
             limits,
             inflated_left: limits.inflated_budget,
             records_left: limits.max_nested_records,
+            class_left: limits.class_budget,
             inflated_reported: false,
             records_reported: false,
         }
@@ -153,19 +173,24 @@ fn read_entry<R: Read + std::io::Seek>(
     cap: u64,
     budget: &mut Budget,
 ) -> Result<Vec<u8>, ReadError> {
+    read_within(zip, idx, cap, &mut budget.inflated_left)
+}
+
+/// [`read_entry`] against an arbitrary allowance `left` (decremented by the bytes inflated).
+fn read_within<R: Read + std::io::Seek>(zip: &mut ZipArchive<R>, idx: usize, cap: u64, left: &mut u64) -> Result<Vec<u8>, ReadError> {
     let f = zip.by_index(idx).map_err(|e| ReadError::Zip(e.to_string()))?;
     let declared = f.size();
     if declared > cap {
         return Err(ReadError::TooLarge { cap });
     }
-    if declared > budget.inflated_left {
+    if declared > *left {
         return Err(ReadError::OverBudget);
     }
-    let limit = cap.min(budget.inflated_left);
+    let limit = cap.min(*left);
     let mut buf = Vec::with_capacity(usize::try_from(declared.min(MAX_PREALLOC)).unwrap_or(0));
     let res = f.take(limit + 1).read_to_end(&mut buf);
     let n = buf.len() as u64;
-    budget.inflated_left = budget.inflated_left.saturating_sub(n);
+    *left = left.saturating_sub(n);
     res.map_err(|e| ReadError::Zip(e.to_string()))?;
     if n > limit {
         return Err(if limit == cap { ReadError::TooLarge { cap } } else { ReadError::OverBudget });
@@ -178,7 +203,122 @@ fn class_major<R: Read + std::io::Seek>(zip: &mut ZipArchive<R>, idx: usize) -> 
     let mut f = zip.by_index(idx).ok()?;
     let mut head = [0u8; 8];
     f.read_exact(&mut head).ok()?;
-    (head[..4] == [0xCA, 0xFE, 0xBA, 0xBE]).then(|| u32::from(u16::from_be_bytes([head[6], head[7]])))
+    major_of(&head)
+}
+
+fn major_of(head: &[u8]) -> Option<u32> {
+    let h = head.get(..8)?;
+    (h[..4] == [0xCA, 0xFE, 0xBA, 0xBE]).then(|| u32::from(u16::from_be_bytes([h[6], h[7]])))
+}
+
+/// What legacy FML would look for in this jar's classes.
+#[derive(Debug, Clone, Copy, Default)]
+struct ClassSearch {
+    /// `@Mod` / `@API` (mod discovery): a top-level jar with no 1.13+ / Fabric / Quilt mod
+    /// metadata, and not a coremod or tweaker jar unless its manifest says it also holds a mod
+    /// (`FMLCorePluginContainsFMLMod`; FML's `CoreModManager` puts other `FMLCorePlugin` /
+    /// `TweakClass` jars on its ignore list for mod discovery).
+    mods: bool,
+    /// A coremod's own `DummyModContainer` (any `FMLCorePlugin` jar without modern metadata).
+    containers: bool,
+}
+
+impl ClassSearch {
+    fn any(self) -> bool {
+        self.mods || self.containers
+    }
+}
+
+fn fml_class_search(ctx: &JarCtx, zip: &ZipArchive<Cursor<&[u8]>>, manifest: &Manifest) -> ClassSearch {
+    if ctx.depth != 0 || [NEOFORGE_TOML, FORGE_TOML, FABRIC_JSON, QUILT_JSON].iter().any(|f| zip.index_for_name(f).is_some()) {
+        return ClassSearch::default();
+    }
+    let set = |k: &str| manifest.get(k).is_some_and(|v| !v.trim().is_empty());
+    let coremod = set("FMLCorePlugin");
+    ClassSearch { mods: !(coremod || set("TweakClass")) || set("FMLCorePluginContainsFMLMod"), containers: coremod }
+}
+
+/// What the class search found in one jar.
+#[derive(Debug, Default)]
+struct LegacyFacts {
+    mods: Vec<annotation::ModAnnotation>,
+    apis: Vec<annotation::ApiAnnotation>,
+    containers: Vec<annotation::DummyContainer>,
+}
+
+impl LegacyFacts {
+    fn is_empty(&self) -> bool {
+        self.mods.is_empty() && self.apis.is_empty() && self.containers.is_empty()
+    }
+}
+
+/// Read the jar's classes (outer classes first, then inner `$` classes) looking for what
+/// `search` asks for (`@Mod` / `@API` annotations, coremod containers), within
+/// `Limits::class_cap` / `class_budget` / `max_class_reads` / `max_mod_annotations` (which counts
+/// all three kinds). Records the major version of every `sample` class it reads in `majors`, so
+/// those are not opened again. Stopping at a limit adds one `ScanIssue`.
+#[allow(clippy::too_many_arguments)]
+fn find_legacy_facts(
+    ctx: &JarCtx,
+    zip: &mut ZipArchive<Cursor<&[u8]>>,
+    classes: &[(usize, String)],
+    sample: &[usize],
+    search: ClassSearch,
+    budget: &mut Budget,
+    majors: &mut Vec<(usize, Option<u32>)>,
+    issues: &mut Vec<ScanIssue>,
+) -> LegacyFacts {
+    let limits = budget.limits;
+    let mut order: Vec<&(usize, String)> = classes.iter().collect();
+    order.sort_by_key(|(_, name)| name.contains('$'));
+    let mut found = LegacyFacts::default();
+    let mut kept: usize = 0;
+    let mut stopped: Option<String> = None;
+    for (reads, (idx, name)) in (0u32..).zip(order) {
+        if kept >= limits.max_mod_annotations {
+            stopped = Some(format!("the limit of {} @Mod / @API / mod-container classes per jar was reached", limits.max_mod_annotations));
+            break;
+        }
+        if reads >= limits.max_class_reads {
+            stopped = Some(format!("it has more than {} class files", limits.max_class_reads));
+            break;
+        }
+        match read_within(zip, *idx, limits.class_cap, &mut budget.class_left) {
+            Ok(bytes) => {
+                if sample.contains(idx) {
+                    majors.push((*idx, major_of(&bytes)));
+                }
+                if annotation::may_have_mod(&bytes) {
+                    let facts = annotation::parse_class(&bytes, name);
+                    let before = found.mods.len() + found.apis.len() + found.containers.len();
+                    if search.mods {
+                        found.mods.extend(facts.mod_annotation);
+                        found.apis.extend(facts.api);
+                    }
+                    if search.containers {
+                        found.containers.extend(facts.container);
+                    }
+                    kept += found.mods.len() + found.apis.len() + found.containers.len() - before;
+                }
+            }
+            Err(ReadError::OverBudget) => {
+                stopped = Some(format!("its classes unpack to more than {}", human(limits.class_budget)));
+                break;
+            }
+            // Oversized or unreadable class: FML could not use it either; skip it.
+            Err(_) => {}
+        }
+    }
+    if let Some(why) = stopped {
+        issues.push(ScanIssue {
+            subject: ctx.id.clone(),
+            message: format!(
+                "Stopped looking for @Mod classes in {}: {why}. Mods it declares only through @Mod in the remaining classes are not listed.",
+                ctx.file_name
+            ),
+        });
+    }
+    found
 }
 
 /// Read a metadata entry as text. None when absent; read failures are recorded in `errors`.
@@ -222,9 +362,15 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
         }
     };
 
+    // The manifest first: it decides whether legacy FML would search the classes for @Mod.
+    let mut errors: Vec<MetadataError> = Vec::new();
+    let manifest = read_text(&mut zip, MANIFEST, budget, &mut errors).map(|t| Manifest::parse(&t)).unwrap_or_default();
+    let search = fml_class_search(ctx, &zip, &manifest);
+
     // Packages, class sample and module-info location, from entry names only.
     let mut packages = BTreeSet::new();
     let mut classes = Vec::new();
+    let mut class_names: Vec<(usize, String)> = Vec::new();
     let mut module_info_idx: Option<usize> = None;
     let mut versioned_mi: Option<(u32, usize)> = None;
     for i in 0..zip.len() {
@@ -242,6 +388,8 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
         }
         if name == "module-info.class" {
             module_info_idx = Some(i);
+        } else if search.any() {
+            class_names.push((i, name.to_string()));
         }
         classes.push(i);
         if let Some((dir, _)) = name.rsplit_once('/') {
@@ -256,13 +404,24 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
     } else {
         (0..CLASS_SAMPLE).map(|k| classes[k * classes.len() / CLASS_SAMPLE]).collect()
     };
-    rec.max_class_major = sample.into_iter().filter_map(|i| class_major(&mut zip, i)).max();
+    // One pass over the class files: the @Mod search reads whole classes and records the major
+    // version of the sampled ones; only sampled classes it skipped get their header read.
+    let mut majors: Vec<(usize, Option<u32>)> = Vec::new();
+    let legacy_facts = if search.any() {
+        find_legacy_facts(ctx, &mut zip, &class_names, &sample, search, budget, &mut majors, issues)
+    } else {
+        LegacyFacts::default()
+    };
+    rec.max_class_major = sample
+        .into_iter()
+        .filter_map(|i| match majors.iter().find(|(j, _)| *j == i) {
+            Some((_, m)) => *m,
+            None => class_major(&mut zip, i),
+        })
+        .max();
 
     // Metadata. Each file is parsed on its own: a broken file is listed in `metadata_errors`
     // and only makes the jar Corrupt when no mod-metadata file produced a ModMeta.
-    let mut errors: Vec<MetadataError> = Vec::new();
-    let manifest = read_text(&mut zip, MANIFEST, budget, &mut errors).map(|t| Manifest::parse(&t)).unwrap_or_default();
-
     let mi_name = module_info_idx.or(versioned_mi.map(|(_, i)| i)).and_then(|i| {
         let cap = budget.limits.metadata_cap;
         read_entry(&mut zip, i, cap, budget).ok().and_then(|b| module_info::module_name(&b))
@@ -311,10 +470,16 @@ pub(crate) fn scan_into(ctx: &JarCtx, bytes: &[u8], budget: &mut Budget, out: &m
     }
 
     let mut mixins: BTreeSet<String> = manifest.mixin_configs().into_iter().collect();
+    let mut opted_in: Vec<String> = Vec::new();
     for p in parsed {
         mixins.extend(p.mixins);
         rec.mods.extend(p.mods);
         decls.extend(p.nested);
+        opted_in.extend(p.uses_dependency_information);
+    }
+    if !legacy_facts.is_empty() {
+        let LegacyFacts { mods, apis, containers } = legacy_facts;
+        annotation::merge(&mut rec.mods, &opted_in, mods, containers, apis, MCMOD_INFO);
     }
     // One record per entry path; JarJar declarations come first, so their info wins.
     let mut seen: HashSet<String> = HashSet::new();

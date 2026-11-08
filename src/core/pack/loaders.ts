@@ -15,7 +15,8 @@
  *   optional (Incendium, Nullscape) load on Forge 1.20.4. Which file is read (`mods.toml` vs
  *   `neoforge.mods.toml`) is decided separately by `metadataFilesRead`; a required other-loader
  *   dependency in a read file is E-WRONG-LOADER's error case.
- * - Legacy Forge (`mcmod.info`) entries load only before MC 1.13; modern `mods.toml` only from 1.13.
+ * - Legacy Forge (`mcmod.info` / `@Mod` class) entries load only before MC 1.13; modern
+ *   `mods.toml` only from 1.13.
  * - When the pack's MC version is unknown, the MC-dependent cases above are accepted: a check
  *   reports only what it can be sure of.
  */
@@ -100,6 +101,21 @@ export const QUILT_JSON = 'quilt.mod.json';
 export const MCMOD_INFO = 'mcmod.info';
 
 /**
+ * Whether `file` is a legacy `@Mod` class: the scanner gives entries it reads from a class-level
+ * `@Mod` annotation (Forge 1.12.2 and older) the class path as `metadataFile`, e.g.
+ * `com/example/MyMod.class`. Legacy FML reads these wherever it reads `mcmod.info`.
+ */
+export function isModClassFile(file: string): boolean {
+  return file.endsWith('.class');
+}
+
+/** `read` plus every present `@Mod` class file when it includes `mcmod.info` (legacy FML). */
+function withModClasses(read: Set<string>, present: readonly string[]): ReadonlySet<string> {
+  if (read.has(MCMOD_INFO)) for (const f of present) if (isModClassFile(f)) read.add(f);
+  return read;
+}
+
+/**
  * Metadata files the pack's loader actually reads from a jar that contains `present` files
  * (parsed or failed). null = every file (unknown loader).
  *
@@ -108,9 +124,10 @@ export const MCMOD_INFO = 'mcmod.info';
  * - NeoForge 1.20.1–1.20.4: `META-INF/mods.toml` (`neoforge.mods.toml` did not exist yet).
  * - NeoForge with an unknown MC version: both FML files (we cannot tell).
  * - Forge on MC ≥ 1.13: `META-INF/mods.toml`. Forge never reads `neoforge.mods.toml`.
- * - Legacy FML (Forge on MC < 1.13, or a `legacyforge` pack): only `mcmod.info`. A 1.13+
- *   `mods.toml` is never read there (FML finds the `@Mod` class and rejects it as wrong-MC).
- * - Forge with an unknown MC version: `mods.toml` and `mcmod.info` (we cannot tell).
+ * - Legacy FML (Forge on MC < 1.13, or a `legacyforge` pack): `mcmod.info` and the jar's `@Mod`
+ *   classes (`isModClassFile`). A 1.13+ `mods.toml` is never read there (FML finds the `@Mod`
+ *   class and rejects it as wrong-MC). 1.13+ loaders never read `@Mod` class entries.
+ * - Forge with an unknown MC version: `mods.toml`, `mcmod.info` and `@Mod` classes (we cannot tell).
  * - Fabric: `fabric.mod.json`. Quilt: `quilt.mod.json` when the jar has one, else `fabric.mod.json`.
  */
 export function metadataFilesRead(packLoader: LoaderKind, mc: string | null, present: readonly string[]): ReadonlySet<string> | null {
@@ -122,11 +139,11 @@ export function metadataFilesRead(packLoader: LoaderKind, mc: string | null, pre
     }
     case 'forge': {
       const c = mcCompare(mc, '1.13');
-      if (c === null) return new Set([MODS_TOML, MCMOD_INFO]);
-      return new Set([c < 0 ? MCMOD_INFO : MODS_TOML]);
+      if (c === null) return withModClasses(new Set([MODS_TOML, MCMOD_INFO]), present);
+      return withModClasses(new Set([c < 0 ? MCMOD_INFO : MODS_TOML]), present);
     }
     case 'legacyforge':
-      return new Set([MCMOD_INFO]);
+      return withModClasses(new Set([MCMOD_INFO]), present);
     case 'fabric':
       return new Set([FABRIC_JSON]);
     case 'quilt':
