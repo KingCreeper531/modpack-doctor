@@ -181,6 +181,7 @@ const KNOWN_KEYS: &[&str] = &[
     "includeBeta",
     "gridSort",
     "inspectorWidth",
+    "autoCheckUpdates",
 ];
 
 /// Result of decoding a stored document.
@@ -305,6 +306,10 @@ pub fn decode(doc: &Map<String, Value>) -> Decoded {
     if let Some(w) = field::<u32>(doc, "inspectorWidth", &mut problems) {
         s.inspector_width = clamp_width(w);
     }
+    // Missing in settings stored before the opt-in existed: stays off.
+    if let Some(b) = field(doc, "autoCheckUpdates", &mut problems) {
+        s.auto_check_updates = b;
+    }
 
     let extra = doc.iter().filter(|(k, _)| !KNOWN_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
     Decoded { settings: s, extra, problems }
@@ -410,6 +415,9 @@ pub fn apply_patch(
     }
     if let Some(w) = patch.inspector_width {
         settings.inspector_width = clamp_width(w);
+    }
+    if let Some(b) = patch.auto_check_updates {
+        settings.auto_check_updates = b;
     }
     Ok(())
 }

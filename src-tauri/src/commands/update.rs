@@ -1,7 +1,10 @@
 //! The update commands (M8, CONTRACTS.md invariant 18): thin wrappers around
 //! `tauri-plugin-updater`, which runs in Rust only (the webview has no updater permission).
 //!
-//! - Nothing happens on its own: `check_update` runs when the user asks, and only reports.
+//! - Nothing is installed on its own: `check_update` runs when the user asks (About, palette) or,
+//!   only with the opt-in `Settings::auto_check_updates`, once a few seconds after the app starts
+//!   (the UI calls this same command, `src/ui/app/startupUpdate.ts`). Either way it only
+//!   reports; it never touches the "update installing" state or the work-order claim.
 //! - `check_update` remembers the version it showed (`AppState::checked_update`).
 //!   `install_update` installs only that version: it re-checks, and a different version (or no
 //!   check at all) is a `Conflict`. Then it downloads, verifies the minisign signature against
@@ -47,6 +50,7 @@ enum Stage {
 // Remembers the version shown, the only one `install_update` will install (doc comments here
 // end up in `src/bindings.ts`).
 /// Checks GitHub for a newer release and reports it (null when up to date); never installs.
+/// Runs when the user asks, or once at start when `Settings.autoCheckUpdates` is on.
 #[tauri::command]
 #[specta::specta]
 pub async fn check_update(app: AppHandle) -> Cmd<Option<UpdateInfo>> {
@@ -429,6 +433,22 @@ mod tests {
         assert!(!fixes.is_updating());
 
         assert!(guarded_install(&fixes, Some("0.3.0".into()), found("0.3.0"), installs_ok).await.is_ok());
+    }
+
+    #[test]
+    fn remembering_a_check_never_touches_the_install_or_order_state() {
+        // The startup check (opt-in) and the button run the same `check_update`: while an
+        // install holds the update ticket, or an order executes, a check changes neither.
+        let st = AppState::default();
+        let ticket = st.fixes.begin_update().expect("begin");
+        remember_checked(&st, Some("0.2.0".into()));
+        assert!(st.fixes.is_updating());
+        drop(ticket);
+        let order = st.fixes.claim("0123456789abcdef", "Test Pack").expect("claim");
+        remember_checked(&st, Some("0.3.0".into()));
+        assert!(st.fixes.any_executing() && !st.fixes.is_updating());
+        drop(order);
+        assert_eq!(checked_version(&st).as_deref(), Some("0.3.0"));
     }
 
     #[test]

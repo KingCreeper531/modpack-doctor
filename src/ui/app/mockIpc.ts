@@ -51,6 +51,11 @@
  * `MOCK_UPDATE` (0.2.0) and `install_update` then "installs" it (nothing restarts in a browser);
  * `?scenario=updatefail` answers a network error. `install_update` is refused with `conflict`
  * while a work order executes, as in Rust.
+ * - `autoupdate`: "Check for updates at startup" is on (`Settings.autoCheckUpdates`) and this is
+ *   the one mock scenario whose startup check runs (`startupUpdateCheck`): a few seconds after
+ *   start it finds `MOCK_UPDATE`, and the rail footer shows "Update 0.2.0 available".
+ * - `autoupdatefail`: the same, but the check fails (network), which stays silent at startup.
+ * Every other scenario keeps the startup check off, whatever the setting says.
  */
 import type {
   AppError,
@@ -116,7 +121,9 @@ export type MockScenario =
   | 'drop'
   | 'reportcancel'
   | 'update'
-  | 'updatefail';
+  | 'updatefail'
+  | 'autoupdate'
+  | 'autoupdatefail';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -153,6 +160,8 @@ const SCENARIOS: readonly MockScenario[] = [
   'reportcancel',
   'update',
   'updatefail',
+  'autoupdate',
+  'autoupdatefail',
 ];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
@@ -222,11 +231,19 @@ export interface MockBackend extends Backend {
   reports(): ReadonlyArray<{ name: string; format: ReportFormat; contents: string }>;
   /** Test hook: emit a `DropRejected` as Rust does for a refused drop. */
   emitDropRejected(e: DropRejected): void;
+  /**
+   * The opt-in startup update check may run against this mock (startupUpdate.ts): only the
+   * `autoupdate` / `autoupdatefail` scenarios ask for it.
+   */
+  startupUpdateCheck: boolean;
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
   const opts: MockOptions = { scenario: 'default', theme: 'system', scanMs: 1500, latencyMs: 40, ...options };
   const empty = opts.scenario === 'empty';
+  const autoUpdate = opts.scenario === 'autoupdate' || opts.scenario === 'autoupdatefail';
+  /** Scenarios whose `check_update` offers `MOCK_UPDATE`. */
+  const offersUpdate = opts.scenario === 'update' || opts.scenario === 'autoupdate';
   let discovery = mockDiscovery(empty);
   let settings: Settings = {
     theme: opts.theme,
@@ -238,6 +255,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     includeBeta: false,
     gridSort: opts.gridSort ?? 'name',
     inspectorWidth: 360,
+    autoCheckUpdates: autoUpdate,
   };
   let picks = 0;
   let scans = 0;
@@ -401,6 +419,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       includeBeta: p.includeBeta ?? settings.includeBeta,
       gridSort: p.gridSort ?? settings.gridSort,
       inspectorWidth: p.inspectorWidth ?? settings.inspectorWidth,
+      autoCheckUpdates: p.autoCheckUpdates ?? settings.autoCheckUpdates,
     };
     return settings;
   }
@@ -587,15 +606,15 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       }),
     checkUpdate: async (): Promise<Result<UpdateInfo | null>> => {
       await lag();
-      if (opts.scenario === 'updatefail') {
+      if (opts.scenario === 'updatefail' || opts.scenario === 'autoupdatefail') {
         return err('network', "Couldn't reach github.com to check for updates. Check your internet connection, then try again.");
       }
-      return ok(opts.scenario === 'update' ? { ...MOCK_UPDATE } : null);
+      return ok(offersUpdate ? { ...MOCK_UPDATE } : null);
     },
     installUpdate: async (): Promise<Result<null>> => {
       await lag();
       if (executing > 0) return err('conflict', 'A work order is running. Wait for it to finish, then install the update.');
-      if (opts.scenario !== 'update') return err('notFound', 'There is no update to install. Check for updates first.');
+      if (!offersUpdate) return err('notFound', 'There is no update to install. Check for updates first.');
       return ok(null);
     },
   };
@@ -612,5 +631,6 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     fix,
     reports: () => reports,
     emitDropRejected: (e) => ev.dropRejected.emit(e),
+    startupUpdateCheck: autoUpdate,
   };
 }

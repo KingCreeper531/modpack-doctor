@@ -77,6 +77,10 @@ pub struct Settings {
     pub include_beta: bool,
     pub grid_sort: GridSort,
     pub inspector_width: u32,
+    /// Opt-in: check GitHub for a newer release once, a few seconds after the app starts
+    /// (CONTRACTS invariant 18). It only reports; nothing is downloaded or installed by itself.
+    /// Settings stored before this field existed load it as `false`.
+    pub auto_check_updates: bool,
 }
 
 impl Default for Settings {
@@ -91,6 +95,7 @@ impl Default for Settings {
             include_beta: false,
             grid_sort: GridSort::Name,
             inspector_width: 360,
+            auto_check_updates: false,
         }
     }
 }
@@ -107,6 +112,7 @@ pub struct SettingsPatch {
     pub include_beta: Option<bool>,
     pub grid_sort: Option<GridSort>,
     pub inspector_width: Option<u32>,
+    pub auto_check_updates: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]

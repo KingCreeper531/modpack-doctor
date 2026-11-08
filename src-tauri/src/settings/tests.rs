@@ -170,6 +170,7 @@ fn persistence_round_trip() {
         include_beta: Some(true),
         grid_sort: Some(GridSort::Severity),
         inspector_width: Some(500),
+        auto_check_updates: Some(true),
     };
     let (saved, ()) = svc.update(|s| apply_patch(s, patch, &known(&[ID]), &HashSet::new())).expect("update");
     let (reloaded, log) = SettingsService::load(Box::new(FileStore::new(&path)));
@@ -178,6 +179,80 @@ fn persistence_round_trip() {
     assert_eq!(saved.inspector_width, 500);
     assert_eq!(saved.overrides[ID], ov("1.20.1"));
     assert!(!saved.modrinth_enabled);
+    assert!(saved.auto_check_updates);
+}
+
+#[test]
+fn auto_check_updates_is_off_by_default() {
+    assert!(!Settings::default().auto_check_updates);
+    let d = decode(&Map::new());
+    assert!(!d.settings.auto_check_updates);
+}
+
+#[test]
+fn settings_stored_before_auto_check_updates_load_with_it_off() {
+    // A settings.json written by 0.1.x: every field of its day, but no `autoCheckUpdates`.
+    let t = tempfile::tempdir().expect("tempdir");
+    let path = t.path().join(SETTINGS_FILE);
+    let old = json!({
+        "theme": "dark",
+        "manualFolders": [],
+        "launcherRoots": [],
+        "watched": [],
+        "overrides": {},
+        "modrinthEnabled": true,
+        "includeBeta": true,
+        "gridSort": "severity",
+        "inspectorWidth": 400
+    });
+    fs::write(&path, serde_json::to_vec_pretty(&old).expect("json")).expect("write");
+    let (svc, log) = SettingsService::load(Box::new(FileStore::new(&path)));
+    assert!(log.is_empty(), "a missing field is not a problem: {log:?}");
+    let s = svc.get();
+    assert!(!s.auto_check_updates);
+    assert_eq!((s.theme, s.include_beta, s.grid_sort, s.inspector_width), (ThemePref::Dark, true, GridSort::Severity, 400));
+    // Loading does not rewrite the file (nothing was lost).
+    assert!(!backup_path(&path).exists());
+    let stored: Value = serde_json::from_slice(&fs::read(&path).expect("read")).expect("json");
+    assert_eq!(stored, old);
+    // The next change writes the field.
+    svc.update(|s| apply_patch(s, SettingsPatch { theme: Some(ThemePref::Light), ..Default::default() }, &HashSet::new(), &HashSet::new()))
+        .expect("update");
+    let stored: Value = serde_json::from_slice(&fs::read(&path).expect("read")).expect("json");
+    assert_eq!(stored["autoCheckUpdates"], json!(false));
+}
+
+#[test]
+fn auto_check_updates_patch_and_round_trip() {
+    let t = tempfile::tempdir().expect("tempdir");
+    let path = t.path().join(SETTINGS_FILE);
+    let (svc, _) = SettingsService::load(Box::new(FileStore::new(&path)));
+    let none = HashSet::new();
+    // Turning it on persists it.
+    let (on, ()) = svc
+        .update(|s| apply_patch(s, SettingsPatch { auto_check_updates: Some(true), ..Default::default() }, &none, &none))
+        .expect("on");
+    assert!(on.auto_check_updates);
+    let (reloaded, log) = SettingsService::load(Box::new(FileStore::new(&path)));
+    assert!(log.is_empty(), "{log:?}");
+    assert!(reloaded.get().auto_check_updates);
+    // A patch without the field leaves it alone.
+    let (same, ()) = reloaded
+        .update(|s| apply_patch(s, SettingsPatch { include_beta: Some(true), ..Default::default() }, &none, &none))
+        .expect("other");
+    assert!(same.auto_check_updates);
+    // Turning it off persists too.
+    reloaded
+        .update(|s| apply_patch(s, SettingsPatch { auto_check_updates: Some(false), ..Default::default() }, &none, &none))
+        .expect("off");
+    assert!(!SettingsService::load(Box::new(FileStore::new(&path))).0.get().auto_check_updates);
+    // An invalid stored value falls back to off (and is reported).
+    let d = decode(&obj(json!({ "autoCheckUpdates": "yes" })));
+    assert!(!d.settings.auto_check_updates);
+    assert!(d.lossy());
+    // The IPC patch accepts the camelCase key, and omits nothing else.
+    let p: SettingsPatch = serde_json::from_value(json!({ "autoCheckUpdates": true })).expect("patch");
+    assert_eq!(p, SettingsPatch { auto_check_updates: Some(true), ..Default::default() });
 }
 
 #[test]

@@ -1,7 +1,8 @@
 /**
  * Instance rail (DESIGN.md §5): one 48px row per discovered instance with its last-scan pip,
  * then the footer: Add folder, add a launcher's data folder, the Modrinth settings, the theme
- * control, and the About entry (with the app version) that opens the About dialog.
+ * control, and the About entry (with the app version, or the quiet "Update <version> available"
+ * notice, UpdateNotice.tsx) that opens the About dialog.
  */
 import { CaretDown, CaretRight, FilePlus, FolderPlus, Info } from '@phosphor-icons/react';
 import { useState } from 'react';
@@ -16,10 +17,11 @@ import { Panel } from '../components/Panel';
 import { instanceStatus } from '../app/derive';
 import { instanceMenuFor } from '../app/rowMenus';
 import { useActions, useApp } from '../app/StoreContext';
-import { AboutDialog, APP_VERSION } from './AboutDialog';
+import { AboutDialog } from './AboutDialog';
 import { useRowMenu } from './hooks';
 import { ModrinthControl } from './ModrinthControl';
 import { ThemeControl } from './ThemeControl';
+import { UpdateNotice } from './UpdateNotice';
 
 /** Launchers whose data folder can live somewhere custom (portable installs, moved folders). */
 const ROOT_LAUNCHERS: readonly Launcher[] = ['prism', 'multimc', 'curseforge', 'modrinth'];
@@ -156,9 +158,7 @@ export function InstanceRail({ className }: { className?: string }) {
             <Info size={16} aria-hidden />
             About
           </button>
-          <span className="ml-auto t-mono text-fg-faint" title="Modpack Doctor version">
-            {APP_VERSION}
-          </span>
+          <UpdateNotice className="ml-auto" />
         </div>
       </div>
       <AboutDialog />
