@@ -49,6 +49,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             list_log_sources,
             read_log_digest,
             share_log,
+            delete_shared_log,
             set_watch,
             modrinth_identify,
             modrinth_find_updates,

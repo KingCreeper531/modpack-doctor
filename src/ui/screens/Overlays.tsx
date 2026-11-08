@@ -29,6 +29,14 @@ export function handleKey(store: AppStore, e: KeyboardEvent): void {
   if (suppressesDefault(e)) e.preventDefault();
   if (!sc) return;
   const st = store.getState();
+  // A modal dialog (About, Paste a log, Share on mclo.gs) owns the keyboard: nothing underneath
+  // acts, even when focus has left the dialog (for example to the page body while an upload
+  // runs). The dialogs handle their own keys; Esc is handled below.
+  const modal = st.logDialog !== null || st.aboutOpen;
+  if (modal && sc !== 'escape') {
+    if (sc === 'palette') e.preventDefault();
+    return;
+  }
   switch (sc) {
     case 'palette':
       e.preventDefault();
@@ -51,7 +59,9 @@ export function handleKey(store: AppStore, e: KeyboardEvent): void {
     case 'escape':
       // Top-most layer first. An open work order is left to its own panel (§6.4): a running one
       // is never discarded, and nothing here cancels one.
+      // A share dialog with an upload or delete in flight stays open (setLogDialog ignores it).
       if (st.paletteOpen) st.setPaletteOpen(false);
+      else if (st.logDialog) st.setLogDialog(null);
       else if (st.aboutOpen) st.setAboutOpen(false);
       else if (st.menu) st.closeMenu();
       else if (st.order) return;

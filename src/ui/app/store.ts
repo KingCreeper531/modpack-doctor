@@ -127,7 +127,7 @@ import {
   type InstanceCrashes,
 } from './crashState';
 import { call, type Backend, type Result, type Unlisten } from './ipc';
-import { isPastedSource, PASTED_SOURCE_ID, pastedSource, type LogDialog } from './logTools';
+import { isPastedSource, mclogsId, PASTED_SOURCE_ID, pastedSource, type LogDialog } from './logTools';
 import { moveCursor as nextCursor, visibleList } from './keyboard';
 import type { MenuEntry } from './menus';
 import {
@@ -362,6 +362,11 @@ export interface AppState extends PackFixSlice {
   update: UpdateState;
   /** The open "Paste a log" / "Share on mclo.gs" dialog (logTools.ts). */
   logDialog: LogDialog | null;
+  /**
+   * An upload to (or delete on) mclo.gs is running: the share dialog cannot be closed or replaced
+   * until it is answered, and the window shortcuts stay off.
+   */
+  logDialogBusy: boolean;
 
   init(): Promise<void>;
   dispose(): void;
@@ -446,6 +451,8 @@ export interface AppState extends PackFixSlice {
   analyzePastedText(id: string, text: string): { totalLines: number; cutLines: number };
   /** `share_log`: only after the user confirmed in the share dialog. */
   shareLog(id: string, sourceId: string): Promise<Result<SharedLog>>;
+  /** `delete_shared_log` for a link `shareLog` returned (`https://mclo.gs/<id>`). */
+  deleteSharedLog(url: string): Promise<Result<null>>;
 }
 
 export type UpdateState = UpdateView;
@@ -1549,6 +1556,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         chooseVersion: (versions, includeBeta) => mr.chooseVersion(versions, includeBeta),
       }),
       logDialog: null,
+      logDialogBusy: false,
 
       init() {
         initOnce ??= start();
@@ -1972,6 +1980,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       setLogDialog(dialog) {
+        // An upload or delete in flight keeps its dialog: closing it would hide the answer.
+        if (get().logDialogBusy) return;
         set(dialog ? { logDialog: dialog, paletteOpen: false, menu: null, aboutOpen: false } : { logDialog: null });
       },
 
@@ -2000,7 +2010,23 @@ export function createAppStore(deps: StoreDeps): AppStore {
       },
 
       async shareLog(id, sourceId) {
-        return call(cmd.shareLog(id, sourceId));
+        set({ logDialogBusy: true });
+        try {
+          return await call(cmd.shareLog(id, sourceId));
+        } finally {
+          set({ logDialogBusy: false });
+        }
+      },
+
+      async deleteSharedLog(url) {
+        const logId = mclogsId(url);
+        if (!logId) return { status: 'error', error: { kind: 'invalid', message: 'Only mclo.gs links that Modpack Doctor created can be deleted here.', path: null } };
+        set({ logDialogBusy: true });
+        try {
+          return await call(cmd.deleteSharedLog(logId));
+        } finally {
+          set({ logDialogBusy: false });
+        }
       },
 
       async checkUpdate() {
