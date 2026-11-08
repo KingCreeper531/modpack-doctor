@@ -60,7 +60,7 @@ describe('About dialog', () => {
     expect(within(d).getByText('About')).toBeTruthy();
     expect(within(d).getByText('Version').closest('tr')!.textContent).toContain('0.1.0');
     expect(within(d).getByText(/^Finds why a Minecraft modpack crashes/)).toBeTruthy();
-    expect(within(d).getByText('Licence').closest('tr')!.textContent).toContain('TBD by the owner');
+    expect(within(d).getByText('Licence').closest('tr')!.textContent).toContain('GPL-3.0-only');
     expect(within(d).getByRole('button', { name: /github\.com\/KingCreeper531\/modpack-doctor/ })).toBeTruthy();
     expect(d.textContent).toContain(DISCLAIMER);
     expect(d.textContent).toContain('not affiliated with or endorsed by Modrinth, Mojang, Microsoft, Forge, NeoForge, Fabric, or Quilt.');
@@ -179,7 +179,7 @@ describe('About dialog', () => {
     expect(aboutInfo({ DEV: false, VITE_BUILD_COMMIT: 'abc1234' }).commit).toBe('abc1234');
     expect(aboutInfo({ DEV: false }).commit).toBeNull();
     expect(aboutInfo({ DEV: true }).commit).toBe('development build');
-    expect(aboutInfo({ DEV: false }).licence).toBe('TBD by the owner');
+    expect(aboutInfo({ DEV: false }).licence).toBe('GPL-3.0-only');
     expect(isRepoUrl('https://github.com/KingCreeper531/modpack-doctor')).toBe(true);
     expect(isRepoUrl('https://github.com/KingCreeper531/modpack-doctor/releases')).toBe(true);
     expect(isRepoUrl('https://github.com/KingCreeper531/modpack-doctor-evil')).toBe(false);

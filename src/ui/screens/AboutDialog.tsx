@@ -46,7 +46,7 @@ export function aboutInfo(
     tauri: known(app?.tauriVersion),
     dataDir: known(app?.dataDir),
     cacheDir: known(app?.cacheDir),
-    licence: 'TBD by the owner',
+    licence: 'GPL-3.0-only',
   };
 }
 

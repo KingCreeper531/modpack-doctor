@@ -100,4 +100,10 @@ Fabric, or Quilt. Mod data comes from the Modrinth API.
 
 ## License
 
-Not chosen yet.
+Copyright (C) 2026 KingCreeper531
+
+Modpack Doctor is open source under the [GNU General Public License v3.0](LICENSE).
+
+- You can use it, read the code, change it and share it.
+- If you share it, or anything built from it, you have to release the full source code under the
+  same license and keep the copyright notice. Nobody can turn it into a closed-source product.
