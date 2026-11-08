@@ -836,8 +836,11 @@ fn manual_folder_merges_with_launcher_instance() {
     let data = e.data_dir().join("PrismLauncher");
     let inst = data.join("instances").join("shared");
     prism_instance(&inst, b"name=Shared\n", Some(FABRIC_PACK), "minecraft", 2);
-    // Once as the instance root, once as the game dir (different case on a case-insensitive OS).
-    let game_upper = PathBuf::from(inst.join("minecraft").to_string_lossy().to_uppercase());
+    // Once as the instance root, once as the game dir (in different case where the file system
+    // ignores case; on a case-sensitive one, such as Linux CI, the upper-case path doesn't exist).
+    let game = inst.join("minecraft");
+    let upper = PathBuf::from(game.to_string_lossy().to_uppercase());
+    let game_upper = if upper.exists() { upper } else { game };
     let input = DiscoveryInput { manual_folders: vec![inst.clone(), game_upper.clone()], launcher_roots: vec![] };
     let d = run(&e, &input);
     assert_eq!(d.report.instances.len(), 1, "{:#?}", d.report.instances);
