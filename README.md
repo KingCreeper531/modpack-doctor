@@ -51,7 +51,8 @@ crashed the moment it happens.
 When the game dies before it writes a crash report (Java won't start, a bad memory setting, the
 wrong Java version), it explains that too. You can also **paste** any log or console output to
 analyse it, and **share a log on mclo.gs** to get a link for Discord. Before uploading, your user
-folder and login tokens are removed, and nothing is uploaded until you confirm.
+folder, login tokens and computer user name are removed, nothing is uploaded until you confirm,
+and you can delete the upload again right after.
 
 **Looks mods up on Modrinth** to show each mod's name and icon, and to find a newer version that
 works with your pack. Mods that aren't on Modrinth still get every check.
