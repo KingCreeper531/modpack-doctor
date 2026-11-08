@@ -4,19 +4,84 @@
 //! entries with `"useDependencyInformation": true`, and never enforces `mcversion`
 //! (docs/research/loader-enforcement.md, "Legacy FML"). So deps — and a `loader_range` from the
 //! `forge` entry — are emitted only under that flag, and `mc_range` is always None.
+//!
+//! The `@Mod(dependencies = "required-after:forge@[14.23.5,);after:jei")` string FML enforces is
+//! parsed here too ([`parse_dependency_string`]); both formats share `legacy_dep` for the
+//! `modid@range` part. The annotation itself is read in `annotation.rs`.
 
 use serde_json::Value;
 
 use super::util::{excerpt, has_placeholder, maven_range, parse_json_lenient, placeholder_id, NestedDecl, Parsed};
 use crate::model::{Dependency, DependencyKind, JarJarInfo, LoaderKind, ModEnvironment, ModMeta};
 
-/// `modid@range` (range optional) → dependency.
+/// `modid@range` (range optional) → dependency (FML `VersionParser.parseVersionReference`).
 fn legacy_dep(spec: &str, kind: DependencyKind) -> Option<Dependency> {
     let (id, range) = match spec.split_once('@') {
         Some((id, r)) => (id.trim(), Some(r.trim())),
         None => (spec.trim(), None),
     };
     (!id.is_empty()).then(|| Dependency { mod_id: id.to_string(), kind, range: maven_range(range), side: None })
+}
+
+/// The legacy FML dependency string (`@Mod(dependencies = …)`), as Forge 1.12.2's
+/// `DependencyParser` reads it (a superset of the 1.7.10 forms):
+///
+/// - `;`-separated entries (empty ones ignored), each `<instructions>:<target>`, where the
+///   instructions are `-`-separated tokens from `required`, `before`, `after`, `client`, `server`
+///   (`required-after`, `after`, `required-before`, `before`, `required`, `required-client`,
+///   `client-required-after`, …) and the target is `modid` or `modid@<maven range>`.
+/// - `required` → [`DependencyKind::Required`]; `before`/`after` alone →
+///   [`DependencyKind::Optional`] (load ordering, but FML still rejects an installed version
+///   outside the range).
+/// - `client` / `server` → `side` `CLIENT` / `SERVER` (FML ignores the entry on the other side).
+/// - A `*` target (`after:*`, `before:*`) is ordering only and yields nothing.
+/// - Entries FML would reject (unknown token, no required/before/after, both before and after,
+///   both client and server, not exactly one `:`) yield nothing; the rest of the string still
+///   counts. (FML refuses the whole mod then; we only report what we are sure of.)
+/// - One dependency per mod id: the first wins, replaced by a later entry that requires it when
+///   the first did not.
+pub(crate) fn parse_dependency_string(s: &str) -> Vec<Dependency> {
+    let mut out: Vec<Dependency> = Vec::new();
+    for entry in s.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+        let parts: Vec<&str> = entry.split(':').map(str::trim).filter(|p| !p.is_empty()).collect();
+        let [instructions, target] = parts.as_slice() else { continue };
+        let (mut required, mut before, mut after, mut client, mut server) = (false, false, false, false, false);
+        let mut ok = true;
+        for token in instructions.split('-').map(str::trim).filter(|t| !t.is_empty()) {
+            match token {
+                "required" => required = true,
+                "before" => before = true,
+                "after" => after = true,
+                "client" => client = true,
+                "server" => server = true,
+                _ => ok = false,
+            }
+        }
+        if !ok || !(required || before || after) || (before && after) || (client && server) {
+            continue;
+        }
+        if target.starts_with('*') {
+            continue; // ordering against every mod; never a dependency
+        }
+        let kind = if required { DependencyKind::Required } else { DependencyKind::Optional };
+        let Some(mut dep) = legacy_dep(target, kind) else { continue };
+        dep.side = if client {
+            Some("CLIENT".to_string())
+        } else if server {
+            Some("SERVER".to_string())
+        } else {
+            None
+        };
+        match out.iter_mut().find(|d| d.mod_id == dep.mod_id) {
+            Some(existing) => {
+                if dep.kind == DependencyKind::Required && existing.kind != DependencyKind::Required {
+                    *existing = dep;
+                }
+            }
+            None => out.push(dep),
+        }
+    }
+    out
 }
 
 fn strings(v: Option<&Value>) -> Vec<&str> {
@@ -45,8 +110,12 @@ pub(crate) fn parse_mcmod_info(text: &str, file: &str) -> Result<Parsed, String>
             return Err(placeholder_id("modid", mod_id));
         }
         // Legacy FML reads these lists only when the entry opts in; otherwise the real
-        // dependencies live in the `@Mod` annotation (not parsed yet), so none are emitted.
+        // dependencies live in the `@Mod` annotation (`annotation.rs` adds them), so none are
+        // emitted here.
         let use_dep_info = o.get("useDependencyInformation").and_then(Value::as_bool) == Some(true);
+        if use_dep_info {
+            out.uses_dependency_information.push(mod_id.to_string());
+        }
         let mut deps: Vec<Dependency> = Vec::new();
         if use_dep_info {
             for (key, kind) in [

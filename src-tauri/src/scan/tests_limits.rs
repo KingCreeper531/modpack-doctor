@@ -179,7 +179,16 @@ fn unix_names_with_reserved_characters_scan() {
 
 // ----- zip-bomb limits ----------------------------------------------------------------------
 
-const SMALL: Limits = Limits { metadata_cap: 4_000, nested_cap: 20_000, inflated_budget: 100_000, max_nested_records: 8 };
+const SMALL: Limits = Limits {
+    metadata_cap: 4_000,
+    nested_cap: 20_000,
+    inflated_budget: 100_000,
+    max_nested_records: 8,
+    class_cap: 2_000,
+    class_budget: 10_000,
+    max_class_reads: 50,
+    max_mod_annotations: 2,
+};
 
 #[test]
 fn default_limits_match_the_documented_values() {
@@ -187,6 +196,10 @@ fn default_limits_match_the_documented_values() {
     assert_eq!(DEFAULT_LIMITS.nested_cap, 64 * 1024 * 1024);
     assert_eq!(DEFAULT_LIMITS.inflated_budget, 256 * 1024 * 1024);
     assert_eq!(DEFAULT_LIMITS.max_nested_records, 512);
+    assert_eq!(DEFAULT_LIMITS.class_cap, 512 * 1024);
+    assert_eq!(DEFAULT_LIMITS.class_budget, 64 * 1024 * 1024);
+    assert_eq!(DEFAULT_LIMITS.max_class_reads, 65_536);
+    assert_eq!(DEFAULT_LIMITS.max_mod_annotations, 64);
 }
 
 #[test]

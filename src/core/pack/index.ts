@@ -33,6 +33,7 @@ export {
   FABRIC_JSON,
   fmlEra,
   fmlLoadsModType,
+  isModClassFile,
   metadataLessJarLoaded,
   type FmlEra,
   MCMOD_INFO,
