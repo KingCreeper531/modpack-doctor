@@ -58,6 +58,10 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
      admits pre-releases, RCs and snapshots of `X.Y`.
    - Old-style `YYwWWx` snapshots after 2025, other than `26w14a`, don't normalise (`null`).
    - `satisfies` returns `null` (unknown, never a guess) for unparseable or unrepresentable input.
+   - An unfilled build placeholder `${…}` in a range is evaluated as the loader does. FML (Maven
+     3.8.5): a placeholder bound sorts below every real version (`[${x},)` = any, `(,${x})` = none,
+     `[1.0,${x})` = parse error). Fabric: literal-string equality (no real version matches).
+     `src/core/version/placeholders.ts` describes it; it is never displayed as a real requirement.
    - `Instance.loader = null` together with `metadataSource: 'launcher'` means a **vanilla**
      instance. `LoaderKind` has no vanilla member.
 5. **IDs.**
@@ -125,7 +129,8 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
    `23w51a` and `1.20.5-pre1`. Version code must never assume a `1.` prefix; use
    `VersionSubject = 'minecraft'`.
 10. **Network.** The only hosts are `api.modrinth.com` (API) and `cdn.modrinth.com` (downloads
-    and icons). Every request sends the User-Agent
+    and icons), GitHub for user-requested update checks (invariant 18), and `api.mclo.gs` for
+    "Share on mclo.gs" only (below). Every request sends the User-Agent
     `KingCreeper531/modpack-doctor/<version> (github.com/KingCreeper531/modpack-doctor)`.
     Every static check works with no network.
     - (M5) One shared `ModrinthClient` lives in `AppState`. `Settings.modrinthEnabled = false`
@@ -139,6 +144,21 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - Enrichment is pure TS in `src/core/modrinth` (frozen API in its `index.ts`): queries,
       `ModrinthContext`, beta-only fallback, per-jar match, the invariant-8 download file, and
       `replace` / `installDependency` fixes. `Finding.missingModIds` carries missing ids.
+    - (E-DEP-RANGE advice) `src/core/modrinth/depRangeFix.ts`: `depRangeRequests` →
+      `modrinth_resolve_mod_id` / `modrinth_project_versions` (pack filters, `["release","beta"]`) →
+      `enrichDepRangeFindings`. It names the newest dependency version that is compatible, readable
+      and satisfies every declared range on that dependency; else a dependent-mod version whose
+      Modrinth dependencies name the installed version id; else says none matches. `replace` only
+      under invariant 8 (identified by hash, same project, published after); downgrades are named
+      as manual steps only. Never for `.mrpack`.
+    - **mclo.gs.** `share_log(instanceId, sourceId)` uploads one log source that `list_log_sources`
+      lists for that instance — read in Rust through the PathGuard, home folder replaced by `~`
+      (same rules as invariant 16), cut to mclo.gs's limits (10 MiB / 25,000 lines) keeping the end —
+      with one `POST https://api.mclo.gs/1/log` per explicit confirmation in the UI (which states the
+      link is public). The webview passes only ids; no redirects are followed; the returned URLs are
+      built from the returned id. The opener scope allows exactly `https://mclo.gs/*`. The "Look up
+      mods online" switch does not apply. Pasted log text ("Paste a log") is analysed in TS only and
+      never leaves the app or touches disk.
 11. **Crash detection vs classification.** `src/core/crash/anchors.ts` (`CRASH_ANCHORS`) is
     the single, **tiered** anchor list. Each pattern marks every anchor `fatal` or
     `contextual` (`CrashAnchor` = `WatchAnchor`). The full list goes to `set_watch` with tiers,
@@ -195,7 +215,32 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     - NeoForge 1.20.1 counts as Forge 47.x-compatible.
     - A jar that ships both `neoforge.mods.toml` and `mods.toml` yields two `ModMeta` with the
       same `modId` and different `loader`. E-DUP-ID must ignore duplicates within one jar.
+    - NeoForge `config/fml.toml` `dependencyOverrides.<mod> = ["-dep"]` removes every constraint of
+      `<mod>` on `dep` (including `minecraft` and `neoforge`) from FML's dependency check. It exists
+      from NeoForge 21.1.81 (1.21.1), 21.3.41-beta (1.21.3) and in all 1.21.4+ and 26.x builds, never
+      on Forge, and never affects Fabric mods loaded through Connector. E-MISSING-DEP, E-DEP-RANGE,
+      E-MC-RANGE, E-LOADER-RANGE and E-INCOMPAT findings it removes are reported at **info**,
+      "overridden in config/fml.toml". `+dep` changes nothing.
+    - Instance config files: after scanning an instance (not a `.mrpack`), Rust reads
+      `config/fml.toml` and `config/connector.json` under the game dir (`PathGuard::join_relative` +
+      `check_existing`; regular file ≤ 256 KiB, UTF-8). A missing file is absent; any other problem
+      is a `ScanIssue` with the relative path as subject, never a failed scan. Raw facts go in
+      `ScanResult.loaderConfig` (optional); `src/core` interprets them.
+    - Sinytra Connector's alias groups come from `connector.json` `globalModAliases`; the defaults
+      (cloth_config ↔ cloth-config2, playeranimator ↔ player-animator) apply with no file, or with
+      an invalid file on 1.21.x; a readable file without the key means no aliases. `hiddenMods` has
+      no static effect.
 13. **Known model gaps** (accepted for now; revisit when a check needs them):
+    - (Not a gap any more, for reference) Legacy Forge (MC < 1.13): the scanner reads class-level
+      `@Mod` (`net.minecraftforge.fml.common.Mod`, 1.7.10 `cpw.mods.fml.common.Mod`) from top-level
+      jars without 1.13+/Fabric/Quilt metadata (coremod/tweaker jars only with
+      `FMLCorePluginContainsFMLMod`). Each yields a `legacyforge` `ModMeta` with `metadataFile` = the
+      class path, merged with the `mcmod.info` entry of the same id: name from `mcmod.info`; version,
+      `dependencies` and `acceptedMinecraftVersions` from the annotation (dependencies from
+      `mcmod.info` only with `useDependencyInformation: true`); `[1.12]`/`[1.12.1]` widened to
+      `[1.12,1.12.2]` as FML does. `@API(provides)` ids become `provides` of the jar's entry; literal
+      coremod `DummyModContainer` ids become their own entries. `metadataFilesRead` treats `.class`
+      metadata files like `mcmod.info`. Ids computed at runtime are not seen.
     - Quilt "any of" dependency arrays become individually Optional dependencies, so a missing
       "one of A, B" is not reported.
     - `JarRecord.moduleName` comes from `module-info` or `Automatic-Module-Name` only. `src/core`
@@ -344,8 +389,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     including its 8.3 short forms, percent-encoded and NFC/NFD variants, and UNC admin-share forms. `save_report` opens the native save dialog with the sanitized
     default name and the format's extension (`.md` / `.json`, enforced), contents ≤ 16 MiB, writes
     temp + rename in the chosen folder. An existing file is replaced only when the dialog confirmed that exact path;
-    if the extension had to be appended, an existing file is a `Conflict`. That path is the one write outside PathGuard roots, allowed
-    because the user picked it in a native dialog; nothing else may be written there.
+    if the extension had to be appended, an existing file is a `Conflict`. That path and the fixed-pack copy (invariant 15)
+    are the only writes outside PathGuard roots, allowed because the user picked them in a native
+    dialog; nothing else may be written there.
 17. **Interaction (M7).** Shortcuts: Ctrl/Cmd+K palette, J/K next/previous finding, Enter expand,
     Ctrl/Cmd+R rescan, Esc closes the top-most layer. Webview reload keys (F5, Ctrl/Cmd+Shift+R)
     are swallowed. Shortcuts never fire while typing in an input,
@@ -361,8 +407,14 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       and the release assets it names on `github.com` (GitHub redirects downloads to its asset hosts,
       `objects.githubusercontent.com` / `release-assets.githubusercontent.com`). `latest.json` URLs are
       rewritten by the workflow's finalize job to `github.com/…/releases/download/<tag>/<asset>`;
-      `requireSignedVersion` is on, so an older signed release can't be re-served as newer. It runs only
-      when the user asks (About → "Check for updates", or the palette); never automatically.
+      `requireSignedVersion` is on, so an older signed release can't be re-served as newer. It checks
+      when the user asks (About → "Check for updates", or the palette) and, only if the user turned on
+      `Settings.autoCheckUpdates` ("Check for updates at startup" in About; default off; stored settings
+      without the field load as off), once per app start, a few seconds after the first screen is ready.
+      The startup check is the same `check_update`; it waits while a work order executes, never takes
+      the update-installing state or the work-order claim, and stays silent when it fails (About shows
+      the error when opened). A newer release appears only as a quiet "Update <version> available"
+      notice in the rail footer that opens About. Nothing is ever downloaded or installed automatically.
     - `check_update` → `UpdateInfo | null` and remembers the version it showed; `install_update`
       refuses unless that exact version is still the one offered ("check again" otherwise),
       downloads, verifies the minisign signature against the public key in `tauri.conf.json`
@@ -410,6 +462,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `game_running` | `instanceId` | `GameStatus` | | M6 |
 | `get_settings` / `set_settings` | — / `patch: SettingsPatch` | `Settings` | | M3 |
 | `save_report` | `defaultName, format, contents` | `string \| null` | | M7 |
+| `share_log` | `instanceId, sourceId` | `SharedLog` | | 0.2 |
+| `plan_pack_fix` | `instanceId, edits: PackEdit[]` | `PackFixPlan` | | 0.2 |
+| `save_fixed_pack` | `planId` | `SavedPack \| null` | | 0.2 |
 | `set_window_theme` | `theme: ResolvedTheme` | `null` | | M1 (done) |
 | `home_dir` | — | `string` (empty if unknown) | | M7 |
 | `app_info` | — | `AppInfo` (Tauri version, data dir, cache dir) | | M8 |
@@ -439,6 +494,7 @@ Events (wire names are kebab-case of the type): `ScanStarted`, `ScanProgress`, `
 | `C-MIXIN` … `C-SUSPECTED` | from the log | mixin, resolution, missing mandatory deps, Fabric incompatibility, NoClassDef, OOM, Java version, suspected mods |
 | `C-ROOT-CAUSE` | error | fallback when nothing specific matched: the innermost `Caused by:`, mapped to a jar when possible |
 | `C-NATIVE` | error | hs_err native crash; names the problematic frame and library (e.g. a GPU driver) |
+| `C-JVM-START` | error | Java stopped before the game started: an unrecognised or removed JVM option, an invalid heap setting, -Xms above -Xmx, a missing main class, a boot-layer FindException, or the generic "Could not create the Java Virtual Machine" |
 
 ## Rules-core entry points (frozen in M3)
 
