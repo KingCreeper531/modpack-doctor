@@ -152,13 +152,22 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       under invariant 8 (identified by hash, same project, published after); downgrades are named
       as manual steps only. Never for `.mrpack`.
     - **mclo.gs.** `share_log(instanceId, sourceId)` uploads one log source that `list_log_sources`
-      lists for that instance — read in Rust through the PathGuard, home folder replaced by `~`
-      (same rules as invariant 16), cut to mclo.gs's limits (10 MiB / 25,000 lines) keeping the end —
+      lists for that instance — resolved and opened in Rust through the PathGuard (read after the
+      scope lock is released, capped with `take`), home folder replaced by `~` (same rules as
+      invariant 16), then **credentials redacted** (`--accessToken`/`--session`/`--uuid`/`--xuid`/
+      `--clientId` values, `Session ID is token:…`, token JSON fields, any JWT, `USERNAME=`/`USER=`/
+      `LOGNAME=` values and the OS user name as a whole word when ≥ 4 characters), then cut to
+      mclo.gs's limits (10 MiB / 25,000 lines) keeping the end —
       with one `POST https://api.mclo.gs/1/log` per explicit confirmation in the UI (which states the
       link is public). The webview passes only ids; no redirects are followed; the returned URLs are
-      built from the returned id. The opener scope allows exactly `https://mclo.gs/*`. The "Look up
-      mods online" switch does not apply. Pasted log text ("Paste a log") is analysed in TS only and
-      never leaves the app or touches disk.
+      built from the returned id; answers are read up to 64 KiB; timeouts are 10 s connect and
+      30 s + 1 s per 256 KiB (max 5 min), and a timeout says the log "may have been uploaded". The
+      delete token mclo.gs returns stays in Rust memory for the session only (never sent to the
+      webview); `delete_shared_log(id)` sends `DELETE https://api.mclo.gs/1/log/<id>` with it. The
+      opener scope allows exactly `https://mclo.gs/*`. The "Look up
+      mods online" switch does not apply. Pasted log text ("Paste a log") is analysed in TS only
+      (its kind detected: crash report / hs_err / log), is never uploaded or written to disk; mod
+      ids found in it may be looked up on Modrinth like any other log's.
 11. **Crash detection vs classification.** `src/core/crash/anchors.ts` (`CRASH_ANCHORS`) is
     the single, **tiered** anchor list. Each pattern marks every anchor `fatal` or
     `contextual` (`CrashAnchor` = `WatchAnchor`). The full list goes to `set_watch` with tiers,
@@ -207,6 +216,14 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
         exits normally after the window) produces **no** `CrashDetected` and no notification;
       - a load-time failure that appears **only** in `latest.log`, followed by process exit,
         produces **exactly one**.
+    - JVM start-up failures (`C-JVM-START`, `src/core/crash/patterns/jvmStartup.ts`): only the Java
+      launcher's closing lines are **fatal** anchors (`Error: Could not create the Java Virtual
+      Machine`, `Error: A fatal exception has occurred. Program will exit`, `Error occurred during
+      initialization of VM` / `of boot layer`); the reasons (unrecognised options, heap sizes, `Could
+      not reserve enough space for`, `Could not find or load main class`,
+      `java.lang.module.FindException`) are **contextual**, so a running game quoting them in
+      `latest.log` never triggers watch mode. The Modrinth App's per-profile
+      `logs/launcher_log.txt` (console output) is a log source.
 12. **NeoForge/Forge.**
     - `ModMeta.loader` decides per entry. A `neoforge` dependency means NeoForge; a `forge`
       dependency, or neither, means Forge.
@@ -418,7 +435,9 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
     are the only writes outside PathGuard roots, allowed because the user picked them in a native
     dialog; nothing else may be written there.
 17. **Interaction (M7).** Shortcuts: Ctrl/Cmd+K palette, J/K next/previous finding, Enter expand,
-    Ctrl/Cmd+R rescan, Esc closes the top-most layer. Webview reload keys (F5, Ctrl/Cmd+Shift+R)
+    Ctrl/Cmd+R rescan, Esc closes the top-most layer (palette → Paste/Share dialog, not while it is
+    busy → About → menu → selection); while a modal dialog is open no other shortcut acts at window
+    level. Webview reload keys (F5, Ctrl/Cmd+Shift+R)
     are swallowed. Shortcuts never fire while typing in an input,
     and never execute a work order (Enter stays bound to DESIGN §6.4's rule). Context menus are
     native Tauri menus (`@tauri-apps/api/menu`, `core:menu:default`) under Tauri and a DESIGN-styled
@@ -488,6 +507,7 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
 | `get_settings` / `set_settings` | — / `patch: SettingsPatch` | `Settings` | | M3 |
 | `save_report` | `defaultName, format, contents` | `string \| null` | | M7 |
 | `share_log` | `instanceId, sourceId` | `SharedLog` | | 0.2 |
+| `delete_shared_log` | `id` | `null` | | 0.2 |
 | `plan_pack_fix` | `instanceId, edits: PackEdit[]` | `PackFixPlan` | | 0.2 |
 | `save_fixed_pack` | `planId` | `SavedPack \| null` | | 0.2 |
 | `set_window_theme` | `theme: ResolvedTheme` | `null` | | M1 (done) |
