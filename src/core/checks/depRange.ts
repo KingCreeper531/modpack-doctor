@@ -16,6 +16,7 @@
  *   JarJar range); among Fabric/Quilt JiJ copies any one may be chosen by the resolver. For a
  *   `provides` alias the provider's own version is used, as Fabric does.
  * - No finding when any candidate satisfies the range, or when `satisfies` returns null.
+ * - A NeoForge `config/fml.toml` override removing the dependency lowers it to info (checks/fmlOverrides.ts).
  * Fixes: manual (install a matching version of the dependency); disable the dependent jar.
  * With Modrinth, `src/core/modrinth/depRangeFix.ts` names the concrete version and adds `replace`.
  */
@@ -24,8 +25,8 @@ import type { Check, Finding, JarRef } from '../model';
 import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES } from '../pack';
 import { versionApi } from '../version';
 import { isBuiltinDependency } from './builtins';
-import { aliasGroup } from './connector';
 import { isPlaceholderVersion } from './duplicates';
+import { relaxByOverride } from './fmlOverrides';
 import { contextFor, type CheckContext, type ModEntry } from './context';
 import {
   dependencyLines,
@@ -105,11 +106,11 @@ export const depRangeCheck: Check = {
         if (!depSideApplies(dep, ctx.pack.side)) continue;
         if (PLATFORM_IDS.includes(dep.modId)) {
           const f = platformFinding(ctx, e, dep);
-          if (f) out.push(f);
+          if (f) out.push(relaxByOverride(ctx, e, dep.modId, f)); // config/fml.toml overrides → info
           continue;
         }
         if (isBuiltinDependency(dep.modId, ctx.pack)) continue;
-        if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // widened to * by Connector
+        if (ctx.connector.via(e.jar) && ctx.connector.aliasGroup(dep.modId)) continue; // widened to * by Connector
         const providers = ctx.versionProviders(dep.modId, ctx.connector.via(e.jar)).filter((p) => p.jar.id !== e.jar.id);
         // FML: an unresolved `${file.jarVersion}` becomes `0.0NONE`, which passes every check.
         if (fml && providers.some((p) => isPlaceholderVersion(p.mod.version))) continue;
@@ -123,7 +124,8 @@ export const depRangeCheck: Check = {
         // Wording (range in words, installed version, what to switch to): depRangeText.ts.
         const text = depRangeText(ctx, e, dep, providers);
         out.push(
-          makeFinding({
+          // config/fml.toml `dependencyOverrides` "-<dep>" → info (checks/fmlOverrides.ts).
+          relaxByOverride(ctx, e, dep.modId, makeFinding({
             code: 'E-DEP-RANGE',
             severity: 'error',
             title: text.title,
@@ -132,7 +134,7 @@ export const depRangeCheck: Check = {
             evidence: entryEvidence(ctx, e, dependencyLines(e.mod, dep.modId, dep.kind), text.installedNote),
             fixes: text.fixes,
             discriminator: `${e.mod.modId}->${dep.modId}`,
-          }),
+          })),
         );
       }
     }

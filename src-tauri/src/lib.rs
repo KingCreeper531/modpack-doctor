@@ -5,6 +5,7 @@ pub mod discovery;
 pub mod error;
 pub mod fix;
 pub mod guard;
+pub mod instance_config;
 pub mod jar_id;
 pub mod logs;
 pub mod model;

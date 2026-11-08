@@ -235,6 +235,59 @@ pub struct ScanResult {
     /// `DeclaredFile.downloads`.
     pub unverified_downloads: Vec<UnverifiedDownload>,
     pub issues: Vec<ScanIssue>,
+    /// Instance config files that change what the loader enforces (`config/fml.toml`,
+    /// `config/connector.json`), as raw facts; `src/core` interprets them. Omitted when neither
+    /// file exists (and for `.mrpack` packs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub loader_config: Option<LoaderConfig>,
+}
+
+/// Raw facts from the instance's loader config files (read by `instance_config`, capped at
+/// 256 KiB each; a broken file is a `ScanIssue`, never a failed scan).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LoaderConfig {
+    /// Game-dir-relative paths of the config files that exist (`config/fml.toml`,
+    /// `config/connector.json`), whether or not they could be used.
+    pub source_files: Vec<String>,
+    /// `config/fml.toml` `dependencyOverrides` (NeoForge FML): one item per target mod id, the
+    /// strings exactly as written (`"-dep"`, `"+dep"`; a single string becomes one entry), sorted
+    /// by mod id. Empty when the file, the table or the entries are absent or unusable.
+    pub fml_dependency_overrides: Vec<FmlDependencyOverride>,
+    /// `config/connector.json` (Sinytra Connector) when it exists and is a JSON object; None
+    /// otherwise (Connector then runs with its defaults).
+    pub connector: Option<ConnectorConfigFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FmlDependencyOverride {
+    /// The TOML key: the mod whose dependencies are overridden (case-sensitive, as written).
+    pub mod_id: String,
+    /// Raw override strings, in file order.
+    pub entries: Vec<String>,
+}
+
+/// The fields of `config/connector.json` that matter to the checks, as written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorConfigFile {
+    /// `hiddenMods`; None when absent or not a list of strings.
+    pub hidden_mods: Option<Vec<String>>,
+    /// `globalModAliases` (`{ "id": "alias" | ["alias", …] }`), sorted by mod id; None when absent
+    /// or not of that shape.
+    pub global_mod_aliases: Option<Vec<ConnectorAlias>>,
+    /// Top-level fields that are present but not what Connector's config codec accepts: wrong JSON
+    /// type, or a `version` other than 1. Sorted.
+    pub invalid_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorAlias {
+    pub mod_id: String,
+    pub aliases: Vec<String>,
 }
 
 /// A download URL from a `.mrpack` index entry that is not in `ScanResult.declared`.

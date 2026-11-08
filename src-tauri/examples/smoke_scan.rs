@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use modpack_doctor_lib::discovery::{discover, DiscoveryInput, Env};
 use modpack_doctor_lib::guard::PathGuard;
+use modpack_doctor_lib::instance_config;
 use modpack_doctor_lib::model::{Launcher, Settings};
 use modpack_doctor_lib::scan::scan_mods_dir;
 
@@ -42,7 +43,8 @@ fn main() {
         }
         let t = Instant::now();
         match scan_mods_dir(std::path::Path::new(&inst.game_dir), &inst.id, &guard, |_| {}, |_| {}) {
-            Ok(scan) => {
+            Ok(mut scan) => {
+                instance_config::attach(&mut scan, std::path::Path::new(&inst.game_dir), &guard);
                 let top = scan.jars.iter().filter(|j| j.depth == 0).count();
                 println!("{:<44} {:>5} {:>9} {:>6}", trunc(&inst.name, 44), top, t.elapsed().as_millis(), scan.issues.len());
                 let json = serde_json::json!({ "instance": inst, "scan": scan });

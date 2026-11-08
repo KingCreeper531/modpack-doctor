@@ -17,7 +17,8 @@ The UI runs `resolvePack` → `buildJarIndex` → `runChecks` synchronously afte
 | `evidence.ts` | Helpers: `makeFinding`, `jarRef`/`entryRef`, `metadataEvidence` + line finders (`dependencyLines`, `modIdLines`, `environmentLines`), `disable`/`manual` fixes, wording helpers. |
 | `builtins.ts` | Dependency ids the game/loader provide (never "missing"). |
 | `duplicates.ts` | Duplicate-id groups, loader mode and ranking; which copies the loader drops. |
-| `connector.ts` | Sinytra Connector: which Fabric jars it loads or skips, id normalisation, aliases. |
+| `connector.ts` | Sinytra Connector: which Fabric jars it loads or skips, id normalisation, aliases (incl. `config/connector.json`). |
+| `fmlOverrides.ts` | NeoForge `config/fml.toml` `dependencyOverrides`: version gate and `relaxByOverride`. |
 | `<name>.ts` | One file per check. Its header comment is the rule's specification. |
 | `__tests__/fixtures.ts` | Realistic `JarRecord` builders (Forge, NeoForge, Fabric, Quilt, multi-loader, nested JarJar/JiJ, disabled, corrupt) with metadata excerpts in the real file formats. |
 | `../pack/` | `resolvePack`, `buildJarIndex`, loader compatibility (`loaderAccepts`), FML compatibility table (`fmlCompat.ts`), pack description. |
@@ -77,9 +78,21 @@ an error.
   Forge/NeoForge, Fabric-only jars are loaded (no E-WRONG-LOADER). Skipped silently: upstream
   Fabric API, `mixinextras` on 1.21.x, ids (`-`→`_`) already loaded natively. Dependency ids
   of those Fabric jars (only — native FML deps stay exact) match with `-`→`_`
-  (`ctx.providers(id, ctx.connector.via(jar))`); cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator are
-  widened; `fabricloader` deps ignored; `minecraft` strict (Fabric semantics); other
-  depends/breaks stay errors.
+  (`ctx.providers(id, ctx.connector.via(jar))`); aliased ids are widened
+  (`ctx.connector.aliasGroup`: `config/connector.json` `globalModAliases`, else Connector's
+  defaults cloth_config ↔ cloth-config2 and playeranimator ↔ player-animator; a file without the
+  key means no aliases); `fabricloader` deps ignored; `minecraft` strict (Fabric semantics); other
+  depends/breaks stay errors. `hiddenMods` only hides native mods from Fabric mods at runtime and
+  changes no finding.
+- **NeoForge `config/fml.toml` `dependencyOverrides`** (`fmlOverrides.ts`, `ctx.fmlOverrides`,
+  from `ScanResult.loaderConfig`): `dependencyOverrides.<mod> = ["-dep"]` removes every
+  constraint of `<mod>` on `dep` (required, optional, incompatible, discouraged; `minecraft` and
+  `neoforge` too). Checks wrap their finding in `relaxByOverride(ctx, entry, depId, finding)`:
+  removed → the same finding at **info**, "— overridden in config/fml.toml", a note, no
+  file-changing fixes. Only FML entries (never Fabric mods via Connector). NeoForge ≥ 21.1.81
+  (1.21.1) / ≥ 21.3.41-beta (1.21.3) / all 1.21.4+ and 26.x. An unknown version on 1.21.1/1.21.3
+  is assumed to have them, and the wording says so. On Forge and older NeoForge the finding stays,
+  with a note that the override has no effect. `+dep` (ordering) never changes a check.
 - **FML side filter**: dependencies with `side = "CLIENT"` are skipped on a server pack and
   `SERVER` on a client pack — including the `minecraft` and loader dependencies behind
   `mcRange` / `loaderRange`.
@@ -133,13 +146,11 @@ read-only, and `enrichFindings` finds no jar for the culprit, so it adds nothing
 
 ### Known gaps
 
-- `config/fml.toml` `dependencyOverrides` are not read: a dependency the user removed there is
-  still reported.
+- A `.mrpack`'s own `overrides/config/fml.toml` / `connector.json` are not read (instances only).
 - Legacy FML `@Mod` annotation `dependencies` / `acceptedMinecraftVersions` are not read yet
   (they need a class-file reader), so legacy MC and dependency checks report nothing beyond the
   mcmod.info dependencies the scanner emits.
-- Sinytra Connector: `hiddenMods` in `config/connector.json` and the runtime mixin safeguard are
-  not modelled.
+- Sinytra Connector: the runtime mixin safeguard is not modelled.
 - Quilt "any of" dependency arrays are not reported when none is present (CONTRACTS invariant 13).
 
 ## Steps

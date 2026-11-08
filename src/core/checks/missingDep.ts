@@ -6,6 +6,7 @@
  *   client);
  * - `optional`/`recommended` dependencies (never fatal when absent);
  * - Quilt "any of" arrays (CONTRACTS invariant 13: they arrive as optional entries).
+ * A NeoForge `config/fml.toml` override removing the dependency lowers it to info (checks/fmlOverrides.ts).
  * When a top-level jar does declare the id but doesn't count — disabled, damaged, built for another
  * loader, or for the other side — the title names that jar and the reason instead of "not
  * installed" (`absentReason`), so a user who can see the mod in their launcher isn't told it's gone.
@@ -24,7 +25,8 @@ import type { DeclaredFile, Dependency, FixAction, JarRecord, LoaderKind, ModMet
 import type { Check, Finding } from '../model';
 import { entryRelevant, LOADER_NAMES } from '../pack';
 import { isBuiltinDependency } from './builtins';
-import { aliasGroup, normalizeId } from './connector';
+import { normalizeId } from './connector';
+import { relaxByOverride } from './fmlOverrides';
 import { declaredMatch } from '../modrinth';
 import { declaredFiles } from './mrpackDeclared';
 import { contextFor, sideAccepts, type CheckContext } from './context';
@@ -125,7 +127,7 @@ export const missingDepCheck: Check = {
         const viaConnector = ctx.connector.via(e.jar);
         if (ctx.providers(dep.modId, viaConnector).length > 0) continue;
         // Connector widens aliased ids (cloth_config ↔ cloth-config2, …) to "any of them".
-        const group = viaConnector ? aliasGroup(dep.modId) : null;
+        const group = viaConnector ? ctx.connector.aliasGroup(dep.modId) : null;
         if (group && group.some((a) => ctx.providers(a, true).length > 0)) continue;
         const declared = declaredProvides(ctx, dep.modId);
         if (declared === 'yes') continue;
@@ -144,7 +146,8 @@ export const missingDepCheck: Check = {
         );
         const absent = absentReason(ctx, dep.modId);
         const absentText = absent ? ` ${absent.jar.fileName} ${absent.reason}${disabled.length > 0 ? ' — re-enable it' : ''}.` : '';
-        out.push({
+        // config/fml.toml `dependencyOverrides` "-<dep>" → info (checks/fmlOverrides.ts).
+        out.push(relaxByOverride(ctx, e, dep.modId, {
           ...makeFinding({
             code: 'E-MISSING-DEP',
             severity: packUnsure ? 'warning' : 'error',
@@ -168,7 +171,7 @@ export const missingDepCheck: Check = {
           }),
           // The loader mod id as declared (lower-case), for `src/core/modrinth` installDependency.
           missingModIds: [dep.modId.toLowerCase()],
-        });
+        }));
       }
     }
     return out;

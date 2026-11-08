@@ -13,12 +13,15 @@
  *   pack, `SERVER` not on a client pack.
  * - Bundled (nested) mods are checked too, after JarJar/JiJ de-duplication (checks/context.ts);
  *   the culprit is then the top-level jar that bundles them.
+ * - A NeoForge `config/fml.toml` override `-minecraft` for the mod lowers it to info
+ *   (checks/fmlOverrides.ts).
  * Fixes (error): disable the jar; manual "get the build for <MC>". Info: manual only.
  */
 import type { Check, Finding } from '../model';
 import { describeFallback, evaluateRange, MCMOD_INFO } from '../pack';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rawRange, rangeDependency } from './evidence';
+import { relaxByOverride } from './fmlOverrides';
 import { depSideApplies } from './missingDep';
 
 export const mcRangeCheck: Check = {
@@ -44,7 +47,7 @@ export const mcRangeCheck: Check = {
       if (verdict.kind === 'fallback') {
         const via = describeFallback(verdict, 'minecraft');
         out.push(
-          makeFinding({
+          relaxByOverride(ctx, e, 'minecraft', makeFinding({
             code: 'E-MC-RANGE',
             severity: 'info',
             title: `${name} declares Minecraft ${rawRange(range)}; loads on ${mc} through a compatibility override`,
@@ -56,13 +59,13 @@ export const mcRangeCheck: Check = {
             evidence: [...evidence.slice(0, -1), { kind: 'note', text: `Accepted through ${via}.` }, ctx.packNote],
             fixes: [manual(`Optional: install the version of ${name} made for Minecraft ${mc}.`)],
             discriminator: e.mod.modId,
-          }),
+          })),
         );
         continue;
       }
       const bundled = e.jar.depth > 0 ? ` It is bundled inside ${e.top.fileName}, so the fix applies to that jar.` : '';
       out.push(
-        makeFinding({
+        relaxByOverride(ctx, e, 'minecraft', makeFinding({
           code: 'E-MC-RANGE',
           severity: 'error',
           title: `${name} is made for Minecraft ${wants}, not ${mc}`,
@@ -74,7 +77,7 @@ export const mcRangeCheck: Check = {
           evidence,
           fixes: [disable(e.top), manual(`Download the version of ${name} made for Minecraft ${mc} and replace ${e.top.fileName} with it.`)],
           discriminator: e.mod.modId,
-        }),
+        })),
       );
     }
     return out;

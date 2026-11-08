@@ -30,6 +30,7 @@ import { buildJarIndex, describePack, entryRelevant, fmlEra, metadataLessJarLoad
 import { versionApi } from '../version';
 import { connectorView, normalizeId, type ConnectorView } from './connector';
 import { duplicateGroups, type DupGroup } from './duplicates';
+import { fmlOverrideView, type FmlOverrideView } from './fmlOverrides';
 
 export interface ModEntry {
   /** Jar that holds the metadata (nested jar for bundled mods). */
@@ -79,6 +80,8 @@ export interface CheckContext {
   isEffectiveJar(jar: JarRecord): boolean;
   /** Sinytra Connector state (checks/connector.ts); `active: false` without it. */
   readonly connector: ConnectorView;
+  /** NeoForge `dependencyOverrides` from config/fml.toml (checks/fmlOverrides.ts). */
+  readonly fmlOverrides: FmlOverrideView;
   /** `note` evidence describing the pack identity and where it came from. */
   readonly packNote: Evidence;
 }
@@ -145,7 +148,7 @@ function build(input: CheckInput): CheckContext {
     }
     return r;
   };
-  const connector = connectorView({ packLoader: packKind, mc: pack.mcVersion, active, baseRelevant });
+  const connector = connectorView({ packLoader: packKind, mc: pack.mcVersion, active, baseRelevant, config: scan.loaderConfig?.connector ?? null });
   const relevant = (jar: JarRecord): ModMeta[] => {
     const base = baseRelevant(jar);
     return base.length > 0 || !connector.active ? base : connector.mods(jar);
@@ -292,6 +295,7 @@ function build(input: CheckInput): CheckContext {
       return selected.has(jar.id) && !(mods.length > 0 && mods.every((m) => topIds.has(m.modId)));
     },
     connector,
+    fmlOverrides: fmlOverrideView(scan.loaderConfig, pack),
     packNote: { kind: 'note', text: describePack(pack) },
   };
 }
