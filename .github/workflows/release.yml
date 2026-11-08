@@ -10,7 +10,8 @@ name: Release
 #
 # Secrets:
 #   TAURI_SIGNING_PRIVATE_KEY           required: content of %USERPROFILE%/.tauri/modpack-doctor.key
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  required to exist; empty for this key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  leave unset for this key (no password): a missing secret
+#                                       still reaches the step as an empty variable
 #   Both are passed only to the tauri-action step that signs the updater bundles.
 #   Optional code signing; each block is skipped while its secrets are unset:
 #   WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD (may be empty)

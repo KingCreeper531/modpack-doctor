@@ -370,7 +370,8 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       clicking Install for the version shown.
     - Signing: the private key lives outside the repo (`%USERPROFILE%/.tauri/modpack-doctor.key`);
       CI reads it from the GitHub secret `TAURI_SIGNING_PRIVATE_KEY` (and
-      `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, empty for this key). It never appears in the repo, logs or
+      `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, unset for this key: it has no password and a missing
+      secret reaches the step as an empty value). It never appears in the repo, logs or
       artifacts. Public key (base64, as in `tauri.conf.json`): `dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0MTRBMjc3NTE0MDZFOEUKUldTT2JrQlJkNklVeEpWU1BWcjFHYkhYa3R3bDVEc0lLaG04cFJrdUZLN0RwSnhEQ1hxYmo1ajgK`.
     - Release workflow (`.github/workflows/release.yml`): on a pushed tag `v*`, `tauri-action` builds
       Windows (.msi, .exe), macOS universal (.dmg), Linux (.AppImage, .deb), uploads them to a draft

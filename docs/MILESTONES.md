@@ -310,5 +310,5 @@ result.
   (no repo); its YAML and embedded scripts were validated offline.
 - **Owner actions before the first release** (not done — needs explicit OK): create the GitHub
   repo `KingCreeper531/modpack-doctor` and push; set secrets `TAURI_SIGNING_PRIVATE_KEY` (contents
-  of the key file) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (exists, empty); back up the key file;
+  of the key file; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` stays unset, as GitHub rejects empty secrets); back up the key file;
   choose a licence; push tag `v0.1.0` and publish the draft once all jobs are green.

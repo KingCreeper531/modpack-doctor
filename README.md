@@ -285,7 +285,8 @@ fixtures and the rule that severity mirrors what the loader really does.
 - is kept by the owner outside the repository, at `%USERPROFILE%\.tauri\modpack-doctor.key`, with
   a backup somewhere safe (losing it means existing installs can no longer verify updates);
 - is given to CI as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` (the key file's contents) and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (empty for the current key).
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (only for a password-protected key; the current key has none,
+  so it stays unset and the workflow passes an empty value).
 
 OS code signing (Windows Authenticode, Apple notarization) is optional and not set up. Without it,
 SmartScreen and Gatekeeper warn on first launch, as described under [Install](#install).
