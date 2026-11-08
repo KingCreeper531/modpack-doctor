@@ -12,6 +12,7 @@ import { FindingCode, RAIL_BG } from '../../components/Severity';
 import { useActions, useApp } from '../../app/StoreContext';
 import { useFixBlock } from '../fixHooks';
 import { useFixVersions } from '../modrinthHooks';
+import { PackEditButtons } from '../PackFix';
 import { SubLegend } from './Plate';
 
 export function FindingDetails({ instanceId, findingId }: { instanceId: string; findingId: string }) {
@@ -35,6 +36,8 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
   const a = useActions();
   const versions = useFixVersions(instanceId);
   const blocked = useFixBlock(instanceId);
+  // An opened .mrpack offers edits for a fixed copy instead of fixes (PackFix.tsx).
+  const isPack = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
   const names = useMemo(() => {
     const n: Record<string, string> = {};
     for (const j of result?.jars ?? []) n[j.id] = j.fileName;
@@ -113,6 +116,12 @@ export function FindingBody({ instanceId, finding, afterHeader }: { instanceId: 
               ))}
             </ol>
           ) : null}
+        </>
+      ) : null}
+      {isPack && finding.packEdits?.length ? (
+        <>
+          <SubLegend>Fixed copy</SubLegend>
+          <PackEditButtons instanceId={instanceId} finding={finding} className="px-4 py-2" />
         </>
       ) : null}
       {unresolved.length ? (

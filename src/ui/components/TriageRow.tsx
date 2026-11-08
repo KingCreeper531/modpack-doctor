@@ -52,6 +52,8 @@ export interface TriageRowProps {
   origin?: string;
   /** Right-click / Menu key: the row's context menu. */
   onContextMenu?: (e: MouseEvent<HTMLElement>) => void;
+  /** An opened `.mrpack`'s fixed-copy edit buttons, shown after the fix buttons. */
+  packActions?: ReactNode;
 }
 
 export function TriageRow({
@@ -70,6 +72,7 @@ export function TriageRow({
   fixHint = null,
   origin,
   onContextMenu,
+  packActions = null,
 }: TriageRowProps) {
   const name = (id: string) => jarNames[id] ?? basename(id);
   const bodyId = `triage-${finding.id}`;
@@ -159,6 +162,7 @@ export function TriageRow({
               </div>
             ) : null}
             {fixError ? <ErrorRow error={fixError} className="border-t" /> : null}
+            {packActions}
             {steps.length > 0 ? (
               <ol className="flex flex-col gap-1 t-mono text-fg-dim">
                 {steps.map((s, i) => (

@@ -228,6 +228,37 @@ fn header_mismatch<R: Read + Seek>(zip: &mut ZipArchive<R>, idx: usize) -> Optio
 const HEADER_MISMATCH: &str =
     "its local header does not match the archive's table of contents (a tool reading one or the other would see a different file)";
 
+/// One entry as [`list`] judges it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryInfo {
+    /// The decoded name (lossy for non-UTF-8 names).
+    pub name: String,
+    pub is_dir: bool,
+    /// Why the entry is skipped (unsafe path, NUL, symbolic link, local header that disagrees
+    /// with the central directory), or None.
+    pub problem: Option<&'static str>,
+}
+
+/// Classify entry `idx` the way [`list`] does (a fixed copy leaves out exactly the entries a
+/// scan skips). None when the zip library cannot read its central-directory record at all.
+pub fn inspect_entry<R: Read + Seek>(zip: &mut ZipArchive<R>, idx: usize) -> Option<EntryInfo> {
+    let entry = zip.by_index_data(idx).ok()?;
+    let raw = entry.name_raw();
+    let name = match entry.name() {
+        Ok(n) => n.into_owned(),
+        Err(_) => String::from_utf8_lossy(raw).into_owned(),
+    };
+    // The decoded name may have lost a NUL; check the raw bytes too.
+    let problem = if raw.contains(&0) { Some("its path contains a NUL character") } else { path_problem(&name) };
+    let (is_symlink, is_dir) = (entry.is_symlink(), entry.is_dir());
+    let problem = match problem {
+        Some(why) => Some(why),
+        None if is_symlink => Some("it is a symbolic link"),
+        None => header_mismatch(zip, idx),
+    };
+    Some(EntryInfo { name, is_dir, problem })
+}
+
 /// Check the whole archive against the entry-count and total-size limits and for duplicate
 /// names, then classify every entry (path checks, symlinks, local/central header consistency).
 /// Reads the central directory and every local header; never entry data.
@@ -277,24 +308,8 @@ pub fn list<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Listing {
     };
     let mut ignored = 0usize;
     for i in 0..zip.len() {
-        let Ok(entry) = zip.by_index_data(i) else { continue };
-        let raw = entry.name_raw();
-        let name = match entry.name() {
-            Ok(n) => n.into_owned(),
-            Err(_) => String::from_utf8_lossy(raw).into_owned(),
-        };
-        // The decoded name may have lost a NUL; check the raw bytes too.
-        let problem = if raw.contains(&0) { Some("its path contains a NUL character") } else { path_problem(&name) };
-        let (is_symlink, is_dir) = (entry.is_symlink(), entry.is_dir());
+        let Some(EntryInfo { name, is_dir, problem }) = inspect_entry(zip, i) else { continue };
         if let Some(why) = problem {
-            skip(&mut out, &name, why);
-            continue;
-        }
-        if is_symlink {
-            skip(&mut out, &name, "it is a symbolic link");
-            continue;
-        }
-        if let Some(why) = header_mismatch(zip, i) {
             skip(&mut out, &name, why);
             continue;
         }

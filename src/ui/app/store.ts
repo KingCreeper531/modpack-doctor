@@ -137,6 +137,7 @@ import {
   type ModrinthNotice,
 } from './modrinthState';
 import { deniedNotifier, type Notifier } from './notify';
+import { createPackFixSlice, packFixInitial, type PackFixSlice } from './packFix';
 import { renderReport, reportBlock, reportInput, type ReportCoreApi, type ReportState } from './report';
 import { emptyScan, type InstanceScan } from './scanState';
 
@@ -288,7 +289,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCheckUpdates: false,
 };
 
-export interface AppState {
+/** `PackFixSlice`: "Save fixed copy…" of an opened `.mrpack` (packFix.ts). */
+export interface AppState extends PackFixSlice {
   phase: 'loading' | 'ready';
   settings: Settings;
   settingsError: AppError | null;
@@ -1520,6 +1522,18 @@ export function createAppStore(deps: StoreDeps): AppStore {
       reports: {},
       aboutOpen: false,
       update: { status: 'idle' },
+      // "Save fixed copy…" of an opened .mrpack (packFix.ts).
+      ...packFixInitial,
+      ...createPackFixSlice({
+        commands: cmd,
+        get,
+        set,
+        pack: (id) => get().scans[id]?.pack ?? null,
+        instanceName: (id) => instanceById(id)?.name ?? 'another pack',
+        modrinthEnabled: () => get().settings.modrinthEnabled,
+        includeBeta: () => get().settings.includeBeta,
+        chooseVersion: (versions, includeBeta) => mr.chooseVersion(versions, includeBeta),
+      }),
 
       init() {
         initOnce ??= start();

@@ -40,6 +40,7 @@
 //! file that replaces it on that side.
 
 pub mod archive;
+pub mod fixcopy;
 pub mod index;
 
 #[cfg(test)]
@@ -197,6 +198,11 @@ pub fn check_pack_file(path: &Path) -> std::result::Result<PathBuf, String> {
 /// directory. Err is a readable sentence.
 fn open_zip(canon: &Path) -> std::result::Result<ZipArchive<BufReader<File>>, String> {
     let file = File::open(canon).map_err(|e| format!("The pack could not be read: {e}."))?;
+    open_zip_file(file)
+}
+
+/// [`open_zip`] over a file that is already open (positioned anywhere).
+fn open_zip_file(file: File) -> std::result::Result<ZipArchive<BufReader<File>>, String> {
     let mut reader = BufReader::new(file);
     archive::check_central_directory(&mut reader)?;
     ZipArchive::new(reader).map_err(|e| format!("The pack is not a valid .mrpack (zip) file: {e}."))

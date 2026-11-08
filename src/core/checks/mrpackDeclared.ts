@@ -9,7 +9,10 @@
  * (`declaredRef`). The index path (`mods/sodium-0.5.8.jar`) is relative to the instance folder
  * the pack would install into and never collides with an override jar id (those start with
  * `overrides/`, `client-overrides/` or `server-overrides/`). Findings carry NO fixes and no
- * `missingModIds` (packs are read-only, so `enrichFindings` adds nothing either).
+ * `missingModIds` (packs are read-only, so `enrichFindings` adds nothing either). They carry
+ * `packEdits` for the pack's fixed copy instead (`src/core/packfix`): E-WRONG-LOADER / E-MC-RANGE
+ * → replace with the context's newer compatible version of the same project (when there is one)
+ * and remove; E-MISSING-DEP → add the dependency project.
  *
  * - **E-WRONG-LOADER** (error), mods only (path under `mods/`): the version lists at least one mod
  *   loader and none the pack runs. Accepted: the pack loader's Modrinth names (`modrinthLoaders`:
@@ -50,8 +53,9 @@
  */
 import type { DeclaredFile, JarRecord, MrProject, MrVersion, Side } from '../../bindings';
 import { findingId } from '../crash/id';
-import type { Check, CheckInput, Evidence, Finding, JarRef, ModrinthContext, PackContext } from '../model';
-import { declaredMatch, modrinthLoaders } from '../modrinth';
+import type { Check, CheckInput, Evidence, Finding, JarRef, ModrinthContext, PackContext, PackEditSuggestion } from '../model';
+import { declaredMatch, downloadFile, modrinthLoaders, type JarMatch } from '../modrinth';
+import { addProjectEdit, removeDeclaredEdit, replaceDeclaredEdit } from '../packfix';
 import { describeLoader, LOADER_NAMES } from '../pack';
 import { versionApi } from '../version';
 import { contextFor, type CheckContext } from './context';
@@ -308,8 +312,8 @@ function missingDeps(ctx: CheckContext, mr: ModrinthContext, it: Identified, vie
     const depProject = mr.projects[pid];
     const depName = depProject?.title?.trim() || `Modrinth project ${pid}`;
     const where = sides.length === 2 ? '' : ` on the ${sides[0]}`;
-    out.push(
-      makeFinding({
+    out.push({
+      ...makeFinding({
         code: 'E-MISSING-DEP',
         // Warning, not error: Modrinth only knows project ids, and a jar it cannot see into (a
         // file hosted elsewhere, a fork, a bundle) may provide the dependency under another name.
@@ -333,8 +337,27 @@ function missingDeps(ctx: CheckContext, mr: ModrinthContext, it: Identified, vie
         fixes: [],
         discriminator: `declared:${pid}`,
       }),
-    );
+      // The fixed copy can add it (the UI resolves the project's newest compatible version).
+      packEdits: [addProjectEdit(pid, depName)],
+    });
   }
+  return out;
+}
+
+/**
+ * Fixed-copy edits for a declared file built for another loader or Minecraft version: the newer
+ * compatible version of the same project when the context has one (with a download file, listing
+ * the pack's loader and MC version), then removing the file.
+ */
+function declaredFileEdits(ctx: CheckContext, file: DeclaredFile, match: JarMatch): PackEditSuggestion[] {
+  const out: PackEditSuggestion[] = [];
+  if (match.state === 'update' && downloadFile(match.update)) {
+    const loaders = new Set(modrinthLoaders(ctx.pack));
+    const mc = ctx.pack.mcVersion?.trim();
+    const fits = match.update.loaders.some((l) => loaders.has(l.trim().toLowerCase())) && !!mc && match.update.gameVersions.some((g) => g.trim() === mc);
+    if (fits) out.push(replaceDeclaredEdit(file, match.update));
+  }
+  out.push(removeDeclaredEdit(file));
   return out;
 }
 
@@ -377,9 +400,9 @@ export const mrpackDeclaredCheck: Check = {
       if (match.state !== 'matched' && match.state !== 'update') continue;
       const it: Identified = { file, version: match.version, project: match.project ?? undefined };
       const loader = wrongLoader(ctx, it);
-      if (loader) out.push(loader);
+      if (loader) out.push({ ...loader, packEdits: declaredFileEdits(ctx, file, match) });
       const range = mcRange(ctx, it);
-      if (range) out.push(range);
+      if (range) out.push({ ...range, packEdits: declaredFileEdits(ctx, file, match) });
       out.push(...missingDeps(ctx, mr, it, views));
     }
     const aggregate = notOnModrinth(ctx, missing);
