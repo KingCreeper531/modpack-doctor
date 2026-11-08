@@ -33,22 +33,35 @@ launcher automatically. You can also add any folder yourself, or open a `.mrpack
 
 - is made for a different loader (Forge, NeoForge, Fabric or Quilt) than the pack uses;
 - doesn't support the pack's Minecraft or loader version;
-- needs another mod that's missing, or the wrong version of it;
+- needs another mod that's missing, or the wrong version of it (and tells you which version to
+  switch to);
 - is installed twice, or clashes with another mod;
 - is client-only but sits in a server;
 - needs a newer Java than the pack uses;
 - is damaged and can't be read.
+
+It understands old 1.7–1.12 Forge mods too, and respects NeoForge's dependency overrides in
+`config/fml.toml` and Sinytra Connector's settings.
 
 **Explains crashes.** It reads each instance's crash reports and logs and shows the lines that matter
 and the mod behind them: mixin failures, missing dependencies, duplicate packages, wrong Java
 version, out of memory and more. Turn on watch mode for an instance and it tells you why the game
 crashed the moment it happens.
 
+When the game dies before it writes a crash report (Java won't start, a bad memory setting, the
+wrong Java version), it explains that too. You can also **paste** any log or console output to
+analyse it, and **share a log on mclo.gs** to get a link for Discord. Before uploading, your user
+folder and login tokens are removed, and nothing is uploaded until you confirm.
+
 **Looks mods up on Modrinth** to show each mod's name and icon, and to find a newer version that
 works with your pack. Mods that aren't on Modrinth still get every check.
 
 **Fixes problems:** disable or re-enable a mod, remove a duplicate, update a mod to a compatible
 version, or install a missing dependency.
+
+**Fixes `.mrpack` files too:** pick what to change (remove a mod, update it, add a missing
+dependency) and **Save fixed copy…** writes a corrected new pack for you to import into your
+launcher. The original file is never changed.
 
 You can also export a report (Markdown for Discord or GitHub, or JSON) to share when asking for
 help. Your user folder is shown as `~` in it.
@@ -79,13 +92,17 @@ help. Your user folder is shown as `~` in it.
 - No account, no telemetry, no analytics.
 - The app talks to Modrinth to identify mods and find updates. Switch off "Look up mods online"
   (bottom of the instance list) to stop that. Every check and crash analysis still works offline.
-- It contacts GitHub only when you click "Check for updates".
+- It contacts GitHub only to check for updates: when you click "Check for updates", or at
+  startup if you turned that on.
+- It contacts mclo.gs only when you share a log and confirm the upload.
 
 ## Updates
 
-The app checks for updates only when you ask: About → "Check for updates". You see the new
-version and its notes first, and nothing is downloaded until you click Install. Every update is
-verified against the app's signature before it installs.
+The app checks for updates when you ask (About → "Check for updates"). If you turn on **Check for
+updates at startup** in About, it also checks once each time it starts and shows "Update x.y.z
+available" at the bottom of the instance list. You see the new version and its notes first, and
+nothing is downloaded until you click Install. Every update is verified against the app's signature
+before it installs.
 
 ## Keyboard
 
