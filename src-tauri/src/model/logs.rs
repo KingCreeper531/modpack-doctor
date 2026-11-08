@@ -76,6 +76,10 @@ pub enum LogKind {
     DebugLog,
     /// `hs_err_pid*.log` in the game dir, or `@cwd/hs_err_pid<pid>.log` in the JVM's working dir
     HsErr,
+    /// `logs/launcher_log.txt`: the game's console output (stdout + stderr) as the launcher
+    /// captured it, one file per instance (Modrinth App; `docs/research/launchers.md` §7). The only
+    /// place a JVM that fails before log4j starts leaves its error.
+    LauncherLog,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -204,4 +208,23 @@ pub struct CrashDetected {
     /// Best source to analyse: crash report > hs_err > latest.log.
     pub source: LogSource,
     pub triggers: Vec<CrashTrigger>,
+}
+
+// ── Sharing a log on mclo.gs (user-initiated; `src-tauri/src/share`) ─────────────────────────
+
+/// `share_log`: a log source uploaded to mclo.gs. The URLs are built by Rust from the returned
+/// id, so they are always `https://mclo.gs/<id>` and `https://api.mclo.gs/1/raw/<id>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedLog {
+    /// `https://mclo.gs/<id>`: the page to paste into a chat.
+    pub url: String,
+    /// `https://api.mclo.gs/1/raw/<id>`: the plain text.
+    pub raw_url: String,
+    /// Lines in the file as read.
+    pub total_lines: u32,
+    /// Lines uploaded (the end of the file; excludes the note line added when cut).
+    pub sent_lines: u32,
+    /// The start of the file was left out to fit mclo.gs's limits (10 MiB, 25,000 lines).
+    pub truncated: bool,
 }

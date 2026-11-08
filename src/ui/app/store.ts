@@ -89,13 +89,14 @@ import type {
   ScanResult,
   ScanStarted,
   Settings,
+  SharedLog,
   SettingsPatch,
   ThemePref,
   WatchAnchor,
   WorkOrder,
 } from '../../bindings';
 import { runChecks as coreRunChecks } from '../../core/checks';
-import { analyzeCrash as coreAnalyzeCrash, CRASH_ANCHORS, CRASH_ANCHOR_TEXTS } from '../../core/crash';
+import { analyzeCrash as coreAnalyzeCrash, CRASH_ANCHORS, CRASH_ANCHOR_TEXTS, digestPastedText } from '../../core/crash';
 import { summarizeCrash } from '../../core/crash/summary';
 import type { CheckInput, CrashInput, Finding, JarIndex, ModrinthContext, PackContext } from '../../core/model';
 import { buildReport, reportFileName, reportJson, reportMarkdown } from '../../core/report';
@@ -126,6 +127,7 @@ import {
   type InstanceCrashes,
 } from './crashState';
 import { call, type Backend, type Result, type Unlisten } from './ipc';
+import { isPastedSource, PASTED_SOURCE_ID, pastedSource, type LogDialog } from './logTools';
 import { moveCursor as nextCursor, visibleList } from './keyboard';
 import type { MenuEntry } from './menus';
 import {
@@ -358,6 +360,8 @@ export interface AppState extends PackFixSlice {
   aboutOpen: boolean;
   /** The user-initiated update check and install (M8); `idle` until the user asks. */
   update: UpdateState;
+  /** The open "Paste a log" / "Share on mclo.gs" dialog (logTools.ts). */
+  logDialog: LogDialog | null;
 
   init(): Promise<void>;
   dispose(): void;
@@ -434,6 +438,14 @@ export interface AppState extends PackFixSlice {
   setAutoCheckUpdates(on: boolean): Promise<AppError | null>;
   /** `install_update`, only for `version` when it is the update on screen. */
   installUpdate(version: string): Promise<void>;
+  setLogDialog(dialog: LogDialog | null): void;
+  /**
+   * Analyse pasted text as a session-only log source of the instance (replacing an earlier
+   * paste) and show it in the crash view. Nothing is sent to Rust or stored.
+   */
+  analyzePastedText(id: string, text: string): { totalLines: number; cutLines: number };
+  /** `share_log`: only after the user confirmed in the share dialog. */
+  shareLog(id: string, sourceId: string): Promise<Result<SharedLog>>;
 }
 
 export type UpdateState = UpdateView;
@@ -741,6 +753,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
     const analyze = (id: string, sourceId: string, force: boolean): Promise<CrashAnalysis | null> => {
       const key = `${id}/${sourceId}`;
       const cur = get().crashes[id]?.analyses[sourceId];
+      // Pasted text has no file: its analysis is made by `analyzePastedText` only.
+      if (isPastedSource(sourceId)) return Promise.resolve(cur ?? null);
       if (!force && cur?.status === 'done') return Promise.resolve(cur);
       if (!force && cur?.status === 'loading') return latestRead.get(key) ?? Promise.resolve(null);
       const token = bump(digestTokens, key);
@@ -1534,6 +1548,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
         includeBeta: () => get().settings.includeBeta,
         chooseVersion: (versions, includeBeta) => mr.chooseVersion(versions, includeBeta),
       }),
+      logDialog: null,
 
       init() {
         initOnce ??= start();
@@ -1842,6 +1857,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
           return;
         }
         let sources = sortSources(r.data);
+        // Pasted text (session only) stays listed with its analysis.
+        const pasted = get().crashes[id]?.sources.find((s) => isPastedSource(s.id));
+        if (pasted) sources = upsertSource(sources, pasted);
         // A crash file announced while this listing was in flight stays listed.
         for (const [k, s] of announcing) {
           if (k.startsWith(`${id}/`) && !sources.some((x) => x.id === s.id)) sources = upsertSource(sources, s);
@@ -1854,7 +1872,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
           for (const s of sources) {
             const before = c.sources.find((p) => p.id === s.id);
             const a = c.analyses[s.id];
-            if (a && (a.status === 'loading' || (before && before.modifiedMs === s.modifiedMs && before.size === s.size))) analyses[s.id] = a;
+            if (a && (a.status === 'loading' || isPastedSource(s.id) || (before && before.modifiedMs === s.modifiedMs && before.size === s.size))) analyses[s.id] = a;
           }
           selected = c.selectedSourceId && sources.some((s) => s.id === c.selectedSourceId) ? c.selectedSourceId : defaultSourceId(sources);
           return { ...c, sources, sourcesStatus: 'done', sourcesError: null, selectedSourceId: selected, analyses };
@@ -1951,6 +1969,38 @@ export function createAppStore(deps: StoreDeps): AppStore {
 
       setAboutOpen(open) {
         set(open ? { aboutOpen: true, paletteOpen: false, menu: null } : { aboutOpen: false });
+      },
+
+      setLogDialog(dialog) {
+        set(dialog ? { logDialog: dialog, paletteOpen: false, menu: null, aboutOpen: false } : { logDialog: null });
+      },
+
+      analyzePastedText(id, text) {
+        const source = pastedSource(text, now());
+        const { digest, totalLines, cutLines } = digestPastedText(text, CRASH_ANCHOR_TEXTS, source);
+        const analysis = classify(id, digest);
+        patchCrashes(id, (c) => ({
+          ...c,
+          sources: upsertSource(c.sources, source),
+          analyses: { ...c.analyses, [PASTED_SOURCE_ID]: analysis },
+          selectedSourceId: PASTED_SOURCE_ID,
+          pane: 'diagnosis',
+          logLine: null,
+        }));
+        set((st) => ({
+          findingsTab: { ...st.findingsTab, [id]: 'crashes' },
+          selection: st.selection?.kind === 'crash' && st.selection.sourceId === PASTED_SOURCE_ID ? null : st.selection,
+        }));
+        clearAlert(id);
+        // The instance's files are listed too, so the pasted text sits next to them.
+        const cs = get().crashes[id]?.sourcesStatus;
+        if (!cs || cs === 'idle') void get().loadLogSources(id);
+        if (analysis.status === 'done') void resolveMissing(id);
+        return { totalLines, cutLines };
+      },
+
+      async shareLog(id, sourceId) {
+        return call(cmd.shareLog(id, sourceId));
       },
 
       async checkUpdate() {

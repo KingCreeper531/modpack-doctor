@@ -1,0 +1,7 @@
+# Minecraft launcher log started at 2026-09-13 21:45:50
+# Instance: Pack A 
+
+Error: Could not find or load main class 4G
+Caused by: java.lang.ClassNotFoundException: 4G
+
+# Process exited with status: exit code: 1

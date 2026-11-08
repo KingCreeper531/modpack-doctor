@@ -26,6 +26,11 @@
  *     1st fails too, so the snapshot stays `incomplete` (History offers Recover).
  *   - `drop`: shortly after start a file "dropped" on the window is refused (`DropRejected`), as
  *     Rust reports a drop that is not a `.mrpack`.
+ *   - `shareoffline`: `share_log` answers `offline` (no connection to mclo.gs).
+ *
+ * Share (`share_log`): never touches the network. It answers a fake `https://mclo.gs/Mock<n>` link
+ * for a listed source of the instance (recorded for tests, `shares()`), `notFound` for anything
+ * else, and `offline` with `?scenario=shareoffline`.
  *
  * `.mrpack` (M7): `pick_mrpack` "opens" `MOCK_PICKED_PACK` (Explorer Kit 2.1); scanning a pack
  * reports the jars inside its zip (`overrides/…`) plus the files its index declares
@@ -75,6 +80,7 @@ import type {
   InstanceAdded,
   LogDigest,
   LogSource,
+  SharedLog,
   MrProject,
   MrVersion,
   OpStatus,
@@ -131,7 +137,8 @@ export type MockScenario =
   | 'update'
   | 'updatefail'
   | 'autoupdate'
-  | 'autoupdatefail';
+  | 'autoupdatefail'
+  | 'shareoffline';
 
 export interface MockOptions {
   scenario: MockScenario;
@@ -170,6 +177,7 @@ const SCENARIOS: readonly MockScenario[] = [
   'updatefail',
   'autoupdate',
   'autoupdatefail',
+  'shareoffline',
 ];
 
 export function mockOptionsFromSearch(search: string): MockOptions {
@@ -246,6 +254,8 @@ export interface MockBackend extends Backend {
    * `autoupdate` / `autoupdatefail` scenarios ask for it.
    */
   startupUpdateCheck: boolean;
+  /** Test hook: every `share_log` call that "uploaded" (instance id, source id). */
+  shares(): ReadonlyArray<{ instanceId: string; sourceId: string }>;
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
@@ -276,6 +286,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   const mrOffline = () => !settings.modrinthEnabled || opts.scenario === 'offline';
   const added: Instance[] = [];
   const reports: Array<{ name: string; format: ReportFormat; contents: string }> = [];
+  const shared: Array<{ instanceId: string; sourceId: string }> = [];
 
   const ev = {
     scanStarted: emitter<ScanStarted>(),
@@ -500,6 +511,21 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       if (anchors.length === 0) return err('invalid', 'No anchors were given, so the log digest would be empty.');
       return ok(digestFromText(hit.log.text, hit.source));
     },
+    shareLog: async (instanceId: string, sourceId: string): Promise<Result<SharedLog>> => {
+      await lag();
+      const inst = instances().find((i) => i.id === instanceId);
+      if (!inst) return err('notFound', 'This instance is no longer on disk. Rescan your launchers to refresh the list.');
+      if (inst.launcher === 'mrpack') return err('invalid', 'Invalid request: a .mrpack file has no logs to share.');
+      const hit = sourcesOf(instanceId).find((x) => x.source.id === sourceId);
+      if (!hit) return err('notFound', `Could not find the log file "${sourceId}" in this instance (refresh the list of logs and try again).`);
+      if (opts.scenario === 'shareoffline') {
+        return err('offline', 'Could not reach mclo.gs: this computer seems to be offline. Check the connection and try again; nothing was uploaded.');
+      }
+      shared.push({ instanceId, sourceId });
+      const id = `Mock${shared.length}`;
+      const lines = digestFromText(hit.log.text, hit.source).totalLines;
+      return ok({ url: `https://mclo.gs/${id}`, rawUrl: `https://api.mclo.gs/1/raw/${id}`, totalLines: lines, sentLines: lines, truncated: false });
+    },
     setWatch: async (instanceId: string, enabled: boolean, anchors: WatchAnchor[]): Promise<Result<null>> => {
       await lag();
       const inst = instances().find((i) => i.id === instanceId);
@@ -655,5 +681,6 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     reports: () => reports,
     emitDropRejected: (e) => ev.dropRejected.emit(e),
     startupUpdateCheck: autoUpdate,
+    shares: () => shared,
   };
 }

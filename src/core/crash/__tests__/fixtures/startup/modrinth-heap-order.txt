@@ -1,0 +1,7 @@
+# Minecraft launcher log started at 2026-09-13 21:45:50
+# Instance: Pack A 
+
+Error occurred during initialization of VM
+Initial heap size set to a larger value than the maximum heap size
+
+# Process exited with status: exit code: 1

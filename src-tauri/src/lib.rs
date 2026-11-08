@@ -15,6 +15,7 @@ pub mod paths;
 pub mod process;
 pub mod scan;
 pub mod settings;
+pub mod share;
 pub mod state;
 pub mod window_theme;
 
@@ -47,6 +48,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             scan_instance,
             list_log_sources,
             read_log_digest,
+            share_log,
             set_watch,
             modrinth_identify,
             modrinth_find_updates,

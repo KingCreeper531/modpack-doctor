@@ -97,6 +97,7 @@ export function source(kind: LogKind, id?: string): LogSource {
     latestLog: 'logs/latest.log',
     debugLog: 'logs/debug.log',
     hsErr: 'hs_err_pid12345.log',
+    launcherLog: 'logs/launcher_log.txt',
   };
   return { id: id ?? ids[kind], kind, modifiedMs: 0, size: 0 };
 }

@@ -365,3 +365,62 @@ A folder is a server only if it has **strong** signals; weak signals only add co
 - **Mojang Flatpak**: the game dir of `com.mojang.Minecraft` on Flathub.
 - **Fabric/Quilt servers**: the exact Quilt server launcher filenames. Also the Fabric server `.fabric/` layout across versions.
 - **CurseForge fingerprint**: confirm the MurmurHash2 details (seed 1, stripping bytes 9, 10, 13 and 32) against the CF docs before relying on them.
+
+## 7. Game console output (stdout/stderr): where each launcher keeps it (read 2026-11-07)
+
+A JVM that fails before log4j starts (`Error: Could not create the Java Virtual Machine.`, `Unrecognized VM option …`, `Could not reserve enough space for …KB object heap`, `Error: Could not find or load main class …`, `Error occurred during initialization of boot layer`) writes only to the process's stdout/stderr, never to `logs/latest.log` or `crash-reports/`. Whether that reaches a file depends on the launcher. Only a file that holds game output **and** belongs to exactly one instance is listed as a log source (`logs::sources::LAUNCHER_LOG`); everything else stays outside the PathGuard.
+
+| Launcher | Game stdout/stderr in a file? | Where | Attributable to one instance? | Used |
+|---|---|---|---|---|
+| Modrinth App | Yes, both streams | `<data>/ModrinthApp/profiles/<profile>/logs/launcher_log.txt` | Yes: inside the profile's game dir; header `# Instance: <profile>` | **Yes** (`logs/launcher_log.txt`, kind `launcherLog`) |
+| Prism Launcher | Only with "Close launcher after game window opens", and only until the first `Setting user` line | `<data>/logs/PrismLauncher-0.log` … `-4.log` | No: one launcher log for all instances, no instance id on game lines | No |
+| MultiMC | No (console is in memory only) | `MultiMC-0.log` … `-4.log` (launcher's own messages) | No | No |
+| CurseForge app | No file of its own (a "log STDOUT to launcher_log.txt" request is marked Planned) | With "Use Mojang launcher": the vanilla `launcher_log.txt` in `minecraft/Install` (unverified) | No | No |
+| Vanilla launcher | Yes, prefixed `Game/<logger> (<thread>) <Level>` | `.minecraft/launcher_log.txt` (older sessions moved into `logs/`) | No: one file for every installation; game lines carry only a per-session id (`Game closed with id N`) | No |
+
+### Modrinth App (modrinth/code `main`, SHA f73010ae0809813120a16b733a3d0bfd23f76e24)
+
+- `packages/app-lib/src/state/process.rs`: `const LAUNCHER_LOG_PATH: &str = "launcher_log.txt";`, written into `state.directories.instance_logs_dir(&instance_path)`, which `state/dirs.rs` defines as `instances_dir().join(instance_path).join("logs")` (`INSTANCES_FOLDER_NAME = "profiles"`), i.e. next to log4j's `latest.log` in the profile's own game dir. The base is `THESEUS_CONFIG_DIR` or `dirs::data_dir()/ModrinthApp` (identifier in `apps/app/tauri.conf.json`); the user can move the app directory, which discovery already follows (§1).
+- Opened with `.write(true).create(true).truncate(true)` on every launch: one file per profile, no rotation. Header `# Minecraft launcher log started at <ts>` and `# Instance: <instance_path> `; footer `# Process exited with status: <status>`. If the process cannot be spawned only the header is written.
+- stdout and stderr are both piped through `process_output` into the same file. When the version has log4j XML logging, `log4j:Event`/`Message`/`Throwable` are rewritten as `[HH:MM:SS] [thread/LEVEL]: msg`; plain text outside an event (where JVM start-up errors appear) is copied as is. On an XML reader error the loop stops, so the rest of that session's output is lost (unverified risk with stack traces containing `<init>`).
+- `api/logs.rs` reads it as a live log (`get_generic_live_log_cursor(instance_id, "launcher_log.txt", …)`).
+- Checked read-only on a real install (Windows, `%APPDATA%\ModrinthApp\profiles\*\logs\launcher_log.txt`): one file per profile, 0.17 to 3.8 MB, starting with the two header lines above and ending with `# Process exited with status: exit code: 0`.
+- Access: the file is inside an instance root, so no new PathGuard rule is needed; only the exact id `logs/launcher_log.txt` is listed and readable (`launcher_log.txt.bak`, `launcher_log-1.txt`, the app's own `launcher_logs/` next to `profiles/` and other profiles' files are refused; tests in `logs/sources.rs`).
+
+### Prism Launcher (develop, SHA 899d2f3957215a09fe398a8a8cbb8a8a9c619968) and MultiMC (develop, SHA da5963ed650778e009d69dc319a854cef240b597)
+
+- `launcher/LoggedProcess.cpp` emits both pipes as `log(lines, MessageLevel::StdOut/StdErr)`; `launch/LaunchTask.cpp` `onLogLine` censors and appends to `launch/LogModel.cpp`, an in-memory ring buffer capped by the per-instance max-lines setting. No file I/O; saving or uploading the console is manual.
+- Prism only: `minecraft/launch/LauncherPartLaunch.cpp` logs `qDebug() << lines` while `CloseAfterLaunch` is on, until a `Setting user` line, so JVM start-up failures land in `<data>/logs/PrismLauncher-0.log` (`Application.cpp`: `BuildConfig.LAUNCHER_NAME + "-%0.log"`, rotated 0 to 4 on start, truncated) as QDebug string lists, with times relative to launcher start and no instance id (only the Java command line, which probably contains the instance path; unverified). MultiMC has no such lambda.
+- Not used: the launcher log mixes every instance and the launcher's own messages.
+
+### CurseForge app (closed source)
+
+- Ideas portal CF-I-7375 "'Skip Launcher' should log STDOUT to a file (generate launcher_log.txt)" is marked Planned (team reply 2025-07-01); a later comment suggests a log file shipped, but its path and name are unverified. CF-I-7632 says the in-app console shows only `latest.log`. Not used until a per-instance file is confirmed.
+
+### Vanilla launcher
+
+- `.minecraft/launcher_log.txt` contains game output (`[Info: <ts>: GameCallbacks.cpp(158)] Game/FML (Client thread) Info …`, `Launcher/monitor (Process Monitor) Info Process ended with exit code 0`), and older JVM start-up errors next to `Process closed with exit code …`. It is one file for every installation and session (MCL-23121 describes the old file being moved into `logs/`), so it cannot be attributed to an instance. Not used. No official Mojang documentation found.
+
+### JVM start-up messages (used by `src/core/crash/patterns/jvmStartup.ts`)
+
+From OpenJDK `master` (the wording is unchanged since JDK 9 for the launcher lines):
+
+- `src/java.base/share/native/libjli/emessages.h`: `JVM_ERROR1` = `Error: Could not create the Java Virtual Machine.` followed by `GEN_ERROR` = `Error: A fatal exception has occurred. Program will exit.`
+- `src/java.base/share/classes/sun/launcher/resources/launcher.properties`: `Error: Could not find or load main class {0}` + `Caused by: {1}: {2}`; `Error: LinkageError occurred while loading main class {0}`.
+- `src/hotspot/share/runtime/arguments.cpp`: `Unrecognized VM option '%s'`, `Unrecognized %s%soption: %s` (prints `Unrecognized option: --add-opens` on Java 8), `Did you mean '%s%s%s'?`, `Invalid maximum heap size: %s`, `Invalid initial heap size: %s`, `Ignoring option %s; support was removed in %s` (a warning only).
+- `src/hotspot/share/memory/universe.cpp` (jdk17u): `Could not reserve enough space for <N>KB object heap`, printed after `Error occurred during initialization of VM`.
+
+### mclo.gs (for "Share on mclo.gs"; https://api.mclo.gs/, github.com/aternosorg/mclogs `main`)
+
+- `POST https://api.mclo.gs/1/log` with JSON `{"content": …}` (form-urlencoded still accepted). Success: `{"success": true, "id", "url": "https://mclo.gs/<id>", "raw": "https://api.mclo.gs/1/raw/<id>", "token", …}`; failure: `{"success": false, "error": "…"}` (400), 413 when the body exceeds twice the byte limit, 429 above 60 requests per minute per IP.
+- `GET /1/limits`: `maxLength` 10485760 bytes, `maxLines` 25000, `storageTime` 7776000 s (90 days). Server-side truncation keeps the **start** (`array_slice(…, 0, $linesLimit)`, `mb_strcut($data, 0, $lengthLimit)`), so the app cuts on its side and keeps the end, where crashes are.
+
+### Sources
+
+- https://github.com/modrinth/code/blob/main/packages/app-lib/src/state/process.rs, `state/dirs.rs`, `api/logs.rs`, `launcher/mod.rs`, `apps/app/tauri.conf.json`
+- https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/LoggedProcess.cpp (also `launch/LaunchTask.cpp`, `launch/LogModel.cpp`, `launch/LaunchStep.cpp`, `minecraft/launch/LauncherPartLaunch.cpp`, `Application.cpp`, `LaunchController.cpp`)
+- https://github.com/MultiMC/Launcher/blob/develop/launcher/ (same files)
+- https://curseforge-ideas.overwolf.com/ideas/CF-I-7375, https://curseforge-ideas.overwolf.com/ideas/CF-I-7632
+- https://pastebin.com/QeyRNaR1, https://pastebin.com/kSH1QqLS (vanilla `launcher_log.txt` excerpts), https://mojira.dev/MCL-23121, https://minecrafthopper.net/help/guides/getting-minecraft-launcher-log/, https://www.minecraftforum.net/forums/support/java-edition-support/2852480-unable-to-launch-a-minecraft-session-no-crash
+- https://github.com/openjdk/jdk/blob/master/src/java.base/share/native/libjli/emessages.h, https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/sun/launcher/resources/launcher.properties, https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/arguments.cpp, https://github.com/openjdk/jdk17u/blob/master/src/hotspot/share/memory/universe.cpp
+- https://api.mclo.gs/, https://github.com/aternosorg/mclogs (`src/Api/ApiRouter.php`, `ContentParser.php`, `LogContentParser.php`, `src/Filter/Limit*Filter.php`, `src/Api/Action/RateLimitErrorAction.php`)

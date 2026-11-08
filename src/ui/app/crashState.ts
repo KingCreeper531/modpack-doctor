@@ -85,6 +85,7 @@ export const LOG_KIND_LABEL: Record<LogKind, string> = {
   latestLog: 'latest log',
   debugLog: 'debug log',
   hsErr: 'JVM crash',
+  launcherLog: 'console output',
 };
 
 /** Newest first; ties by id so the order is stable. */

@@ -2,7 +2,11 @@
 //!
 //! Sources relative to the game dir: `crash-reports/crash-*.txt` (vanilla `-client` /
 //! `-server`, `-fml.txt`, `-quilt_loader.txt`), `logs/latest.log`, `logs/debug.log` and
-//! `hs_err_pid*.log`. Their ids are those relative paths with `/` separators.
+//! `hs_err_pid*.log`, plus `logs/launcher_log.txt` (the game's console output as the Modrinth App
+//! captures it per profile; `docs/research/launchers.md` §7). Their ids are those relative paths
+//! with `/` separators. No other launcher keeps the console output in a file that belongs to one
+//! instance (Prism/MultiMC keep it in memory, the vanilla launcher and CurseForge in one
+//! `launcher_log.txt` shared by every profile), so nothing outside the game dir is listed for it.
 //!
 //! **hs_err files outside the game dir.** The JVM writes `hs_err_pid<pid>.log` into its
 //! *working dir*, which is not always the game dir: the vanilla launcher starts every profile in
@@ -42,6 +46,9 @@ pub const CRASH_DIR: &str = "crash-reports";
 pub const LOGS_DIR: &str = "logs";
 pub const LATEST_LOG: &str = "logs/latest.log";
 pub const DEBUG_LOG: &str = "logs/debug.log";
+/// The Modrinth App's capture of the game's stdout and stderr (`state/process.rs`
+/// `LAUNCHER_LOG_PATH` in `<profile>/logs/`), rewritten on every launch.
+pub const LAUNCHER_LOG: &str = "logs/launcher_log.txt";
 /// Id prefix of an hs_err file in the JVM's working dir outside the game dir.
 pub const CWD_PREFIX: &str = "@cwd/";
 /// Bytes of an hs_err file searched for its `Command Line:` summary line.
@@ -170,6 +177,7 @@ fn game_dir_sources(game_dir: &Path) -> Vec<(LogSource, PathBuf)> {
     let mut ids: Vec<(String, LogKind)> = crash_file_ids(game_dir).into_iter().collect();
     ids.push((LATEST_LOG.to_string(), LogKind::LatestLog));
     ids.push((DEBUG_LOG.to_string(), LogKind::DebugLog));
+    ids.push((LAUNCHER_LOG.to_string(), LogKind::LauncherLog));
     ids.into_iter()
         .filter_map(|(id, kind)| {
             let path = PathGuard::join_relative(game_dir, &id).ok()?;
@@ -278,16 +286,10 @@ pub fn read_source_digest(
     read_source_digest_with(guard, game_dir, &CwdHints::default(), source_id, anchors, options)
 }
 
-/// `read_log_digest`: accepts only an id that [`list_log_sources_with`] currently returns,
-/// resolves it through the PathGuard, and streams a digest with clamped options.
-pub fn read_source_digest_with(
-    guard: &PathGuard,
-    game_dir: &Path,
-    hints: &CwdHints,
-    source_id: &str,
-    anchors: &[String],
-    options: Option<DigestOptions>,
-) -> Result<LogDigest> {
+/// The source `source_id` and its PathGuard-checked file, if [`list_log_sources_with`] currently
+/// lists that id (what `read_log_digest` and `share_log` read). Escaping, malformed or forged ids
+/// are `OutsideScope`; well-formed ids that are not listed are `NotFound`.
+pub fn resolve_source(guard: &PathGuard, game_dir: &Path, hints: &CwdHints, source_id: &str) -> Result<(LogSource, PathBuf)> {
     // Escaping, malformed or forged ids fail here with OutsideScope before anything is listed.
     if source_id.starts_with('@') {
         if parse_cwd_id(source_id).is_none() {
@@ -302,7 +304,20 @@ pub fn read_source_digest_with(
         .ok_or_else(|| Error::NotFound {
             path: format!("the log file \"{source_id}\" in this instance (refresh the list of logs and try again)"),
         })?;
-    let path = guard.check_existing(&path)?;
+    Ok((source, guard.check_existing(&path)?))
+}
+
+/// `read_log_digest`: accepts only an id that [`list_log_sources_with`] currently returns,
+/// resolves it through the PathGuard, and streams a digest with clamped options.
+pub fn read_source_digest_with(
+    guard: &PathGuard,
+    game_dir: &Path,
+    hints: &CwdHints,
+    source_id: &str,
+    anchors: &[String],
+    options: Option<DigestOptions>,
+) -> Result<LogDigest> {
+    let (source, path) = resolve_source(guard, game_dir, hints, source_id)?;
     let opts = clamp_options(&options.unwrap_or_else(default_options));
     read_digest(&path, source, anchors, &opts)
 }
@@ -608,6 +623,77 @@ mod tests {
         let list = list_log_sources_with(&guard, &game, &hints).expect("list");
         assert!(list.iter().any(|s| s.id == "hs_err_pid1234.log"));
         assert!(list.iter().all(|s| !s.id.starts_with('@')));
+    }
+
+    // ── Launcher console capture (Modrinth App `logs/launcher_log.txt`) ───────────
+
+    const MODRINTH_LAUNCHER_LOG: &str = "# Minecraft launcher log started at 2026-09-13 21:45:50\n\
+        # Instance: Pack A \n\n\
+        Error: Could not create the Java Virtual Machine.\n\
+        Error: A fatal exception has occurred. Program will exit.\n\n\
+        # Process exited with status: exit code: 1\n";
+
+    /// Two Modrinth profiles side by side, each a root, each with its own console capture.
+    fn modrinth() -> (tempfile::TempDir, PathBuf, PathBuf, PathGuard) {
+        let t = tempfile::tempdir().expect("tempdir");
+        let base = dunce::canonicalize(t.path()).expect("canon").join("ModrinthApp").join("profiles");
+        let a = base.join("Pack A");
+        let b = base.join("Pack B");
+        write_at(&a.join("logs/launcher_log.txt"), MODRINTH_LAUNCHER_LOG, 10);
+        write_at(&a.join("logs/latest.log"), "[main/INFO]: x\n", 20);
+        // Look-alikes that are not the launcher's capture.
+        write_at(&a.join("logs/launcher_log.txt.bak"), "old\n", 5);
+        write_at(&a.join("logs/launcher_log-1.txt"), "old\n", 5);
+        write_at(&a.join("launcher_log.txt"), "not here\n", 5);
+        write_at(&a.join("logs/sub/launcher_log.txt"), "nested\n", 5);
+        write_at(&b.join("logs/launcher_log.txt"), "# Instance: Pack B \n", 1);
+        // The app's own logs next to `profiles/` are outside every root.
+        write_at(&base.parent().expect("app dir").join("launcher_logs/theseus.log"), "app\n", 1);
+        let guard = PathGuard::new();
+        guard.add_root(&a).expect("root a");
+        guard.add_root(&b).expect("root b");
+        (t, a, b, guard)
+    }
+
+    #[test]
+    fn launcher_log_is_listed_as_this_instance_console_output() {
+        let (_t, a, _b, guard) = modrinth();
+        let list = list_log_sources_guarded(&guard, &a).expect("list");
+        let ids: Vec<(&str, LogKind)> = list.iter().map(|s| (s.id.as_str(), s.kind)).collect();
+        assert_eq!(ids, vec![(LAUNCHER_LOG, LogKind::LauncherLog), (LATEST_LOG, LogKind::LatestLog)]);
+        let d = read_source_digest(&guard, &a, LAUNCHER_LOG, &["Could not create the Java Virtual Machine".into()], None)
+            .expect("digest");
+        assert_eq!(d.source.kind, LogKind::LauncherLog);
+        assert!(d.chunks.iter().flat_map(|c| &c.lines).any(|l| l.contains("Could not create the Java Virtual Machine")));
+        let (src, path) = resolve_source(&guard, &a, &CwdHints::default(), LAUNCHER_LOG).expect("resolve");
+        assert_eq!(src.kind, LogKind::LauncherLog);
+        assert!(fs::read_to_string(path).expect("read").contains("# Instance: Pack A"), "attributed by its own folder");
+    }
+
+    #[test]
+    fn only_the_exact_launcher_log_is_readable() {
+        let (_t, a, b, guard) = modrinth();
+        for unlisted in ["logs/launcher_log.txt.bak", "logs/launcher_log-1.txt", "launcher_log.txt", "logs/sub/launcher_log.txt"] {
+            let err = read_source_digest(&guard, &a, unlisted, &[], None).expect_err(unlisted);
+            assert!(matches!(err, Error::NotFound { .. }), "{unlisted}: {err}");
+            assert!(resolve_source(&guard, &a, &CwdHints::default(), unlisted).is_err(), "{unlisted}");
+        }
+        // Another profile's capture and the app's own logs are never reachable from this one.
+        for escaping in ["../Pack B/logs/launcher_log.txt", "../../launcher_logs/theseus.log", "@cwd/launcher_log.txt"] {
+            let err = read_source_digest(&guard, &a, escaping, &[], None).expect_err(escaping);
+            assert!(matches!(err, Error::OutsideScope { .. }), "{escaping}: {err}");
+        }
+        // Pack B lists its own.
+        let d = read_source_digest(&guard, &b, LAUNCHER_LOG, &[], None).expect("b");
+        assert_eq!(d.total_lines, 1);
+    }
+
+    #[test]
+    fn launcher_log_outside_the_roots_is_refused() {
+        let (_t, a, _b, _guard) = modrinth();
+        let guard = PathGuard::new();
+        assert!(matches!(list_log_sources_guarded(&guard, &a), Err(Error::OutsideScope { .. })));
+        assert!(resolve_source(&guard, &a, &CwdHints::default(), LAUNCHER_LOG).is_err());
     }
 
     #[test]

@@ -1,0 +1,9 @@
+# Minecraft launcher log started at 2026-09-13 21:45:50
+# Instance: Pack A 
+
+Invalid maximum heap size: -Xmx4G
+The specified size exceeds the maximum representable size.
+Error: Could not create the Java Virtual Machine.
+Error: A fatal exception has occurred. Program will exit.
+
+# Process exited with status: exit code: 1
