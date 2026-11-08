@@ -10,7 +10,7 @@ import { enrichFindings } from '../../modrinth';
 import { runChecks } from '../index';
 import { mrpackDeclaredCheck } from '../mrpackDeclared';
 import { classifyDownloadUrl, mrpackDownloadCheck } from '../mrpackDownload';
-import { fabric, instance, modrinth, mrProject, mrVersion, notes, scan, sha1Of } from './fixtures';
+import { fabric, forge, instance, modrinth, mrProject, mrVersion, notes, scan, sha1Of } from './fixtures';
 
 function declared(path: string, over: Partial<DeclaredFile> = {}): DeclaredFile {
   const name = path.split('/').pop() ?? path;
@@ -468,5 +468,38 @@ describe('declared files in a full run', () => {
     for (const f of mine) expect(f.fixes).toEqual([]);
     const enriched = enrichFindings(a, mr, {}, input.scan.jars);
     expect(onDeclared(enriched, [wrong, old]).flatMap((f) => f.fixes)).toEqual([]);
+  });
+});
+
+// Reported by a user: an override jar (Create: Broken Bad) needing Create was told Create is "not
+// installed", though Create is one of the files the pack downloads at install.
+describe('E-MISSING-DEP of an override jar on a mod the pack downloads', () => {
+  const p = mrPack('forge', '1.20.1', '47.4.20');
+  const addon = forge({ file: 'overrides/mods/createbb-1.20.1-3.2.jar', mods: [{ id: 'createbb', name: 'Create: Broken Bad', deps: [{ id: 'create' }] }] });
+  const missing = (input: CheckInput) => runChecks(input).filter((f) => f.code === 'E-MISSING-DEP' && f.culprits.some((c) => c.jarId === addon.id));
+
+  it('is not reported when a declared file is named <id>-<version>.jar (offline)', () => {
+    expect(missing(packInput([declared('mods/create-1.20.1-6.0.6.jar')], p, undefined, [addon]))).toEqual([]);
+  });
+
+  it('is not reported when Modrinth identifies a declared file as the project with that slug', () => {
+    const file = declared('mods/whatever.jar');
+    const mr = identified([[file, { projectId: 'LNytGWDc' }]], { projects: { LNytGWDc: mrProject({ id: 'LNytGWDc', slug: 'create' }) } });
+    expect(missing(packInput([file], p, mr, [addon]))).toEqual([]);
+  });
+
+  it('an addon file name does not count as Create itself', () => {
+    const [f] = missing(packInput([declared('mods/create-new-age-forge-1.20.1-1.1.2.jar')], p, undefined, [addon]));
+    expect(f?.severity).toBe('warning');
+    expect(f?.title).toContain("which isn't among the jars inside the pack");
+  });
+
+  it('a declared file that is unsupported on the pack side does not count', () => {
+    const serverOnly = declared('mods/create-1.20.1-6.0.6.jar', { client: 'unsupported' });
+    expect(missing(packInput([serverOnly], p, undefined, [addon]))[0]?.severity).toBe('error'); // nothing on this side could provide it
+  });
+
+  it('stays an error when the pack declares no downloads at all', () => {
+    expect(missing(packInput([], p, undefined, [addon]))[0]?.severity).toBe('error');
   });
 });
