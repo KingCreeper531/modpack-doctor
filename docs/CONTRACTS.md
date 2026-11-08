@@ -359,7 +359,32 @@ every debug run of the app). Never edit it by hand. CI fails if regenerating it 
       project (slug = mod id, `-` ≡ `_`) or is named `<id>-<version>.jar`; while the pack declares
       mod files that can't be confirmed, its E-MISSING-DEP is a **warning** saying so (never "not
       installed"). Override jars
-      get every static check. Packs never get fix actions (read-only); findings carry no fixes.
+      get every static check. Packs never get fix actions and are never written. Their findings
+      carry `packEdits` for a **fixed copy** instead (`src/core/packfix`): replace (only with a newer,
+      compatible version of the same project) or remove declared files built for another loader or MC
+      version; add a missing declared dependency; remove override jars that are wrong-loader,
+      corrupt, missing a dependency at error severity, or duplicates.
+    - `plan_pack_fix(instanceId, edits)` validates every edit against the opened pack (paths exist;
+      an override entry is a jar directly in an override `mods/` folder) and fetches every version
+      fresh, checked as in invariant 8: download-file rule, `https://cdn.modrinth.com/` URL, sha1 +
+      sha512 + size, the pack's loader and MC version. Replace: same project (identified by sha1) and
+      published after the identified version. Add (bound intent): only a project some kept file
+      requires, never one already in the copy (identified declared files, other additions, override
+      jar ids/provides or `resolve_mod_id`); unsure → warning; `env` from the project's sides or the
+      requirer's. Path collisions are refused, letter case ignored. Every plan identifies the
+      declared files with one batched lookup when Modrinth is on (failure only warns unless a
+      Replace/Add needs it). The copy's index is capped at `MAX_INDEX_FILES`. Plans live in Rust
+      with the pack's size/mtime/sha1: single use, 15 minutes, one per pack; a stale pack drops it.
+    - `save_fixed_pack(planId)` opens the native save dialog (default `<stem> (fixed).mrpack`,
+      `.mrpack` enforced) and refuses any opened pack as destination by **file identity** (volume
+      serial + file index / dev + inode), re-checked right before a replacing rename. It copies every
+      safe entry in order with `raw_copy_file`; only the index's `files` change (keys come out
+      sorted). Index entries the scanner rejects or that are shadowed by a later same path are left
+      out with a warning; off-allowlist links, unidentified files and case-twin paths stay, with
+      warnings. Unsafe zip entries (incl. empty or `.` path components) are left out. Writes temp +
+      fsync + verify + re-stamp of the source + no-replace rename (replacing only the path the dialog
+      confirmed; Unix fsyncs the folder), removes the temp file on failure, and clears its own stale
+      `.modpack-doctor-pack-<hex>.tmp` files older than 1 h. Nothing is downloaded.
     - Hardening (M7 review): a pack with duplicate entry names (also case-insensitive, except
       folders) is refused whole; every entry is read with local/central header consistency
       enforced (a mismatched entry is skipped with a `ScanIssue`); the end-of-central-directory
