@@ -1,6 +1,6 @@
 [package]
 name = "modpack-doctor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Diagnoses and fixes Minecraft modpack crashes"
 authors = ["KingCreeper531"]
 license = "GPL-3.0-only"

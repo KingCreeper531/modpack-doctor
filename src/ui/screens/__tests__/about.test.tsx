@@ -9,6 +9,7 @@ import { MOCK_INSTANCES } from '../../app/mockData';
 import type { MockOptions } from '../../app/mockIpc';
 import { DISCLAIMER, releaseDate } from '../../components/AboutPlate';
 import { aboutInfo, isRepoUrl, loadAppInfo } from '../AboutDialog';
+import { version as appVersion } from '../../../../package.json';
 
 afterEach(cleanup);
 
@@ -53,12 +54,12 @@ describe('About dialog', () => {
     await renderApp();
     expect(dialog()).toBeNull();
     // The footer shows the version next to the entry point.
-    expect(within(aboutButton().parentElement!).getByText('0.1.0')).toBeTruthy();
+    expect(within(aboutButton().parentElement!).getByText(appVersion)).toBeTruthy();
     await click(aboutButton());
     const d = dialog()!;
     expect(d.getAttribute('aria-modal')).toBe('true');
     expect(within(d).getByText('About')).toBeTruthy();
-    expect(within(d).getByText('Version').closest('tr')!.textContent).toContain('0.1.0');
+    expect(within(d).getByText('Version').closest('tr')!.textContent).toContain(appVersion);
     expect(within(d).getByText(/^Finds why a Minecraft modpack crashes/)).toBeTruthy();
     expect(within(d).getByText('Licence').closest('tr')!.textContent).toContain('GPL-3.0-only');
     expect(within(d).getByRole('button', { name: /github\.com\/KingCreeper531\/modpack-doctor/ })).toBeTruthy();
