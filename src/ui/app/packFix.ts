@@ -8,7 +8,9 @@
  * `chooseVersion`) → the whole list is planned again (`plan_pack_fix`; Rust validates every edit
  * and fetches every version itself) → the panel shows Rust's numbered ops, warnings or refusal →
  * Save fixed copy… (`save_fixed_pack`: Rust opens the native save dialog and writes the copy) →
- * the saved path, or nothing when the dialog was cancelled (the plan stays usable).
+ * the saved path, or nothing when the dialog was cancelled (the plan stays usable). A save that
+ * fails with `notFound` (expired) or `conflict` (the pack changed since planning, or the chosen
+ * file already exists) clears the plan, so the panel offers Plan again.
  *
  * One draft at a time: a draft of another pack must be saved or cancelled first (said next to the
  * button pressed). Edits on the same subject replace each other (a later "Replace" of a file
@@ -199,8 +201,10 @@ export function createPackFixSlice(d: PackFixDeps): Omit<PackFixSlice, 'packFix'
         set({ packFix: r.data ? { ...cur, phase: 'saved', saved: r.data, error: null } : { ...cur, phase: 'review' } });
         return;
       }
-      // An expired plan can only be planned again.
-      set({ packFix: { ...cur, phase: 'review', error: r.error, plan: r.error.kind === 'notFound' ? null : cur.plan } });
+      // An expired plan, or one of a pack that changed since planning (`conflict`; Rust drops it,
+      // and a destination that already exists is a conflict too), can only be planned again.
+      const stale = r.error.kind === 'notFound' || r.error.kind === 'conflict';
+      set({ packFix: { ...cur, phase: 'review', error: r.error, plan: stale ? null : cur.plan } });
     },
 
     cancelPackFix() {

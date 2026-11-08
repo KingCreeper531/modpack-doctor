@@ -124,9 +124,11 @@ fn check_zip64_records<R: Read + Seek>(r: &mut R, from: u64, locator_at: u64) ->
 /// Why a path from the pack (zip entry name or index `files[].path`) is unsafe, or None.
 ///
 /// Refused: empty paths, NUL, backslashes, absolute paths (`/…`), drive letters (`C:…`), `..`
-/// components, and components that `PathGuard::join_relative` rejects (Windows reserved device
-/// names such as `CON` or `nul.txt`, control characters, `<>:"|?*`, trailing dots or spaces).
-/// One trailing `/` (a directory entry) is allowed.
+/// components, empty or `.` components (`a//b`, `./a`, `a/./b`: `PathGuard::join_relative` would
+/// skip them, so the name another tool sees differs from the one compared here), and components
+/// that `PathGuard::join_relative` rejects (Windows reserved device names such as `CON` or
+/// `nul.txt`, control characters, `<>:"|?*`, trailing dots or spaces). One trailing `/` (a
+/// directory entry) is allowed.
 pub fn path_problem(path: &str) -> Option<&'static str> {
     let p = path.strip_suffix('/').unwrap_or(path);
     if p.is_empty() {
@@ -147,6 +149,9 @@ pub fn path_problem(path: &str) -> Option<&'static str> {
     }
     if p.split('/').any(|c| c == "..") {
         return Some("its path contains \"..\"");
+    }
+    if p.split('/').any(|c| c.is_empty() || c == ".") {
+        return Some("its path contains an empty or \".\" folder name");
     }
     if PathGuard::join_relative(std::path::Path::new(""), p).is_err() {
         return Some("its path contains a name Windows reserves (such as CON or NUL) or a character not allowed in file names");

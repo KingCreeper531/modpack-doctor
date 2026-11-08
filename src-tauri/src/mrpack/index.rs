@@ -244,7 +244,7 @@ fn dedupe(
 }
 
 /// One `files[]` entry plus notes about its download links, or why it was skipped.
-fn declared_file(v: &Value) -> Result<(DeclaredFile, Vec<String>), String> {
+pub(crate) fn declared_file(v: &Value) -> Result<(DeclaredFile, Vec<String>), String> {
     let obj = v.as_object().ok_or("it is not a JSON object")?;
     let path = obj.get("path").and_then(Value::as_str).ok_or("it has no path")?;
     if let Some(why) = path_problem(path) {

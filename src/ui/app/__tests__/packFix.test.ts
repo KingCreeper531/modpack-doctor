@@ -73,7 +73,7 @@ describe('the draft', () => {
     expect(store.getState().packFix).toBeNull();
   });
 
-  it('a cancelled dialog keeps the plan; a refused save shows the sentence; an expired plan is planned again', async () => {
+  it('a cancelled dialog keeps the plan; a stale or expired plan is cleared and planned again', async () => {
     const { backend, store, on } = await openPack();
     const s = store.getState();
     const f = on(IF, 'E-MC-RANGE');
@@ -88,7 +88,10 @@ describe('the draft', () => {
     backend.packFix.failNextSave = { kind: 'conflict', message: 'The pack file changed since the fixed copy was planned. Review the edits again, then save.', path: null };
     await s.savePackFix();
     expect(store.getState().packFix!.error?.message).toBe('The pack file changed since the fixed copy was planned. Review the edits again, then save.');
-    expect(store.getState().packFix!.plan).not.toBeNull();
+    // Rust dropped the stale plan: only planning again helps.
+    expect(store.getState().packFix!.plan).toBeNull();
+    await s.planPackFixAgain();
+    expect(store.getState().packFix).toMatchObject({ phase: 'review', error: null });
 
     backend.packFix.expireAll();
     await s.savePackFix();

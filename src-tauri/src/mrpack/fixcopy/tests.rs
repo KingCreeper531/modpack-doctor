@@ -3,6 +3,7 @@
 
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -10,6 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 use zip::write::SimpleFileOptions;
 
+use super::hook::Stage;
 use super::*;
 use crate::fix::ClientRemote;
 use crate::guard::PathGuard;
@@ -31,16 +33,51 @@ fn sodium_sha1() -> String {
     "5".repeat(40)
 }
 
-fn fabric_jar(id: &str) -> Vec<u8> {
-    JarBuilder::new()
-        .fabric_mod_json(&format!(r#"{{"schemaVersion":1,"id":"{id}","version":"1.0.0"}}"#))
-        .class(&format!("com/{id}/Main.class"), 61)
-        .build()
+fn lithium_sha1() -> String {
+    "6".repeat(40)
 }
 
-/// The standard index: three declared files (one with an `env` and an unknown field), unknown
-/// fields at the root and in `dependencies`.
-fn index_json(deps: Value) -> String {
+fn fabric_jar(id: &str) -> Vec<u8> {
+    fabric_jar_json(&format!(r#"{{"schemaVersion":1,"id":"{id}","version":"1.0.0"}}"#), id)
+}
+
+/// A Fabric jar `id` that requires `dep`.
+fn needy_jar(id: &str, dep: &str) -> Vec<u8> {
+    fabric_jar_json(&format!(r#"{{"schemaVersion":1,"id":"{id}","version":"1.0.0","depends":{{"{dep}":"*"}}}}"#), id)
+}
+
+fn fabric_jar_json(json: &str, id: &str) -> Vec<u8> {
+    JarBuilder::new().fabric_mod_json(json).class(&format!("com/{id}/Main.class"), 61).build()
+}
+
+/// The three standard declared files (one with an `env` and an unknown field).
+fn standard_files() -> Value {
+    json!([
+        {
+            "path": "mods/sodium-0.5.8.jar",
+            "hashes": {"sha1": sodium_sha1(), "sha512": "a".repeat(128)},
+            "env": {"client": "required", "server": "unsupported"},
+            "downloads": ["https://cdn.modrinth.com/data/PRoj0001/versions/CURver01/sodium-0.5.8.jar"],
+            "fileSize": 100,
+            "x-entry": 1
+        },
+        {
+            "path": "mods/lithium.jar",
+            "hashes": {"sha1": lithium_sha1(), "sha512": "b".repeat(128)},
+            "downloads": ["https://cdn.modrinth.com/data/x/versions/y/lithium.jar"],
+            "fileSize": 200
+        },
+        {
+            "path": "resourcepacks/pack.zip",
+            "hashes": {"sha1": "7".repeat(40), "sha512": "c".repeat(128)},
+            "downloads": ["https://cdn.modrinth.com/data/z/versions/w/pack.zip"],
+            "fileSize": 300
+        }
+    ])
+}
+
+/// The standard index with `files`; unknown fields at the root and in `dependencies`.
+fn index_with(deps: Value, files: Value) -> String {
     json!({
         "formatVersion": 1,
         "game": "minecraft",
@@ -48,31 +85,14 @@ fn index_json(deps: Value) -> String {
         "name": "My Pack",
         "summary": "kept",
         "x-custom": {"keep": [1, 2, 3]},
-        "files": [
-            {
-                "path": "mods/sodium-0.5.8.jar",
-                "hashes": {"sha1": sodium_sha1(), "sha512": "a".repeat(128)},
-                "env": {"client": "required", "server": "unsupported"},
-                "downloads": ["https://cdn.modrinth.com/data/PRoj0001/versions/CURver01/sodium-0.5.8.jar"],
-                "fileSize": 100,
-                "x-entry": 1
-            },
-            {
-                "path": "mods/lithium.jar",
-                "hashes": {"sha1": "6".repeat(40), "sha512": "b".repeat(128)},
-                "downloads": ["https://cdn.modrinth.com/data/x/versions/y/lithium.jar"],
-                "fileSize": 200
-            },
-            {
-                "path": "resourcepacks/pack.zip",
-                "hashes": {"sha1": "7".repeat(40), "sha512": "c".repeat(128)},
-                "downloads": ["https://cdn.modrinth.com/data/z/versions/w/pack.zip"],
-                "fileSize": 300
-            }
-        ],
+        "files": files,
         "dependencies": deps
     })
     .to_string()
+}
+
+fn index_json(deps: Value) -> String {
+    index_with(deps, standard_files())
 }
 
 fn fabric_deps() -> Value {
@@ -82,13 +102,21 @@ fn fabric_deps() -> Value {
 /// The standard pack: the index, two override jars directly in `mods/`, a config file and a
 /// stray jar outside `mods/`.
 fn pack_bytes(index: &str) -> Vec<u8> {
-    JarBuilder::new()
+    pack_with(index, &[])
+}
+
+/// The standard pack plus `extra` entries.
+fn pack_with(index: &str, extra: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut b = JarBuilder::new()
         .file("modrinth.index.json", index)
         .file("overrides/mods/extra.jar", fabric_jar("extra"))
         .file("overrides/config/extra.toml", "a = 1")
         .file("overrides/stray.jar", fabric_jar("stray"))
-        .file("client-overrides/mods/menu.jar", fabric_jar("menu"))
-        .build()
+        .file("client-overrides/mods/menu.jar", fabric_jar("menu"));
+    for (name, bytes) in extra {
+        b = b.file(name, bytes);
+    }
+    b.build()
 }
 
 struct H {
@@ -109,6 +137,11 @@ impl H {
     }
 
     fn with_pack(bytes: Vec<u8>) -> H {
+        Self::build(bytes, json!([]), json!({"hits": []}))
+    }
+
+    /// `projects` answers every `/v2/projects` request, `search` every `/v2/search`.
+    fn build(bytes: Vec<u8>, projects: Value, search: Value) -> H {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime");
         let server = rt.block_on(MockServer::start());
         let tmp = TempDir::new().expect("tmp");
@@ -130,8 +163,8 @@ impl H {
         st.add_opened_pack(inst).expect("open");
         let remote = ClientRemote::new(svc.client(true).clone(), rt.handle().clone());
         let h = H { rt, server, _tmp: tmp, dir, st, store: PackFixStore::default(), remote, pack, id };
-        // Project titles: none known (the version name is used).
-        h.mount(Mock::given(method("GET")).and(path("/v2/projects")).respond_with(ResponseTemplate::new(200).set_body_json(json!([]))));
+        h.mount(Mock::given(method("GET")).and(path("/v2/projects")).respond_with(ResponseTemplate::new(200).set_body_json(projects)));
+        h.mount(Mock::given(method("GET")).and(path("/v2/search")).respond_with(ResponseTemplate::new(200).set_body_json(search)));
         h
     }
 
@@ -144,14 +177,17 @@ impl H {
         self.mount(Mock::given(method("GET")).and(path(format!("/v2/version/{id}"))).respond_with(ResponseTemplate::new(200).set_body_json(v)));
     }
 
-    /// The pack's `mods/sodium-0.5.8.jar` is version CURRENT of PROJECT.
+    /// The pack's `mods/sodium-0.5.8.jar` is version CURRENT of PROJECT, which requires
+    /// DEP_PROJECT and OTHER_PROJECT; nothing else is on Modrinth.
     fn mount_identify(&self) {
-        let current = version(CURRENT, PROJECT, "0.5.8", "sodium-0.5.8.jar");
-        self.mount(
-            Mock::given(method("POST"))
-                .and(path("/v2/version_files"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({ sodium_sha1(): current }))),
-        );
+        let mut current = version(CURRENT, PROJECT, "0.5.8", "sodium-0.5.8.jar");
+        current["dependencies"] = json!([required(DEP_PROJECT), required(OTHER_PROJECT), {"project_id": "OPTproj1", "dependency_type": "optional"}]);
+        self.mount_identified(json!({ sodium_sha1(): current }));
+    }
+
+    /// Every `version_files` lookup answers `found` (sha1 → version JSON).
+    fn mount_identified(&self, found: Value) {
+        self.mount(Mock::given(method("POST")).and(path("/v2/version_files")).respond_with(ResponseTemplate::new(200).set_body_json(found)));
     }
 
     fn plan(&self, edits: Vec<PackEdit>) -> Result<PackFixPlan> {
@@ -176,14 +212,31 @@ impl H {
 
     /// Names in `out/` (temp files included).
     fn out_names(&self) -> Vec<String> {
-        let mut v: Vec<String> =
-            std::fs::read_dir(self.dir.join("out")).expect("ls").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
-        v.sort();
-        v
+        names_in(&self.dir.join("out"))
+    }
+
+    /// Open another pack (in `Downloads/`) as well; its path.
+    fn open_second_pack(&self) -> PathBuf {
+        let raw = self.dir.join("Downloads").join("Second.mrpack");
+        std::fs::write(&raw, pack_bytes(&index_json(fabric_deps()))).expect("write");
+        let canon = crate::mrpack::check_pack_file(&raw).expect("a pack");
+        self.st.add_opened_pack(crate::mrpack::describe_pack(&canon)).expect("open");
+        canon
     }
 }
 
-/// A Modrinth version JSON (Fabric, 1.20.1) with one primary CDN file.
+fn names_in(dir: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir).expect("ls").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    v.sort();
+    v
+}
+
+fn required(project: &str) -> Value {
+    json!({"project_id": project, "version_id": null, "file_name": null, "dependency_type": "required"})
+}
+
+/// A Modrinth version JSON (Fabric, 1.20.1) with one primary CDN file. CURRENT is published
+/// before every other version.
 fn version(id: &str, project: &str, number: &str, file: &str) -> Value {
     json!({
         "id": id,
@@ -193,7 +246,7 @@ fn version(id: &str, project: &str, number: &str, file: &str) -> Value {
         "game_versions": ["1.20.1"],
         "loaders": ["fabric"],
         "version_type": "release",
-        "date_published": "2024-03-01T00:00:00Z",
+        "date_published": if id == CURRENT { "2024-01-01T00:00:00Z" } else { "2024-03-01T00:00:00Z" },
         "files": [{
             "url": format!("https://cdn.modrinth.com/data/{project}/versions/{id}/{file}"),
             "filename": file,
@@ -204,6 +257,11 @@ fn version(id: &str, project: &str, number: &str, file: &str) -> Value {
         }],
         "dependencies": []
     })
+}
+
+/// A Modrinth project JSON.
+fn project(id: &str, slug: &str, title: &str, client: Option<&str>, server: Option<&str>) -> Value {
+    json!({"id": id, "slug": slug, "title": title, "project_type": "mod", "client_side": client, "server_side": server})
 }
 
 fn remove(path: &str) -> PackEdit {
@@ -235,6 +293,10 @@ fn raw_entries(bytes: &[u8]) -> Vec<(String, zip::CompressionMethod, u32, Vec<u8
         .collect()
 }
 
+fn names_of(bytes: &[u8]) -> Vec<String> {
+    raw_entries(bytes).into_iter().map(|e| e.0).collect()
+}
+
 fn index_of(bytes: &[u8]) -> Value {
     let mut z = ZipArchive::new(Cursor::new(bytes)).expect("zip");
     let mut s = String::new();
@@ -256,6 +318,14 @@ fn msg(e: &Error) -> String {
     e.to_string()
 }
 
+fn warning<'a>(plan: &'a PackFixPlan, needle: &str) -> &'a str {
+    plan.warnings.iter().find(|w| w.contains(needle)).unwrap_or_else(|| panic!("no warning with {needle:?}: {:?}", plan.warnings))
+}
+
+fn set_mtime(path: &Path, t: SystemTime) {
+    OpenOptions::new().write(true).open(path).expect("open").set_modified(t).expect("set mtime");
+}
+
 // ── Writing ──────────────────────────────────────────────────────────────────
 
 #[test]
@@ -270,7 +340,9 @@ fn removals_write_a_valid_copy_and_never_touch_the_pack() {
         (PackFixOpKind::Remove, "mods/lithium.jar"),
         (PackFixOpKind::RemoveOverride, "overrides/mods/extra.jar"),
     ]);
-    assert!(plan.warnings.is_empty(), "{:?}", plan.warnings);
+    // Offline, the kept declared files were not identified: said once.
+    assert_eq!(plan.warnings.len(), 1, "{:?}", plan.warnings);
+    assert!(warning(&plan, "switched off").contains("the 2 files the copy keeps from the pack's index were not identified"), "{:?}", plan.warnings);
     assert_eq!(h.pack_sha1(), before, "planning reads only");
 
     let dest = h.dest("My Pack (fixed).mrpack");
@@ -324,6 +396,9 @@ fn a_replacement_keeps_env_and_points_at_the_cdn() {
     assert!(op.detail.contains("Becomes mods/sodium-0.5.11.jar: Mod 0.5.11 0.5.11 (4 KB) from cdn.modrinth.com"), "{}", op.detail);
     assert!(op.detail.contains("keeps the entry's env (client required, server unsupported)"), "{}", op.detail);
     assert_eq!(op.url.as_deref(), Some("https://cdn.modrinth.com/data/PRoj0001/versions/NEWver01/sodium-0.5.11.jar"));
+    // Online, the files Modrinth does not know are named.
+    let w = warning(&plan, "not identified on Modrinth");
+    assert!(w.starts_with("2 files the copy keeps") && w.contains("mods/lithium.jar, resourcepacks/pack.zip"), "{w}");
 
     let dest = h.dest("copy.mrpack");
     h.save(&plan.id, &dest, false).expect("save");
@@ -340,42 +415,189 @@ fn a_replacement_keeps_env_and_points_at_the_cdn() {
 }
 
 #[test]
-fn an_added_dependency_has_no_env() {
+fn an_added_dependency_takes_the_env_of_the_file_that_requires_it() {
     let h = H::new();
+    h.mount_identify();
     h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
     let plan = h.plan(vec![add(DEP)]).expect("plan");
     assert_eq!(plan.ops[0].kind, PackFixOpKind::Add);
     assert_eq!(plan.ops[0].subject, "mods/cloth-config-11.jar");
-    assert!(plan.ops[0].detail.contains("no env, so launchers install it on both client and server"), "{}", plan.ops[0].detail);
+    let detail = &plan.ops[0].detail;
+    assert!(detail.contains("required by mods/sodium-0.5.8.jar"), "{detail}");
+    assert!(detail.contains("Modrinth does not say which sides"), "{detail}");
+    assert!(detail.contains("client required, server unsupported"), "{detail}");
     let dest = h.dest("copy.mrpack");
     h.save(&plan.id, &dest, false).expect("save");
     let index = index_of(&std::fs::read(&dest).expect("read"));
     let last = index["files"].as_array().expect("files").last().expect("entry").clone();
     assert_eq!(last["path"], "mods/cloth-config-11.jar");
-    assert!(last.get("env").is_none());
+    assert_eq!(last["env"], json!({"client": "required", "server": "unsupported"}));
     let res = scan_copy(&dunce::canonicalize(&dest).expect("canon"));
-    assert!(res.declared.iter().any(|d| d.path == "mods/cloth-config-11.jar" && d.client.is_none() && d.size == 4096));
+    assert!(res.declared.iter().any(|d| d.path == "mods/cloth-config-11.jar" && d.client.as_deref() == Some("required") && d.size == 4096));
+}
+
+#[test]
+fn an_added_dependency_takes_the_env_of_its_modrinth_sides() {
+    let h = H::build(
+        pack_bytes(&index_json(fabric_deps())),
+        json!([project(DEP_PROJECT, "cloth-config", "Cloth Config", Some("optional"), Some("required"))]),
+        json!({"hits": []}),
+    );
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("plan");
+    assert!(plan.ops[0].detail.starts_with("New index entry: Cloth Config 11.0.0 (4 KB)"), "{}", plan.ops[0].detail);
+    assert!(plan.ops[0].detail.contains("its env follows Modrinth's sides for Cloth Config (client optional, server required)"), "{}", plan.ops[0].detail);
+    let dest = h.dest("copy.mrpack");
+    h.save(&plan.id, &dest, false).expect("save");
+    let index = index_of(&std::fs::read(&dest).expect("read"));
+    assert_eq!(index["files"][3]["env"], json!({"client": "optional", "server": "required"}));
+}
+
+#[test]
+fn an_added_dependency_of_a_file_without_env_gets_none() {
+    let h = H::new();
+    let mut lith = version("LITHcur1", "LITHprj1", "0.11", "lithium.jar");
+    lith["dependencies"] = json!([required(DEP_PROJECT)]);
+    h.mount_identified(json!({ lithium_sha1(): lith }));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("plan");
+    assert!(plan.ops[0].detail.contains("required by mods/lithium.jar"), "{}", plan.ops[0].detail);
+    assert!(plan.ops[0].detail.contains("it has no env, so launchers install it on both client and server"), "{}", plan.ops[0].detail);
+    let dest = h.dest("copy.mrpack");
+    h.save(&plan.id, &dest, false).expect("save");
+    let index = index_of(&std::fs::read(&dest).expect("read"));
+    assert!(index["files"][3].get("env").is_none());
+}
+
+/// A zip of `entries` (stored), plus symlink entries.
+fn raw_zip(entries: &[(&str, &[u8])], symlinks: &[(&str, &str)]) -> Vec<u8> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for (name, bytes) in entries {
+        zip.start_file(*name, opts).expect("start");
+        zip.write_all(bytes).expect("write");
+    }
+    for (name, target) in symlinks {
+        zip.add_symlink(*name, *target, opts).expect("symlink");
+    }
+    zip.finish().expect("finish").into_inner()
+}
+
+/// Replace the first occurrence of `from` (the local header's name) by `to` (same length).
+fn patch_first(mut bytes: Vec<u8>, from: &str, to: &str) -> Vec<u8> {
+    assert_eq!(from.len(), to.len());
+    let at = bytes.windows(from.len()).position(|w| w == from.as_bytes()).expect("found");
+    bytes[at..at + to.len()].copy_from_slice(to.as_bytes());
+    bytes
 }
 
 #[test]
 fn unsafe_entries_are_left_out_with_a_warning() {
-    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    let opts = SimpleFileOptions::default();
-    zip.start_file(INDEX_NAME, opts).expect("start");
-    zip.write_all(index_json(fabric_deps()).as_bytes()).expect("write");
-    zip.start_file("../evil.txt", opts).expect("start");
-    zip.write_all(b"evil").expect("write");
-    zip.start_file("overrides/config/ok.toml", opts).expect("start");
-    zip.write_all(b"a = 1").expect("write");
-    let bytes = zip.finish().expect("finish").into_inner();
+    let index = index_json(fabric_deps());
+    let bytes = raw_zip(
+        &[
+            (INDEX_NAME, index.as_bytes()),
+            ("../evil.txt", b"evil"),
+            ("overrides/config/n\0ul.toml", b"nul"),
+            ("./overrides/config/dot.toml", b"dot"),
+            ("overrides//config/double.toml", b"double"),
+            ("overrides/config/aaa.toml", b"mismatch"),
+            ("overrides/config/ok.toml", b"a = 1"),
+        ],
+        &[("overrides/config/link.toml", "../../../etc/passwd")],
+    );
+    // Only the local header of `aaa.toml` says `zzz.toml`.
+    let bytes = patch_first(bytes, "overrides/config/aaa.toml", "overrides/config/zzz.toml");
     let h = H::with_pack(bytes);
     let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
-    assert_eq!(plan.warnings.len(), 1);
-    assert!(plan.warnings[0].contains("../evil.txt"), "{}", plan.warnings[0]);
+    let w = warning(&plan, "unsafe entries the scan skipped are left out of the copy");
+    assert!(w.starts_with("6 unsafe entries"), "{w}");
+    for needle in ["../evil.txt", "NUL", "./overrides/config/dot.toml", "overrides//config/double.toml", "local header", "and 1 more"] {
+        assert!(w.contains(needle), "{needle}: {w}");
+    }
     let dest = h.dest("copy.mrpack");
     h.save(&plan.id, &dest, false).expect("save");
-    let names: Vec<String> = raw_entries(&std::fs::read(&dest).expect("read")).into_iter().map(|e| e.0).collect();
-    assert_eq!(names, vec![INDEX_NAME.to_string(), "overrides/config/ok.toml".to_string()]);
+    assert_eq!(names_of(&std::fs::read(&dest).expect("read")), vec![INDEX_NAME.to_string(), "overrides/config/ok.toml".to_string()]);
+}
+
+#[test]
+fn index_entries_the_scanner_rejects_are_left_out_and_odd_links_are_named() {
+    let hash = |c: char| json!({"sha1": c.to_string().repeat(40), "sha512": c.to_string().repeat(128)});
+    let files = json!([
+        {"path": "../../config/evil.jar", "hashes": hash('1'), "downloads": ["https://evil.example/x"]},
+        {"path": "mods/", "hashes": hash('2'), "downloads": []},
+        {"path": "mods/badhash.jar", "hashes": {"sha1": "xyz", "sha512": "b".repeat(128)}, "downloads": []},
+        "not an object",
+        {"path": "mods/dup.jar", "hashes": hash('3'), "downloads": ["https://evil.example/old.jar"]},
+        {"path": "mods/dup.jar", "hashes": hash('4'), "downloads": ["https://cdn.modrinth.com/data/a/versions/b/dup.jar"]},
+        {"path": "mods/./dot.jar", "hashes": hash('5'), "downloads": []},
+        {"path": "mods/lithium.jar", "hashes": hash('6'), "downloads": ["https://cdn.modrinth.com/data/x/versions/y/lithium.jar"]},
+        {"path": "mods/github.jar", "hashes": hash('7'), "downloads": ["https://github.com/a/b/releases/download/1/github.jar"]},
+        {"path": "mods/elsewhere.jar", "hashes": hash('8'), "downloads": ["https://evil.example/e.jar", "https://cdn.modrinth.com/data/c/versions/d/e.jar"]},
+        {"path": "mods/notalist.jar", "hashes": hash('9'), "downloads": "https://cdn.modrinth.com/x.jar"}
+    ]);
+    let h = H::with_pack(pack_bytes(&index_with(fabric_deps(), files)));
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    let w = warning(&plan, "that Modpack Doctor's scan skips");
+    assert!(w.starts_with("6 entries of the pack's modrinth.index.json"), "{w}");
+    for needle in [
+        "files[0] (\"../../config/evil.jar\" is unsafe",
+        "files[1] (\"mods/\" is a folder, not a file)",
+        "files[2] (\"mods/badhash.jar\" has no valid sha1 hash)",
+        "files[3] (it is not a JSON object)",
+        "files[4] (\"mods/dup.jar\" is listed again as files[5]",
+        "and 1 more",
+    ] {
+        assert!(w.contains(needle), "{needle}: {w}");
+    }
+    let w = warning(&plan, "outside Modrinth's allowlist");
+    assert!(w.starts_with("2 files the copy keeps have download links outside Modrinth's allowlist (cdn.modrinth.com, github.com"), "{w}");
+    assert!(w.contains("mods/elsewhere.jar (evil.example)") && w.contains("mods/notalist.jar (links that are not a list)"), "{w}");
+    assert!(!w.contains("github.jar"), "{w}");
+
+    let dest = h.dest("copy.mrpack");
+    h.save(&plan.id, &dest, false).expect("save");
+    let index = index_of(&std::fs::read(&dest).expect("read"));
+    assert_eq!(paths_of(&index), vec!["mods/dup.jar", "mods/github.jar", "mods/elsewhere.jar", "mods/notalist.jar"]);
+    assert_eq!(index["files"][0]["hashes"]["sha1"], "4".repeat(40), "the entry installers keep");
+    assert_eq!(index["files"][2]["downloads"][0], "https://evil.example/e.jar", "kept, not dropped");
+    let res = scan_copy(&dunce::canonicalize(&dest).expect("canon"));
+    assert!(res.unverified_downloads.is_empty(), "{:?}", res.unverified_downloads);
+}
+
+#[test]
+fn duplicate_and_case_different_paths() {
+    let hash = |c: char| json!({"sha1": c.to_string().repeat(40), "sha512": c.to_string().repeat(128)});
+    let files = json!([
+        {"path": "mods/dup.jar", "hashes": hash('3'), "downloads": []},
+        {"path": "mods/Case.jar", "hashes": hash('4'), "downloads": []},
+        {"path": "mods/dup.jar", "hashes": hash('5'), "downloads": []},
+        {"path": "mods/case.jar", "hashes": hash('6'), "downloads": []},
+        {"path": "mods/sodium-0.5.8.jar", "hashes": {"sha1": sodium_sha1(), "sha512": "a".repeat(128)}, "downloads": []}
+    ]);
+    let h = H::with_pack(pack_bytes(&index_with(fabric_deps(), files)));
+    // Removing a listed-twice path leaves both entries out; the case twin stays (named).
+    let plan = h.plan_offline(vec![remove("mods/dup.jar")]).expect("plan");
+    assert!(warning(&plan, "scan skips").contains("files[0] (\"mods/dup.jar\" is listed again as files[2]"), "{:?}", plan.warnings);
+    assert!(warning(&plan, "differ only in letter case").contains("mods/Case.jar and mods/case.jar"), "{:?}", plan.warnings);
+    let dest = h.dest("a.mrpack");
+    h.save(&plan.id, &dest, false).expect("save");
+    assert_eq!(paths_of(&index_of(&std::fs::read(&dest).expect("read"))), vec!["mods/Case.jar", "mods/case.jar", "mods/sodium-0.5.8.jar"]);
+
+    // Removing one case twin removes exactly that path; no letter-case note is left.
+    let plan = h.plan_offline(vec![remove("mods/case.jar")]).expect("plan");
+    assert!(!plan.warnings.iter().any(|w| w.contains("letter case")), "{:?}", plan.warnings);
+    let dest = h.dest("b.mrpack");
+    h.save(&plan.id, &dest, false).expect("save");
+    assert_eq!(paths_of(&index_of(&std::fs::read(&dest).expect("read"))), vec!["mods/Case.jar", "mods/dup.jar", "mods/sodium-0.5.8.jar"]);
+    assert!(h.plan_offline(vec![remove("mods/CASE.jar")]).is_err(), "paths are matched exactly");
+
+    // A replacement whose file name lands on a case twin is refused.
+    h.mount_identify();
+    h.mount_version(version("CASEver1", PROJECT, "0.6", "CASE.jar"));
+    let e = h.plan(vec![replace("mods/sodium-0.5.8.jar", "CASEver1")]).expect_err("collision");
+    assert!(msg(&e).contains("more than once"), "{e}");
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -443,11 +665,19 @@ fn modrinth_versions_are_checked() {
     second["filename"] = json!("sodium-0.5.18-extra.jar");
     two["files"].as_array_mut().expect("files").push(second);
     h.mount_version(two);
+    let mut old = version("OLDver01", PROJECT, "0.5.7", "sodium-0.5.7.jar");
+    old["date_published"] = json!("2023-06-01T00:00:00Z");
+    h.mount_version(old);
+    let mut undated = version("NODate01", PROJECT, "0.5.19", "sodium-0.5.19.jar");
+    undated["date_published"] = Value::Null;
+    h.mount_version(undated);
 
     let sodium = "mods/sodium-0.5.8.jar";
     let cases = [
         (replace(sodium, "OTHver01"), "belongs to a different Modrinth project"),
         (replace(sodium, CURRENT), "already has version 0.5.8"),
+        (replace(sodium, "OLDver01"), "version 0.5.7 was not published after the pack's version 0.5.8"),
+        (replace(sodium, "NODate01"), "was not published after"),
         (replace(sodium, "HTTPver1"), "not a https://cdn.modrinth.com/ link"),
         (replace(sodium, "OFFver01"), "primary file for this version is not a verifiable CDN download"),
         (replace(sodium, "NOHash01"), "primary file for this version is not a verifiable CDN download"),
@@ -468,10 +698,12 @@ fn modrinth_versions_are_checked() {
 #[test]
 fn quilt_packs_accept_fabric_versions_and_unknown_loaders_refuse() {
     let h = H::with_pack(pack_bytes(&index_json(json!({"minecraft": "1.20.1", "quilt-loader": "0.26.0"}))));
+    h.mount_identify();
     h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
     h.plan(vec![add(DEP)]).expect("Quilt loads Fabric mods");
 
     let h = H::with_pack(pack_bytes(&index_json(json!({"minecraft": "1.20.1"}))));
+    h.mount_identify();
     h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
     let e = h.plan(vec![add(DEP)]).expect_err("no loader");
     assert!(msg(&e).contains("does not name both its Minecraft version and its mod loader"), "{e}");
@@ -480,6 +712,7 @@ fn quilt_packs_accept_fabric_versions_and_unknown_loaders_refuse() {
 #[test]
 fn path_collisions_are_refused() {
     let h = H::new();
+    h.mount_identify();
     h.mount_version(version("LITHver0", DEP_PROJECT, "1", "Lithium.jar"));
     h.mount_version(version("EXTRAv01", DEP_PROJECT, "1", "extra.jar"));
     h.mount_version(version("SAMEv001", DEP_PROJECT, "1", "same.jar"));
@@ -496,10 +729,128 @@ fn path_collisions_are_refused() {
     assert!(msg(&e).contains("more than once"), "{e}");
     // A file the pack already lists by hash.
     let mut dup = version("DUPhash1", DEP_PROJECT, "1", "renamed.jar");
-    dup["files"][0]["hashes"]["sha1"] = json!("6".repeat(40));
+    dup["files"][0]["hashes"]["sha1"] = json!(lithium_sha1());
     h.mount_version(dup);
     let e = h.plan(vec![add("DUPhash1")]).expect_err("already listed");
     assert!(msg(&e).contains("already lists this exact file as mods/lithium.jar"), "{e}");
+}
+
+#[test]
+fn an_addition_must_be_required_by_a_file_the_copy_keeps() {
+    // Nothing in the pack requires it.
+    let h = H::new();
+    h.mount_identified(json!({ sodium_sha1(): version(CURRENT, PROJECT, "0.5.8", "sodium-0.5.8.jar") }));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let e = h.plan(vec![add(DEP)]).expect_err("not required");
+    assert!(matches!(e, Error::Invalid(_)), "{e}");
+    assert!(msg(&e).contains("Add Mod 11.0.0 11.0.0: no file the copy keeps requires Mod 11.0.0"), "{e}");
+
+    // The only file that requires it is removed by the same plan (in either order).
+    let h = H::new();
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    for edits in [vec![remove("mods/sodium-0.5.8.jar"), add(DEP)], vec![add(DEP), remove("mods/sodium-0.5.8.jar")]] {
+        let e = h.plan(edits).expect_err("requirer removed");
+        assert!(msg(&e).contains("no file the copy keeps requires"), "{e}");
+    }
+    // A dependency that names only a version counts once that version's project is known.
+    let h = H::new();
+    let mut current = version(CURRENT, PROJECT, "0.5.8", "sodium-0.5.8.jar");
+    current["dependencies"] = json!([{"project_id": null, "version_id": "DEPold01", "dependency_type": "required"}]);
+    h.mount_identified(json!({ sodium_sha1(): current }));
+    h.mount_version(version("DEPold01", DEP_PROJECT, "10.0.0", "cloth-config-10.jar"));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("required through a version");
+    assert!(plan.ops[0].detail.contains("required by mods/sodium-0.5.8.jar"), "{}", plan.ops[0].detail);
+}
+
+#[test]
+fn an_override_jar_can_require_an_addition() {
+    // By slug: the side folder gives the env when Modrinth does not know the sides.
+    let pack = pack_with(&index_json(fabric_deps()), &[("client-overrides/mods/needy.jar", needy_jar("needy", "cloth_config"))]);
+    let h = H::build(pack, json!([project(DEP_PROJECT, "cloth-config", "Cloth Config", None, None)]), json!({"hits": []}));
+    h.mount_identified(json!({}));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("plan");
+    let d = &plan.ops[0].detail;
+    assert!(d.contains("required by client-overrides/mods/needy.jar") && d.contains("client required, server unsupported"), "{d}");
+    // Removing that jar removes the reason.
+    let e = h.plan(vec![remove_override("client-overrides/mods/needy.jar"), add(DEP)]).expect_err("no requirer");
+    assert!(msg(&e).contains("no file the copy keeps requires Cloth Config"), "{e}");
+
+    // By `resolve_mod_id` (the search finds the project for the mod id).
+    let pack = pack_with(&index_json(fabric_deps()), &[("overrides/mods/needy.jar", needy_jar("needy", "clothy"))]);
+    let hit = json!({"project_id": DEP_PROJECT, "slug": "clothy", "title": "Clothy", "project_type": "mod"});
+    let h = H::build(pack, json!([]), json!({"hits": [hit]}));
+    h.mount_identified(json!({}));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("plan");
+    assert!(plan.ops[0].detail.contains("required by overrides/mods/needy.jar"), "{}", plan.ops[0].detail);
+    assert!(plan.ops[0].detail.contains("it has no env"), "{}", plan.ops[0].detail);
+}
+
+#[test]
+fn an_addition_the_copy_already_has_is_refused() {
+    // A declared file of the same project.
+    let h = H::new();
+    let mut current = version(CURRENT, PROJECT, "0.5.8", "sodium-0.5.8.jar");
+    current["dependencies"] = json!([required(DEP_PROJECT)]);
+    h.mount_identified(json!({ sodium_sha1(): current, lithium_sha1(): version("LITHcur1", DEP_PROJECT, "10.0.0", "lithium.jar") }));
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let e = h.plan(vec![add(DEP)]).expect_err("already declared");
+    assert!(msg(&e).contains("the pack already has Mod 11.0.0 as mods/lithium.jar"), "{e}");
+    h.plan(vec![remove("mods/lithium.jar"), add(DEP)]).expect("fine once that file is removed");
+    // Two versions of one project.
+    let mut dep2 = version("DEPver02", DEP_PROJECT, "11.0.1", "cloth-config-11.0.1.jar");
+    dep2["files"][0]["hashes"]["sha1"] = json!("3".repeat(40));
+    h.mount_version(dep2);
+    let e = h.plan(vec![remove("mods/lithium.jar"), add(DEP), add("DEPver02")]).expect_err("twice");
+    assert!(msg(&e).contains("another edit already adds"), "{e}");
+
+    // An override jar whose mod id is the project's slug.
+    let pack = pack_with(&index_json(fabric_deps()), &[("overrides/mods/cc.jar", fabric_jar("cloth_config"))]);
+    let h = H::build(pack, json!([project(DEP_PROJECT, "cloth-config", "Cloth Config", Some("required"), Some("required"))]), json!({"hits": []}));
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let e = h.plan(vec![add(DEP)]).expect_err("override provides it");
+    assert!(msg(&e).contains("the pack's override jar overrides/mods/cc.jar already provides Cloth Config (mod id cloth_config)"), "{e}");
+
+    // An override jar whose mod id resolves to the project.
+    let hit = json!({"project_id": DEP_PROJECT, "slug": "extra", "title": "Extra", "project_type": "mod"});
+    let h = H::build(pack_bytes(&index_json(fabric_deps())), json!([]), json!({"hits": [hit]}));
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let e = h.plan(vec![add(DEP)]).expect_err("override resolves to it");
+    assert!(msg(&e).contains("override jar overrides/mods/extra.jar already provides"), "{e}");
+}
+
+#[test]
+fn an_addition_warns_when_a_duplicate_cannot_be_ruled_out() {
+    let files = json!([
+        {"path": "mods/sodium-0.5.8.jar", "hashes": {"sha1": sodium_sha1(), "sha512": "a".repeat(128)}, "downloads": []},
+        {"path": "mods/unknown.jar", "hashes": {"sha1": "9".repeat(40), "sha512": "9".repeat(128)}, "downloads": []}
+    ]);
+    let h = H::with_pack(pack_bytes(&index_with(fabric_deps(), files)));
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let plan = h.plan(vec![add(DEP)]).expect("plan");
+    let w = warning(&plan, "cannot rule out");
+    assert!(w.contains("1 declared jar that Modrinth does not identify (mods/unknown.jar)"), "{w}");
+}
+
+#[test]
+fn the_copy_index_never_lists_more_than_the_scanner_reads() {
+    let mut files = vec![json!({"path": "mods/sodium-0.5.8.jar", "hashes": {"sha1": sodium_sha1(), "sha512": "a".repeat(128)}, "downloads": []})];
+    for i in 1..MAX_INDEX_FILES {
+        files.push(json!({"path": format!("config/f{i}.txt"), "hashes": {"sha1": lithium_sha1(), "sha512": "b".repeat(128)}}));
+    }
+    let h = H::with_pack(pack_bytes(&index_with(fabric_deps(), Value::Array(files))));
+    h.mount_identify();
+    h.mount_version(version(DEP, DEP_PROJECT, "11.0.0", "cloth-config-11.jar"));
+    let e = h.plan(vec![add(DEP)]).expect_err("over the cap");
+    assert!(msg(&e).contains(&format!("would list {} files, more than the {MAX_INDEX_FILES}", MAX_INDEX_FILES + 1)), "{e}");
+    // Exactly at the cap is fine.
+    h.plan(vec![remove("config/f1.txt"), add(DEP)]).expect("at the cap");
 }
 
 // ── Plans ────────────────────────────────────────────────────────────────────
@@ -525,6 +876,46 @@ fn plans_expire_are_single_use_and_one_per_pack() {
         assert!(h.save(bad, &h.dest("x.mrpack"), false).is_err());
     }
     assert!(h.out_names().is_empty());
+}
+
+#[test]
+fn a_failed_save_never_puts_back_a_plan_a_newer_one_replaced() {
+    let h = H::new();
+    let a = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan a");
+    let (st, store, id) = (h.st.clone(), h.store.clone(), h.id.clone());
+    let newer = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let seen = newer.clone();
+    hook::set(move |stage, _, _| {
+        if stage == Stage::BeforeMove {
+            let b = plan(&st, &store, None, &id, &[remove("resourcepacks/pack.zip")]).expect("plan b");
+            *seen.borrow_mut() = Some(b.id);
+            return Err(std::io::Error::other("injected (test)"));
+        }
+        Ok(())
+    });
+    let e = h.save(&a.id, &h.dest("copy.mrpack"), false).expect_err("injected");
+    hook::clear();
+    assert!(msg(&e).contains("injected"), "{e}");
+    let b = newer.borrow().clone().expect("plan b made");
+    assert!(!h.store.contains(&a.id), "the older plan stays gone");
+    assert!(h.store.contains(&b));
+    assert!(h.out_names().is_empty());
+}
+
+#[test]
+fn concurrent_saves_of_one_plan_write_one_copy() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    let (one, two) = (h.dest("one.mrpack"), h.dest("two.mrpack"));
+    let (st, store) = (&h.st, &h.store);
+    let results: Vec<Result<SavedPack>> = std::thread::scope(|s| {
+        let a = s.spawn(|| save(st, store, &plan.id, &one, false));
+        let b = s.spawn(|| save(st, store, &plan.id, &two, false));
+        vec![a.join().expect("thread"), b.join().expect("thread")]
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{results:?}");
+    assert!(results.iter().any(|r| matches!(r, Err(Error::NotFound { .. }))), "{results:?}");
+    assert_eq!(h.out_names().len(), 1, "one copy, no temp left: {:?}", h.out_names());
 }
 
 // ── Destinations ─────────────────────────────────────────────────────────────
@@ -553,6 +944,95 @@ fn the_opened_pack_is_never_the_destination() {
 }
 
 #[test]
+fn an_opened_pack_under_another_name_is_never_replaced() {
+    let h = H::new();
+    let before = h.pack_sha1();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+
+    // A hard link to the pack (another path, the same file).
+    let link = h.dest("alias.mrpack");
+    std::fs::hard_link(&h.pack, &link).expect("hard link");
+    let e = h.save(&plan.id, &link, true).expect_err("hard link");
+    assert!(msg(&e).contains("is an opened pack"), "{e}");
+
+    // A folder alias of the pack's folder.
+    let alias_dir = h.dir.join("alias-dir");
+    let made = {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&alias_dir)
+                .arg(h.dir.join("Downloads"))
+                .output()
+                .is_ok_and(|o| o.status.success())
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(h.dir.join("Downloads"), &alias_dir).is_ok()
+        }
+    };
+    if made {
+        let e = h.save(&plan.id, &alias_dir.join("My Pack.mrpack"), true).expect_err("folder alias");
+        assert!(msg(&e).contains("is an opened pack"), "{e}");
+    } else {
+        eprintln!("skipped the folder-alias case: a junction or symlink could not be made here");
+    }
+
+    // The administrative share of the pack's drive (Windows; only where it is reachable).
+    #[cfg(windows)]
+    {
+        let s = h.pack.display().to_string();
+        if let Some(rest) = s.strip_prefix("C:\\") {
+            let unc = PathBuf::from(format!("\\\\localhost\\C$\\{rest}"));
+            if std::fs::metadata(&unc).is_ok() {
+                let e = h.save(&plan.id, &unc, true).expect_err("network-share alias");
+                assert!(msg(&e).contains("is an opened pack"), "{e}");
+            } else {
+                eprintln!("skipped the network-share case: \\\\localhost\\C$ is not reachable here");
+            }
+        }
+    }
+
+    // Another opened pack, by its path and through a hard link.
+    let second = h.open_second_pack();
+    let second_sha1 = sha1_of(&std::fs::read(&second).expect("read"));
+    let e = h.save(&plan.id, &second, true).expect_err("second pack");
+    assert!(msg(&e).contains("is an opened pack"), "{e}");
+    let link2 = h.dest("alias2.mrpack");
+    std::fs::hard_link(&second, &link2).expect("hard link");
+    let e = h.save(&plan.id, &link2, true).expect_err("second pack, hard link");
+    assert!(msg(&e).contains("is an opened pack"), "{e}");
+
+    assert_eq!(h.pack_sha1(), before);
+    assert_eq!(sha1_of(&std::fs::read(&second).expect("read")), second_sha1);
+    assert!(h.store.contains(&plan.id));
+    assert_eq!(h.out_names(), vec!["alias.mrpack".to_string(), "alias2.mrpack".to_string()]);
+}
+
+#[test]
+fn a_hard_link_that_appears_right_before_the_replacing_rename_is_refused() {
+    let h = H::new();
+    let before = h.pack_sha1();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    let dest = h.dest("copy.mrpack");
+    std::fs::write(&dest, b"mine").expect("write");
+    let pack = h.pack.clone();
+    hook::set(move |stage, _, dest| {
+        if stage == Stage::BeforeMove {
+            std::fs::remove_file(dest)?;
+            std::fs::hard_link(&pack, dest)?;
+        }
+        Ok(())
+    });
+    let e = h.save(&plan.id, &dest, true).expect_err("swapped for the pack");
+    hook::clear();
+    assert!(msg(&e).contains("is an opened pack"), "{e}");
+    assert_eq!(h.pack_sha1(), before);
+    assert_eq!(h.out_names(), vec!["copy.mrpack".to_string()], "temp removed");
+}
+
+#[test]
 fn existing_files_are_never_replaced_unconfirmed_and_temps_are_cleaned() {
     let h = H::new();
     let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
@@ -562,12 +1042,16 @@ fn existing_files_are_never_replaced_unconfirmed_and_temps_are_cleaned() {
     assert!(matches!(e, Error::Conflict(_)), "{e}");
     assert_eq!(std::fs::read(&dest).expect("read"), b"mine");
     assert_eq!(h.out_names(), vec!["copy.mrpack".to_string()]);
+    assert!(h.store.contains(&plan.id), "another name may still be chosen");
 
     // A failure right before the move: the temp file goes, the plan stays.
     let fresh = h.dest("fresh.mrpack");
-    hook::set(|temp, _| {
-        assert!(temp.exists());
-        Err(std::io::Error::other("injected (test)"))
+    hook::set(|stage, temp, _| {
+        if stage == Stage::BeforeMove {
+            assert!(temp.exists());
+            return Err(std::io::Error::other("injected (test)"));
+        }
+        Ok(())
     });
     let e = h.save(&plan.id, &fresh, false).expect_err("injected");
     hook::clear();
@@ -575,7 +1059,7 @@ fn existing_files_are_never_replaced_unconfirmed_and_temps_are_cleaned() {
     assert_eq!(h.out_names(), vec!["copy.mrpack".to_string()], "temp removed, nothing at the destination");
 
     // Something appears at the destination meanwhile: the no-replace rename refuses it.
-    hook::set(|_, dest| std::fs::write(dest, b"racer"));
+    hook::set(|stage, _, dest| if stage == Stage::BeforeMove { std::fs::write(dest, b"racer") } else { Ok(()) });
     let e = h.save(&plan.id, &fresh, false).expect_err("race");
     hook::clear();
     assert!(matches!(e, Error::Conflict(_)), "{e}");
@@ -590,7 +1074,52 @@ fn existing_files_are_never_replaced_unconfirmed_and_temps_are_cleaned() {
 }
 
 #[test]
-fn a_pack_changed_since_planning_is_refused() {
+fn a_name_that_needed_the_extension_never_replaces_a_file() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    // The dialog confirmed `copy`; `copy.mrpack` is another file the user never confirmed.
+    let existing = h.dest("copy.mrpack");
+    std::fs::write(&existing, b"mine").expect("write");
+    let (dest, may_replace) = destination(h.dest("copy")).expect("dest");
+    assert_eq!((dest.clone(), may_replace), (existing.clone(), false));
+    let e = h.save(&plan.id, &dest, may_replace).expect_err("not confirmed");
+    assert!(matches!(e, Error::Conflict(_)), "{e}");
+    assert_eq!(std::fs::read(&existing).expect("read"), b"mine");
+    // A confirmed `.mrpack` name (any case) may be replaced.
+    assert_eq!(destination(h.dest("Copy.MRPACK")).expect("dest"), (h.dest("Copy.MRPACK"), true));
+    assert!(destination(h.dest("x.txt:evil")).is_err());
+}
+
+#[test]
+fn stale_temp_files_are_removed_and_nothing_else() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    let old = h.dest(".modpack-doctor-pack-0123456789abcdef.tmp");
+    let young = h.dest(".modpack-doctor-pack-fedcba9876543210.tmp");
+    let other = h.dest(".modpack-doctor-pack-notmine.tmp");
+    let old_dir = h.dest(".modpack-doctor-pack-aaaaaaaaaaaaaaaa.tmp");
+    for p in [&old, &young, &other] {
+        std::fs::write(p, b"x").expect("write");
+    }
+    std::fs::create_dir(&old_dir).expect("mkdir");
+    let two_hours_ago = SystemTime::now() - Duration::from_secs(2 * 3600);
+    set_mtime(&old, two_hours_ago);
+    set_mtime(&other, two_hours_ago);
+    h.save(&plan.id, &h.dest("copy.mrpack"), false).expect("save");
+    assert_eq!(h.out_names(), vec![
+        ".modpack-doctor-pack-aaaaaaaaaaaaaaaa.tmp".to_string(),
+        ".modpack-doctor-pack-fedcba9876543210.tmp".to_string(),
+        ".modpack-doctor-pack-notmine.tmp".to_string(),
+        "copy.mrpack".to_string(),
+    ]);
+    assert!(is_temp_name(".modpack-doctor-pack-0123456789abcdef.tmp"));
+    for bad in [".modpack-doctor-pack-0123456789ABCDEF.tmp", ".modpack-doctor-pack-0123.tmp", "x.modpack-doctor-pack-0123456789abcdef.tmp", ".modpack-doctor-pack-0123456789abcdef.tmp.mrpack"] {
+        assert!(!is_temp_name(bad), "{bad}");
+    }
+}
+
+#[test]
+fn a_pack_changed_since_planning_is_refused_and_the_plan_dropped() {
     let h = H::new();
     let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
     // The temp-dir pack is replaced by another valid pack.
@@ -600,6 +1129,50 @@ fn a_pack_changed_since_planning_is_refused() {
     assert!(matches!(e, Error::Conflict(_)), "{e}");
     assert!(msg(&e).contains("changed since the fixed copy was planned"), "{e}");
     assert!(h.out_names().is_empty());
+    assert!(!h.store.contains(&plan.id), "a stale plan is dropped");
+}
+
+#[test]
+fn a_pack_whose_mtime_alone_changed_is_refused() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    set_mtime(&h.pack, SystemTime::now() + Duration::from_secs(3600));
+    let e = h.save(&plan.id, &h.dest("copy.mrpack"), false).expect_err("touched");
+    assert!(msg(&e).contains("changed since the fixed copy was planned"), "{e}");
+    assert!(!h.store.contains(&plan.id));
+    assert!(h.out_names().is_empty());
+}
+
+#[test]
+fn a_pack_that_changes_while_it_is_copied_is_refused() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    let pack = h.pack.clone();
+    hook::set(move |stage, _, _| {
+        if stage == Stage::Written {
+            OpenOptions::new().write(true).open(&pack)?.set_modified(SystemTime::now() + Duration::from_secs(60))?;
+        }
+        Ok(())
+    });
+    let e = h.save(&plan.id, &h.dest("copy.mrpack"), false).expect_err("changed meanwhile");
+    hook::clear();
+    assert!(matches!(e, Error::Conflict(_)), "{e}");
+    assert!(h.out_names().is_empty(), "temp removed: {:?}", h.out_names());
+    assert!(!h.store.contains(&plan.id));
+}
+
+#[test]
+fn a_copy_that_does_not_read_back_is_never_moved_into_place() {
+    let h = H::new();
+    let plan = h.plan_offline(vec![remove("mods/lithium.jar")]).expect("plan");
+    hook::set(|stage, temp, _| if stage == Stage::Written { std::fs::write(temp, b"not a zip") } else { Ok(()) });
+    let e = h.save(&plan.id, &h.dest("copy.mrpack"), false).expect_err("bad copy");
+    hook::clear();
+    assert!(matches!(e, Error::Internal(_)), "{e}");
+    assert!(msg(&e).contains("did not read back correctly"), "{e}");
+    assert!(h.out_names().is_empty(), "temp removed: {:?}", h.out_names());
+    assert!(h.store.contains(&plan.id), "the plan may be tried again");
+    h.save(&plan.id, &h.dest("copy.mrpack"), false).expect("then it works");
 }
 
 #[test]
@@ -610,6 +1183,70 @@ fn a_closed_pack_cannot_be_planned_or_saved() {
     assert!(h.save(&plan.id, &h.dest("copy.mrpack"), false).is_err(), "the guard no longer allows reading it");
     assert!(h.plan_offline(vec![remove("mods/lithium.jar")]).is_err());
     assert!(h.out_names().is_empty());
+}
+
+// ── Wording ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn refusals_are_copy_sentences() {
+    // Two entries that are one file on Windows: the scan refuses the whole pack.
+    let index = index_json(fabric_deps());
+    let h = H::with_pack(raw_zip(&[(INDEX_NAME, index.as_bytes()), ("overrides/mods/A.jar", b"a"), ("overrides/mods/a.jar", b"b")], &[]));
+    let e = h.plan_offline(vec![remove("mods/lithium.jar")]).expect_err("refused");
+    let m = msg(&e);
+    assert!(m.contains("the pack cannot be copied safely because the pack has entries named"), "{m}");
+    assert!(!m.contains("scanned") && !m.contains(": The"), "{m}");
+    // An index of another format version.
+    let bad = index.replace("\"formatVersion\":1", "\"formatVersion\":2");
+    let h = H::with_pack(pack_bytes(&bad));
+    let m = msg(&h.plan_offline(vec![remove("mods/lithium.jar")]).expect_err("refused"));
+    assert!(m.contains("the pack cannot be copied because the pack's modrinth.index.json has formatVersion 2; only formatVersion 1 is supported."), "{m}");
+    assert!(!m.contains("could not be listed"), "{m}");
+
+    assert_eq!(as_reason("The pack has 3 entries, more than the 2 Modpack Doctor reads, so it was not scanned (it may be a zip bomb)."), "the pack has 3 entries, more than the 2 Modpack Doctor reads (it may be a zip bomb)");
+    assert_eq!(as_reason("ZIP64 thing."), "ZIP64 thing");
+    // Write failures name the folder (disk full, no permission, …), not "please report this".
+    let dir = Path::new("out");
+    let SaveError::Keep(e) = write_error(dir, Path::new("p.mrpack"), ZipError::Io(std::io::Error::other("disk full"))) else { panic!("kept") };
+    assert!(matches!(e, Error::Io { .. }), "{e}");
+    let SaveError::Keep(e) = write_error(dir, dir, ZipError::Io(std::io::ErrorKind::PermissionDenied.into())) else { panic!("kept") };
+    assert!(matches!(e, Error::Permission { .. }), "{e}");
+}
+
+#[test]
+fn download_links_follow_the_core_allowlist_rule() {
+    for ok in [
+        "https://cdn.modrinth.com/data/a/versions/b/x.jar",
+        "HTTPS://cdn.modrinth.com/x",
+        "https://CDN.MODRINTH.COM:443/x",
+        "https://github.com/a/b/releases/download/1/x.jar",
+        "https://raw.githubusercontent.com/a/b/x.jar",
+        "https://gitlab.com/a/b/-/x.jar",
+        "https://gitlab.com?x",
+    ] {
+        assert!(download_allowed(ok), "{ok}");
+    }
+    for bad in [
+        "",
+        "http://cdn.modrinth.com/x",
+        "https://evil.example/x",
+        "https://cdn.modrinth.com@evil.example/x",
+        "https://cdn.modrinth.com:8443/x",
+        "https://evil.github.com/x",
+        "https://github.com.evil.example/x",
+        "https://cdn.modrinth.com./x",
+        "https://[::1]/x",
+        "https://cdn.modr\u{131}nth.com/x",
+        "https://xn--cdn-modrnth-ub.com/x",
+        "https://cdn.modrinth.com/a b",
+        "https://cdn.modrinth.com\\x",
+        "cdn.modrinth.com/x",
+        "invalid:not-a-list",
+        "https://:443/x",
+    ] {
+        assert!(!download_allowed(bad), "{bad}");
+    }
+    assert!(!download_allowed(&format!("https://cdn.modrinth.com/{}", "x".repeat(5000))));
 }
 
 // ── Names ────────────────────────────────────────────────────────────────────
