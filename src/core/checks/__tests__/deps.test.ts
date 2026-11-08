@@ -110,6 +110,45 @@ describe('E-MISSING-DEP', () => {
     expect(missing([extra, wrong], p)).toHaveLength(1);
   });
 
+  // Reported by a user: "it says he doesn't have Create but he does". The title must name the jar
+  // that is there and why it doesn't count, never "not installed".
+  describe('Create is in the folder but not used', () => {
+    const forgePack = pack('forge', '1.20.1', '47.3.0');
+    const addon = forge({ file: 'create_new_age.jar', mods: [{ id: 'create_new_age', name: 'Create: New Age', deps: [{ id: 'create', range: '[6.0,)' }] }] });
+
+    it('disabled in the launcher', () => {
+      const off = forge({ file: 'create-1.20.1-6.0.6.jar', disabled: true, mods: [{ id: 'create', name: 'Create', version: '6.0.6' }] });
+      const [f] = missing([addon, off], forgePack);
+      expect(f?.title).toContain('but create-1.20.1-6.0.6.jar.disabled is disabled');
+      expect(f?.title).not.toContain('not installed');
+      expect(f?.fixes[0]).toEqual({ kind: 'enable', jarId: 'mods/create-1.20.1-6.0.6.jar' });
+    });
+
+    it('the Fabric build in a Forge pack', () => {
+      const fab = fabric({ file: 'create-fabric-0.5.1-j.jar', mods: [{ id: 'create', name: 'Create' }] });
+      const [f] = missing([addon, fab], forgePack);
+      expect(f?.title).toContain('but create-fabric-0.5.1-j.jar is the Fabric version, and this pack runs Forge');
+      expect(f?.explanation).toContain('create-fabric-0.5.1-j.jar is the Fabric version');
+    });
+
+    it('client-only on a server', () => {
+      const serverPack = pack('forge', '1.20.1', '47.3.0', 'server');
+      const clientOnly = forge({ file: 'create.jar', mods: [{ id: 'create', env: 'client' }] });
+      const [f] = missing([addon, clientOnly], serverPack);
+      expect(f?.title).toContain('but create.jar is client-only, and this is a server instance');
+    });
+
+    it('still says "not installed" when no jar declares it', () => {
+      const [f] = missing([addon], forgePack);
+      expect(f?.title).toMatch(/requires "create" .*, which is not installed$/);
+    });
+
+    it('nothing is reported when Create is installed and active', () => {
+      const ok = forge({ file: 'create-1.20.1-6.0.6.jar', mods: [{ id: 'create', version: '6.0.6' }] });
+      expect(missing([addon, ok], forgePack)).toEqual([]);
+    });
+  });
+
   it('Quilt pack: a Fabric mod satisfies a Quilt mod dependency', () => {
     const q = quilt({ file: 'q.jar', mods: [{ id: 'q', deps: [{ id: 'cloth-config' }] }] });
     const cloth = fabric({ file: 'cloth.jar', mods: [{ id: 'cloth-config' }] });
