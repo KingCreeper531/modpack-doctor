@@ -35,6 +35,11 @@ export const commands = {
 	 */
 	readLogDigest: (instanceId: string, sourceId: string, anchors: string[], options: DigestOptions | null) => typedError<LogDigest, AppError>(__TAURI_INVOKE("read_log_digest", { instanceId, sourceId, anchors, options })),
 	/**
+	 *  Uploads the log source to mclo.gs and returns its links. The file is read while the scope
+	 *  lock is held; the upload runs after it is released.
+	 */
+	shareLog: (instanceId: string, sourceId: string) => typedError<SharedLog, AppError>(__TAURI_INVOKE("share_log", { instanceId, sourceId })),
+	/**
 	 *  Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
 	 *  episode rules in `model/logs.rs`. `anchors` = the tiered list from
 	 *  `src/core/crash/anchors.ts` (`CRASH_ANCHORS`), matched against new `latest.log` lines. Rust
@@ -568,7 +573,13 @@ export type LogKind =
 /**  `logs/debug.log` */
 "debugLog" | 
 /**  `hs_err_pid*.log` in the game dir, or `@cwd/hs_err_pid<pid>.log` in the JVM's working dir */
-"hsErr";
+"hsErr" | 
+/**
+ *  `logs/launcher_log.txt`: the game's console output (stdout + stderr) as the launcher
+ *  captured it, one file per instance (Modrinth App; `docs/research/launchers.md` §7). The only
+ *  place a JVM that fails before log4j starts leaves its error.
+ */
+"launcherLog";
 
 export type LogSource = {
 	/**
@@ -858,6 +869,23 @@ export type SettingsPatch = {
 	includeBeta: boolean | null,
 	gridSort: GridSort | null,
 	inspectorWidth: number | null,
+};
+
+/**
+ *  `share_log`: a log source uploaded to mclo.gs. The URLs are built by Rust from the returned
+ *  id, so they are always `https://mclo.gs/<id>` and `https://api.mclo.gs/1/raw/<id>`.
+ */
+export type SharedLog = {
+	/**  `https://mclo.gs/<id>`: the page to paste into a chat. */
+	url: string,
+	/**  `https://api.mclo.gs/1/raw/<id>`: the plain text. */
+	rawUrl: string,
+	/**  Lines in the file as read. */
+	totalLines: number,
+	/**  Lines uploaded (the end of the file; excludes the note line added when cut). */
+	sentLines: number,
+	/**  The start of the file was left out to fit mclo.gs's limits (10 MiB, 25,000 lines). */
+	truncated: boolean,
 };
 
 export type Side = "client" | "server";

@@ -2,6 +2,7 @@
 import type { CrashInput, CrashPattern, Finding, FindingCode, Severity } from '../model';
 import { fabricIncompatPattern } from './patterns/fabricIncompat';
 import { javaVersionPattern } from './patterns/javaVersion';
+import { jvmStartupPattern } from './patterns/jvmStartup';
 import { missingDepsPattern } from './patterns/missingDeps';
 import { mixinPattern } from './patterns/mixin';
 import { nativePattern } from './patterns/native';
@@ -17,6 +18,7 @@ export { digestFromText } from './text';
 
 /** Most specific first; C-ROOT-CAUSE last (fallback only). */
 export const CRASH_PATTERNS: readonly CrashPattern[] = [
+  jvmStartupPattern,
   javaVersionPattern,
   oomPattern,
   nativePattern,
@@ -30,6 +32,7 @@ export const CRASH_PATTERNS: readonly CrashPattern[] = [
 ];
 
 const CODE_RANK: Partial<Record<FindingCode, number>> = {
+  'C-JVM-START': -1,
   'C-JAVA-VERSION': 0,
   'C-OOM': 1,
   'C-NATIVE': 2,

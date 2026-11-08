@@ -1,0 +1,7 @@
+# Minecraft launcher log started at 2026-09-13 21:45:50
+# Instance: Pack A 
+
+Error: LinkageError occurred while loading main class net.minecraft.client.main.Main
+	java.lang.UnsupportedClassVersionError: net/minecraft/client/main/Main has been compiled by a more recent version of the Java Runtime (class file version 65.0), this version of the Java Runtime only recognizes class file versions up to 61.0
+
+# Process exited with status: exit code: 1

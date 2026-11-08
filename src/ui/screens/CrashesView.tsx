@@ -21,6 +21,7 @@ import { onRovingKeyDown } from '../components/roving';
 import { Pip, type PipTone } from '../components/Severity';
 import { TriageRow } from '../components/TriageRow';
 import { digestView, LOG_KIND_LABEL, sourceDir, sourceName, type CrashAnalysis, type CrashPane } from '../app/crashState';
+import { isPastedSource } from '../app/logTools';
 import { useActions, useApp, useAppShallow } from '../app/StoreContext';
 import { findingMenuFor } from '../app/rowMenus';
 import { useFindingCursor, useNow, useRowMenu } from './hooks';
@@ -56,7 +57,7 @@ function SourceRow({ source, selected, analysis, now, onSelect }: { source: LogS
           <span className="min-w-0 truncate text-fg">{sourceName(source.id)}</span>
         </span>
         <span className="flex min-w-0 items-center gap-2 t-small text-fg-faint">
-          <span className="shrink-0 t-label">{LOG_KIND_LABEL[source.kind]}</span>
+          <span className="shrink-0 t-label">{isPastedSource(source.id) ? 'pasted' : LOG_KIND_LABEL[source.kind]}</span>
           <span className="shrink-0 t-mono" title={when.toLocaleString()}>
             {formatAgo(now - source.modifiedMs)}
           </span>
@@ -221,6 +222,7 @@ function SourcePane({ instanceId, source }: { instanceId: string; source: LogSou
   const logLine = useApp((s) => s.crashes[instanceId]?.logLine ?? null);
   const logRequest = useApp((s) => s.crashes[instanceId]?.logRequest ?? 0);
   const a = useActions();
+  const pack = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId)?.launcher === 'mrpack');
   const lines = analysis?.digest?.totalLines;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -230,6 +232,14 @@ function SourcePane({ instanceId, source }: { instanceId: string; source: LogSou
           {lines !== undefined ? plural(lines, 'line') : ''}
           {analysis?.status === 'done' && !analysis.mapped ? ' · jars mapped after the scan' : ''}
         </span>
+        <Button size={24} aria-label="Paste a log…" title="Paste a log…" onClick={() => a.setLogDialog({ kind: 'paste', instanceId })}>
+          Paste…
+        </Button>
+        {isPastedSource(source.id) || pack ? null : (
+          <Button size={24} aria-label="Share on mclo.gs…" title="Share on mclo.gs…" onClick={() => a.setLogDialog({ kind: 'share', instanceId, sourceId: source.id })}>
+            Share…
+          </Button>
+        )}
       </div>
       {!analysis || analysis.status === 'loading' ? (
         <p className="flex h-8 shrink-0 items-center px-4 t-small text-fg-faint" role="status">
@@ -290,13 +300,18 @@ export function CrashesView({ instanceId }: { instanceId: string }) {
   }
   if (!sources.length) {
     return (
-      <p className="flex min-h-8 items-center px-4 py-1 t-small text-fg-faint" role="status">
+      <div className="flex min-h-8 flex-wrap items-center gap-4 px-4 py-1">
+      <p className="t-small text-fg-faint" role="status">
         {mrpack
           ? 'A .mrpack file is a pack to install, not a game folder, so it has no crash reports or logs. Open the instance a launcher installed from it to read its crashes.'
           : c.status === 'done'
-          ? 'No crash reports or logs yet. Modpack Doctor looks in crash-reports/, logs/latest.log, logs/debug.log and hs_err_pid*.log in the game folder.'
+          ? 'No crash reports or logs yet. Modpack Doctor looks in crash-reports/, logs/latest.log, logs/debug.log, logs/launcher_log.txt (Modrinth App console output) and hs_err_pid*.log in the game folder. Console output from another launcher can be pasted.'
           : 'Looking for crash reports and logs…'}
       </p>
+      <Button size={24} onClick={() => a.setLogDialog({ kind: 'paste', instanceId })}>
+        Paste a log…
+      </Button>
+      </div>
     );
   }
   return (

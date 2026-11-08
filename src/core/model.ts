@@ -48,6 +48,8 @@ export const FINDING_CODES = [
   'C-ROOT-CAUSE',
   /** hs_err native crash (problematic frame in a driver/native library). */
   'C-NATIVE',
+  /** Java stopped before the game started (bad JVM argument, heap setting, missing main class, boot layer). */
+  'C-JVM-START',
 ] as const;
 export type FindingCode = (typeof FINDING_CODES)[number];
 

@@ -11,6 +11,7 @@ mod modrinth;
 mod mrpack;
 mod report;
 mod scanning;
+mod share;
 mod update;
 
 #[cfg(test)]
@@ -34,6 +35,7 @@ pub use fix::*;
 pub use modrinth::*;
 pub use mrpack::*;
 pub use report::*;
+pub use share::*;
 pub use update::*;
 
 type Cmd<T> = Result<T, AppError>;

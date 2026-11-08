@@ -1,0 +1,7 @@
+# Minecraft launcher log started at 2026-09-13 21:45:50
+# Instance: Pack A 
+
+Error occurred during initialization of boot layer
+java.lang.module.FindException: Two versions of module org.objectweb.asm found in C:\Users\Alex\AppData\Roaming\ModrinthApp\meta\libraries\org\ow2\asm (asm-9.5.jar and asm-9.6.jar)
+
+# Process exited with status: exit code: 1

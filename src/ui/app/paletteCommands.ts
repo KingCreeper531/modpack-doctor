@@ -7,6 +7,7 @@
  */
 import { LAUNCHER_ABBR } from '../components/labels';
 import { chord } from './keyboard';
+import { isPastedSource } from './logTools';
 import type { AppState } from './store';
 
 export interface PaletteCommand {
@@ -29,7 +30,9 @@ export interface PaletteCommandGroup {
 type PaletteState = Pick<
   AppState,
   'discovery' | 'selectedInstanceId' | 'scans' | 'settings'
->;
+> &
+  /** The selected log source ("Share log on mclo.gs"); optional for callers without it. */
+  Partial<Pick<AppState, 'crashes'>>;
 
 export function paletteGroups(s: PaletteState, mac?: boolean): PaletteCommandGroup[] {
   const instances = s.discovery?.instances ?? [];
@@ -60,6 +63,11 @@ export function paletteGroups(s: PaletteState, mac?: boolean): PaletteCommandGro
     if (scanned) {
       actions.push({ id: 'export-markdown', label: 'Export report (Markdown)', detail: '.md' });
       actions.push({ id: 'export-json', label: 'Export report (JSON)', detail: '.json' });
+    }
+    actions.push({ id: 'paste-log', label: 'Paste a log…', detail: inst.name, keywords: ['console', 'crash', 'analyse', 'analyze'] });
+    const shareable = s.crashes?.[inst.id]?.selectedSourceId;
+    if (!pack && shareable && !isPastedSource(shareable)) {
+      actions.push({ id: `share-log:${shareable}`, label: 'Share log on mclo.gs…', detail: shareable, keywords: ['upload', 'link', 'mclogs'] });
     }
     actions.push({ id: 'show-findings', label: 'Show Findings' });
     actions.push({ id: 'show-crashes', label: 'Show Crashes' });
@@ -122,7 +130,7 @@ export type PaletteActions = Pick<
   | 'revealJar'
 > &
   /** About and the update check (M8); optional so a caller without them still type-checks. */
-  Partial<Pick<AppState, 'setAboutOpen' | 'checkUpdate'>>;
+  Partial<Pick<AppState, 'setAboutOpen' | 'checkUpdate' | 'setLogDialog'>>;
 
 export function runPaletteCommand(commandId: string, s: Pick<AppState, 'selectedInstanceId' | 'settings'>, a: PaletteActions): void {
   const id = s.selectedInstanceId;
@@ -154,6 +162,10 @@ export function runPaletteCommand(commandId: string, s: Pick<AppState, 'selected
       a.setAboutOpen?.(true);
       void a.checkUpdate?.();
       return;
+    case 'share-log':
+      // Opens the confirmation; nothing is uploaded from the palette itself.
+      if (id && arg) a.setLogDialog?.({ kind: 'share', instanceId: id, sourceId: arg });
+      return;
   }
   if (!id) return;
   switch (commandId) {
@@ -171,6 +183,10 @@ export function runPaletteCommand(commandId: string, s: Pick<AppState, 'selected
       return;
     case 'export-json':
       void a.exportReport(id, 'json');
+      return;
+    case 'paste-log':
+      a.setFindingsTab(id, 'crashes');
+      a.setLogDialog?.({ kind: 'paste', instanceId: id });
       return;
     case 'show-findings':
       a.setFindingsTab(id, 'findings');

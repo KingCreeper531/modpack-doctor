@@ -7,3 +7,4 @@ export { findingId, fnv1a32 } from './id';
 export { classMajorForJava, javaFeatureForClassMajor, javaForClassMajor, minJavaForMinecraft } from './javaVersions';
 export { describeMavenRange } from './patterns/missingDeps';
 export { digestFromText, flatten, type Line } from './text';
+export { DEFAULT_DIGEST_OPTIONS, digestLines, digestPastedText, PASTE_MAX_CHARS, PASTE_MAX_LINES, pastedKind, type PastedDigest } from './digest';

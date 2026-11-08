@@ -15,6 +15,7 @@ import { shortcutOf, suppressesDefault } from '../app/keyboard';
 import { paletteGroups, runPaletteCommand } from '../app/paletteCommands';
 import type { AppStore } from '../app/store';
 import { useActions, useApp, useAppShallow, useAppStore } from '../app/StoreContext';
+import { LogDialogs } from './LogDialogs';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 
@@ -90,6 +91,7 @@ function PaletteOverlay() {
     selectedInstanceId: st.selectedInstanceId,
     scans: st.scans,
     settings: st.settings,
+    crashes: st.crashes,
   }));
   const a = useActions();
   const groups = useMemo((): PaletteGroup[] => {
@@ -233,6 +235,7 @@ export function Overlays({ dragPreview = false }: { dragPreview?: boolean }) {
       <DropOverlay forceShow={dragPreview} />
       <MenuLayer />
       <Palette />
+      <LogDialogs />
     </>
   );
 }
