@@ -99,7 +99,7 @@ export function findingMenuFor(store: AppStore, findingId: string, sourceId?: st
   for (const j of sc?.result?.jars ?? []) names[j.id] = j.fileName;
   const fix = f.fixes.find((x) => x.kind !== 'manual') ?? null;
   const m = s.modrinth[id];
-  const versions = fixVersions(viewContext(m, sc?.result ?? null), m?.resolutions ?? {});
+  const versions = fixVersions(viewContext(m, sc?.result ?? null), m?.resolutions ?? {}, m?.depRange);
   return findingMenu(
     {
       code: f.code,

@@ -10,5 +10,6 @@ export function useFixVersions(instanceId: string): FixVersions {
   const m = useApp((s) => s.modrinth[instanceId]);
   const ctx = m?.ctx ?? null;
   const resolutions = m?.resolutions;
-  return useMemo(() => fixVersions(ctx, resolutions ?? {}), [ctx, resolutions]);
+  const depRange = m?.depRange;
+  return useMemo(() => fixVersions(ctx, resolutions ?? {}, depRange), [ctx, resolutions, depRange]);
 }

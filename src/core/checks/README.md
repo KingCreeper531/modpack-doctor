@@ -86,6 +86,15 @@ an error.
 - **FML optional dependencies** are enforced when the mod is present (E-DEP-RANGE error);
   `discouraged` is a warning. A provider whose version is an unresolved `${…}` placeholder or
   `0.0NONE` passes (FML substitutes `0.0NONE`, which passes every check).
+- **Unfilled `${…}` placeholders in a declared range** (`[${create_version},)`): FML never
+  substitutes `versionRange`; Maven orders the placeholder below every real version, so a
+  placeholder lower bound accepts everything and an upper bound nothing. Fabric treats it as a
+  literal string (no real version matches). `src/core/version` already evaluates it that way;
+  `describeRange` words it via `version/placeholders.ts` ("any version (the mod's metadata has an
+  unfilled placeholder: `${create_version}`)"), never as a real requirement.
+- **E-DEP-RANGE advice**: the static text gives the range in words and the installed version
+  (`depRangeText.ts`); with Modrinth, `../modrinth/depRangeFix.ts` names the newest fitting
+  version and adds `replace` when the planner can do it (header comment there).
 - **Duplicate ids** (`duplicates.ts`, computed once in the context): FML keeps the newest file per
   *first* mod id (warning); a duplicate that is a secondary mod in some file is an error; Fabric
   keeps one (warning); Quilt and legacy FML refuse (error). The copies FML/Fabric drop are not
