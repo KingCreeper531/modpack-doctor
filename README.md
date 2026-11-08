@@ -3,6 +3,8 @@
 A desktop app for Windows, macOS and Linux that finds your Minecraft instances, works out why a
 modpack crashes, names the mod or mods responsible, and fixes them in ways you can undo.
 
+![Modpack Doctor showing the problems found in a modpack](docs/images/findings.png)
+
 ## Download
 
 Get the installer for your system from the
@@ -50,6 +52,15 @@ version, or install a missing dependency.
 
 You can also export a report (Markdown for Discord or GitHub, or JSON) to share when asking for
 help. Your user folder is shown as `~` in it.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Crash analysis pointing at the mod that crashed the game](docs/images/crash.png) | ![A fix shown as a list of file changes before anything happens](docs/images/work-order.png) |
+| **Crash analysis:** the lines that matter and the mod behind them. | **Every fix is shown first:** nothing changes until you press Execute. |
+| ![History of changes, each with an Undo button](docs/images/history.png) | |
+| **History:** undo any change, one at a time or all at once. | |
 
 ## Your files are safe
 
