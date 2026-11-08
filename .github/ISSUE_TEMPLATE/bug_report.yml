@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Modpack Doctor doesn't work, gives a wrong result or crashes.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The quickest way to help: in the app, select the instance and use
+        **Export report** (command palette, Ctrl+K / Cmd+K), then attach the file below. Your user
+        folder is already shown as `~` in it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what the app did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Exported report
+      description: Drag the exported `.md` or `.json` report here, or paste a crash log link (for example from mclo.gs).
+  - type: input
+    id: version
+    attributes:
+      label: Modpack Doctor version
+      description: Shown in About.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: dropdown
+    id: launcher
+    attributes:
+      label: Launcher
+      options: [Modrinth App, Prism Launcher, MultiMC, CurseForge, Vanilla launcher, Manual folder, .mrpack file, Other]

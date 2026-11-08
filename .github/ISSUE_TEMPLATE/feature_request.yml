@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest a new check, crash pattern, launcher or feature.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would it solve?
+      description: For a new check or crash pattern, include an example crash log or the mods involved.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like the app to do?
