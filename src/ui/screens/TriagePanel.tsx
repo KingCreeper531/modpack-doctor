@@ -28,6 +28,7 @@ import { findingMenuFor } from '../app/rowMenus';
 import { useFixBlock } from './fixHooks';
 import { useFindingCursor, useRowMenu } from './hooks';
 import { HistoryView, interruptedCount } from './HistoryView';
+import { PackEditButtons } from './PackFix';
 import { useFixVersions } from './modrinthHooks';
 
 function StaticFindings({ instanceId }: { instanceId: string }) {
@@ -136,6 +137,8 @@ function StaticFindings({ instanceId }: { instanceId: string }) {
                 fixHint={blocked}
                 // Shown once, next to the button that was pressed (the inspector shows its own).
                 fixError={fixErrorFrom[f.id] === 'triage' ? (fixErrors[f.id] ?? null) : null}
+                // An opened .mrpack: edits for its fixed copy instead (PackFix.tsx).
+                packActions={pack && f.packEdits?.length ? <PackEditButtons instanceId={instanceId} finding={f} /> : null}
               />
             </div>
           ))}

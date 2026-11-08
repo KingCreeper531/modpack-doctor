@@ -30,6 +30,9 @@
  * `.mrpack` (M7): `pick_mrpack` "opens" `MOCK_PICKED_PACK` (Explorer Kit 2.1); scanning a pack
  * reports the jars inside its zip (`overrides/…`) plus the files its index declares
  * (`ScanResult.declared`, mockData.ts `mockDeclaredFiles`), which `modrinth_identify` knows by hash.
+ * "Save fixed copy…" (mockPackFix.ts): `plan_pack_fix` validates edits against the mock index
+ * and answers ops in Rust's words; `save_fixed_pack` "saves" to a fake Downloads path (nothing is
+ * written). Explorer Kit's index gets a replaceable ImmediatelyFast and a missing Cloth Config API.
  * `save_report` "saves" to a fake Documents path (no file is written) and answers `null`
  * (cancelled) for every other call with `?scenario=reportcancel`.
  * - `?order=running` (with the `order` screenshot hook, devHooks.ts): the 2nd op of an executed
@@ -70,8 +73,11 @@ import type {
   MrProject,
   MrVersion,
   OpStatus,
+  PackEdit,
+  PackFixPlan,
   ProjectLookup,
   ReportFormat,
+  SavedPack,
   ScanProgress,
   ScanStarted,
   Instance,
@@ -88,6 +94,8 @@ import { digestFromText } from '../../core/crash';
 import type { AppCommands, Backend, EventChannel, Result, Unlisten } from './ipc';
 import { MOCK_PICKED_PACK, mockDeclared, mockDiscovery, pickedFolderInstance, seeded } from './mockData';
 import { createMockFix, type MockFixEngine } from './mockFix';
+import { createMockPackFix, packFixIdentify, packFixUpdates, type MockPackFixEngine } from './mockPackFix';
+import { isOverrideJarPath } from '../../core/packfix';
 import { mockCrash, mockCrashInstances, mockLogs, toSource, type MockLog } from './mockLogs';
 import {
   MOCK_RATE_LIMIT_S,
@@ -218,6 +226,8 @@ export interface MockBackend extends Backend {
   emitCrashDetected(e: CrashDetected): void;
   /** Test hook: the fix engine (jar lists, stored orders, expiry). */
   fix: MockFixEngine;
+  /** Test hook: fixed copies of opened packs (stored plans, saves, cancel / fail the next save). */
+  packFix: MockPackFixEngine;
   /** Test hook: every report `save_report` "saved". */
   reports(): ReadonlyArray<{ name: string; format: ReportFormat; contents: string }>;
   /** Test hook: emit a `DropRejected` as Rust does for a refused drop. */
@@ -287,6 +297,8 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       sleep: (ms) => (ms > 0 ? sleep(ms) : Promise.resolve()),
     },
   );
+
+  const packFix = createMockPackFix(() => Date.now());
 
   /** Wall clock when the backend started; log ages are relative to it. */
   const born = Date.now();
@@ -497,12 +509,12 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
           },
         };
       }
-      return ok(mockIdentify(sha1s));
+      return ok(packFixIdentify(mockIdentify(sha1s)));
     },
     modrinthFindUpdates: async (sha1s: string[], loaders: string[], gameVersions: string[], versionTypes: string[]): Promise<Result<HashLookup>> => {
       await lag();
       if (mrOffline()) return ok(mockOffline(sha1s));
-      return ok(mockFindUpdates(sha1s, loaders, gameVersions, versionTypes));
+      return ok(packFixUpdates(mockFindUpdates(sha1s, loaders, gameVersions, versionTypes), sha1s, loaders, gameVersions));
     },
     modrinthProjects: async (ids: string[]): Promise<Result<ProjectLookup>> => {
       await lag();
@@ -577,6 +589,16 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       reports.push({ name: defaultName, format, contents });
       return ok(`C:\\Users\\alex\\Documents\\${defaultName}.${format === 'json' ? 'json' : 'md'}`);
     },
+    // "Save fixed copy…" of an opened pack (mockPackFix.ts); nothing is written.
+    planPackFix: async (instanceId: string, edits: PackEdit[]): Promise<Result<PackFixPlan>> => {
+      await lag();
+      const overrideJars = fix.jarsOf(instanceId).filter((j) => j.depth === 0 && isOverrideJarPath(j.path)).map((j) => j.path);
+      return packFix.plan(instances().find((i) => i.id === instanceId), edits, overrideJars);
+    },
+    saveFixedPack: async (planId: string): Promise<Result<SavedPack | null>> => {
+      await lag();
+      return packFix.save(planId);
+    },
     setWindowTheme: async () => ok(null),
     homeDir: async () => ok(String.raw`C:\Users\alex`),
     appInfo: async () =>
@@ -610,6 +632,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     crash,
     emitCrashDetected: (e) => ev.crashDetected.emit(e),
     fix,
+    packFix,
     reports: () => reports,
     emitDropRejected: (e) => ev.dropRejected.emit(e),
   };

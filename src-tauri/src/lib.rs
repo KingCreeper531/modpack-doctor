@@ -62,6 +62,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             get_settings,
             set_settings,
             save_report,
+            // "Save fixed copy…" of an opened .mrpack (mrpack/fixcopy.rs).
+            plan_pack_fix,
+            save_fixed_pack,
             set_window_theme,
             home_dir,
             app_info,
@@ -127,6 +130,8 @@ pub fn run() {
             // Interrupted fix orders (crash, power loss): mark them before any order can run.
             fix::recover::recover_at_startup(&state);
             app.manage(state);
+            // Planned fixed copies of opened packs (in memory only; mrpack/fixcopy.rs).
+            app.manage(mrpack::fixcopy::PackFixStore::default());
             // Theme the native title bar before the webview's first `set_window_theme` call:
             // the saved preference, else the system theme.
             if let Some(window) = app.get_webview_window("main") {

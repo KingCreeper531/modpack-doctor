@@ -21,6 +21,7 @@ import { useInspectorIsDrawer } from './drawer';
 import { interruptedCount } from './HistoryView';
 import { useNow } from './hooks';
 import { ModsPanel } from './ModsPanel';
+import { PackFixOrder } from './PackFix';
 import { ScanPanel } from './ScanPanel';
 import { TriagePanel } from './TriagePanel';
 
@@ -222,6 +223,8 @@ function OrderPanel() {
 export function Workspace({ instanceId }: { instanceId: string }) {
   const instance = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId) ?? null);
   const orderOpen = useApp((s) => s.order?.instanceId === instanceId);
+  // An opened .mrpack's fixed copy takes the same place (PackFix.tsx).
+  const packFixOpen = useApp((s) => s.packFix?.instanceId === instanceId);
   if (!instance) return null;
   return (
     <>
@@ -230,8 +233,8 @@ export function Workspace({ instanceId }: { instanceId: string }) {
       <WatchError instanceId={instanceId} />
       <ScanPanel instanceId={instanceId} className="shrink-0 border-b border-line" />
       {/* An open work order is the task at hand: the findings panel gives it room (a third). */}
-      <TriagePanel key={instanceId} instanceId={instanceId} compact={orderOpen} className="min-h-24 shrink border-b border-line" />
-      {orderOpen ? <OrderPanel /> : <ModsPanel instanceId={instanceId} className="min-h-40 flex-1" />}
+      <TriagePanel key={instanceId} instanceId={instanceId} compact={orderOpen || packFixOpen} className="min-h-24 shrink border-b border-line" />
+      {orderOpen ? <OrderPanel /> : packFixOpen ? <PackFixOrder instanceId={instanceId} /> : <ModsPanel instanceId={instanceId} className="min-h-40 flex-1" />}
     </>
   );
 }

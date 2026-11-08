@@ -3,6 +3,7 @@
  * How to add a check: ./README.md.
  */
 import type { Check, CheckInput, Finding, Severity } from '../model';
+import { forPack } from '../packfix';
 import { clientOnServerCheck } from './clientOnServer';
 import { corruptJarCheck } from './corruptJar';
 import { depRangeCheck } from './depRange';
@@ -61,7 +62,8 @@ export function compareFindings(a: Finding, b: Finding): number {
 export function runChecks(input: CheckInput): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
-  // CONTRACTS invariant 15: a .mrpack is read-only; no finding on it carries fixes.
+  // CONTRACTS invariant 15: a .mrpack is read-only; no finding on it carries fixes. Its findings
+  // carry edits for a fixed copy instead (`src/core/packfix`).
   const readOnly = input.instance.launcher === 'mrpack';
   for (const check of CHECKS) {
     let found: Finding[];
@@ -73,7 +75,7 @@ export function runChecks(input: CheckInput): Finding[] {
     for (const f of found) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      out.push(readOnly && f.fixes.length > 0 ? { ...f, fixes: [] } : f);
+      out.push(readOnly ? forPack(f, input) : f);
     }
   }
   return out.sort(compareFindings);

@@ -12,6 +12,7 @@ import type {
   LogDigest,
   MrProject,
   MrVersion,
+  PackEdit,
   RawRange,
   ScanResult,
   Side,
@@ -111,7 +112,21 @@ export interface Finding {
    * `src/core/modrinth` can offer `installDependency` without parsing text. Absent elsewhere.
    */
   missingModIds?: string[];
+  /**
+   * `.mrpack` only: edits for its fixed copy ("Save fixed copy…", `src/core/packfix`); first =
+   * recommended. The opened pack itself is never changed. Absent elsewhere.
+   */
+  packEdits?: PackEditSuggestion[];
 }
+
+/**
+ * A suggested edit of an opened `.mrpack`'s fixed copy. `edit`: the intent `plan_pack_fix` takes
+ * as is. `addProject`: a missing dependency the UI resolves first (the project's newest
+ * compatible version: `modrinth_project_versions` + `chooseVersion`) into an `addDependency`.
+ */
+export type PackEditSuggestion =
+  | { kind: 'edit'; label: string; edit: PackEdit }
+  | { kind: 'addProject'; label: string; projectId: string; title: string };
 
 /** Effective pack identity (check 1). */
 export interface PackContext {

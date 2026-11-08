@@ -114,6 +114,22 @@ export const commands = {
 	setSettings: (patch: SettingsPatch) => typedError<Settings, AppError>(__TAURI_INVOKE("set_settings", { patch })),
 	/**  Rust opens the save dialog; returns the saved path, or None if cancelled. */
 	saveReport: (defaultName: string, format: ReportFormat, contents: string) => typedError<string | null, AppError>(__TAURI_INVOKE("save_report", { defaultName, format, contents })),
+	/**
+	 *  Plan a fixed copy of an opened `.mrpack` from edit intents. Nothing is written. Every edit is
+	 *  checked against the pack (index paths, override jars) and every Modrinth version is fetched
+	 *  fresh and checked (same project for a replacement, the pack's loader and Minecraft version,
+	 *  a CDN download with sha1, sha512 and size, no path collision). The plan is stored in Rust for
+	 *  15 minutes, single use; any failure refuses the whole plan with a readable error naming the
+	 *  edit.
+	 */
+	planPackFix: (instanceId: string, edits: PackEdit[]) => typedError<PackFixPlan, AppError>(__TAURI_INVOKE("plan_pack_fix", { instanceId, edits })),
+	/**
+	 *  Rust opens the native save dialog (default name `<pack> (fixed).mrpack`) and writes the
+	 *  planned copy there as a new file: temp file in the chosen folder, then a no-replace rename
+	 *  (replacing only the exact path the dialog confirmed). The opened pack is never written; its
+	 *  own path is refused. Returns None when the dialog was cancelled (the plan stays usable).
+	 */
+	saveFixedPack: (planId: string) => typedError<SavedPack | null, AppError>(__TAURI_INVOKE("save_fixed_pack", { planId })),
 	/**  Re-themes the native title bar (Windows DWM); no-op elsewhere. Called on every resolved theme change. */
 	setWindowTheme: (theme: ResolvedTheme) => typedError<null, AppError>(__TAURI_INVOKE("set_window_theme", { theme })),
 	/**
@@ -722,6 +738,56 @@ export type OpStatus = {
 };
 
 /**
+ *  One edit of the fixed copy. Paths are `files[].path` values of the pack's index, or zip entry
+ *  names of override jars, exactly as the scan reported them.
+ */
+export type PackEdit = 
+/**  Leave every `files[]` entry with this index path out of the copy's index. */
+{ kind: "removeDeclared"; path: string } | 
+/**
+ *  Leave this override jar (`overrides/mods/x.jar`, `client-overrides/mods/…`,
+ *  `server-overrides/mods/…`) out of the copy.
+ */
+{ kind: "removeOverride"; entry: string } | 
+/**  Replace the declared file at `path` with a Modrinth version of the same project. */
+{ kind: "replaceDeclared"; path: string; versionId: string } | 
+/**  Add a Modrinth version as a new `files[]` entry (`mods/<file name>`). */
+{ kind: "addDependency"; versionId: string };
+
+/**  One planned change, in edit order (exactly one per `PackEdit`). */
+export type PackFixOp = {
+	kind: PackFixOpKind,
+	/**  The index path or zip entry the op is about. */
+	subject: string,
+	/**  One readable sentence: what the copy gets instead. */
+	detail: string,
+	/**  Replace / Add: the `https://cdn.modrinth.com/…` URL written into the copy's index. */
+	url: string | null,
+};
+
+export type PackFixOpKind = 
+/**  An index entry left out. */
+"remove" | 
+/**  An override jar left out. */
+"removeOverride" | 
+/**  An index entry pointed at another Modrinth version of the same project. */
+"replace" | 
+/**  A new index entry. */
+"add";
+
+/**  A validated, stored plan. Single use; expires 15 minutes after planning. */
+export type PackFixPlan = {
+	/**  32 lower-case hex characters. */
+	id: string,
+	instanceId: string,
+	/**  The opened pack's file name (the copy's default name is `<stem> (fixed).mrpack`). */
+	packFileName: string,
+	ops: PackFixOp[],
+	/**  Things the copy changes besides the edits (e.g. unsafe entries left out), as sentences. */
+	warnings: string[],
+};
+
+/**
  *  The effective pack identity `src/core/pack` resolved (override > launcher/mrpack metadata >
  *  jar majority). Sent with `plan_work_order` so Rust can re-validate chosen versions.
  *  Rust rejects it if it contradicts launcher/mrpack metadata or a stored override.
@@ -780,6 +846,13 @@ export type ReportFormat = "markdown" | "json";
 
 /**  The theme actually in effect (system resolved by the webview). */
 export type ResolvedTheme = "dark" | "light";
+
+/**  Where `save_fixed_pack` wrote the copy. */
+export type SavedPack = {
+	/**  Absolute path of the new file. */
+	path: string,
+	fileName: string,
+};
 
 export type ScanIssue = {
 	/**  Jar id, or a directory path relative to the scan root. */
