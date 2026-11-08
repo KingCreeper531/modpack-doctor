@@ -8,14 +8,16 @@
  * - The target may be top-level or bundled (any loaded entry, `provides` included); entries in
  *   the declaring jar itself are ignored. Unparseable ranges (`satisfies` null) are not reported.
  * - Forge `side` restrictions apply as for dependencies.
+ * - A NeoForge `config/fml.toml` override `-<target>` for the declaring mod removes the clause:
+ *   lowered to info (checks/fmlOverrides.ts).
  * - Fixes: disable the target's top-level jar first (the declaring author named it as the
  *   problem), then disable the declaring jar.
  */
 import type { Check, Finding, JarRef } from '../model';
 import { versionApi } from '../version';
-import { aliasGroup } from './connector';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, jarRef, makeFinding, modName, rawRange } from './evidence';
+import { relaxByOverride } from './fmlOverrides';
 import { depSideApplies } from './missingDep';
 
 export const incompatCheck: Check = {
@@ -28,7 +30,7 @@ export const incompatCheck: Check = {
       for (const dep of e.mod.deps) {
         if (dep.kind !== 'incompatible' && dep.kind !== 'breaks' && dep.kind !== 'conflicts') continue;
         if (dep.modId === e.mod.modId || !depSideApplies(dep, ctx.pack.side)) continue;
-        if (ctx.connector.via(e.jar) && aliasGroup(dep.modId)) continue; // Connector: breaks on aliased ids not enforced
+        if (ctx.connector.via(e.jar) && ctx.connector.aliasGroup(dep.modId)) continue; // Connector: breaks on aliased ids not enforced
         const targets = ctx
           .providers(dep.modId, ctx.connector.via(e.jar))
           .filter((p) => p.top.id !== e.top.id && versionApi.satisfies(p.mod.version, dep.range, 'other') === true);
@@ -44,7 +46,7 @@ export const incompatCheck: Check = {
         for (const t of targets) if (!culprits.some((c) => c.jarId === t.top.id)) culprits.push(jarRef(t.top, dep.modId));
         const tops = [...new Map(targets.map((t) => [t.top.id, t.top] as const)).values()];
         out.push(
-          makeFinding({
+          relaxByOverride(ctx, e, dep.modId, makeFinding({
             code: 'E-INCOMPAT',
             severity: hard ? 'error' : 'warning',
             title: hard ? `${name} is incompatible with ${targetName}` : `${name} conflicts with ${targetName}`,
@@ -59,7 +61,7 @@ export const incompatCheck: Check = {
             evidence: entryEvidence(ctx, e, dependencyLines(e.mod, dep.modId, dep.kind), `Installed "${dep.modId}": ${targets.map((t) => `${t.mod.version} in ${t.top.fileName}`).join('; ')}.`),
             fixes: [...tops.map(disable), disable(e.top)],
             discriminator: `${e.mod.modId}->${dep.modId}`,
-          }),
+          })),
         );
       }
     }

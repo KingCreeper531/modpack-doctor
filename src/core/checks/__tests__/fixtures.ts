@@ -4,11 +4,13 @@
  * evidence line highlighting is exercised too.
  */
 import type {
+  ConnectorConfigFile,
   Dependency,
   DependencyKind,
   Instance,
   JarRecord,
   JarStatus,
+  LoaderConfig,
   LoaderKind,
   ModEnvironment,
   ModMeta,
@@ -284,6 +286,30 @@ export function input(jars: JarRecord[], p: PackContext, modrinth?: ModrinthCont
 
 export function run(jars: JarRecord[], p: PackContext, modrinth?: ModrinthContext): Finding[] {
   return runChecks(input(jars, p, modrinth));
+}
+
+/** `run` with the instance's loader config files (`ScanResult.loaderConfig`). */
+export function runWithConfig(jars: JarRecord[], p: PackContext, loaderConfig: LoaderConfig): Finding[] {
+  const i = input(jars, p);
+  return runChecks({ ...i, scan: { ...i.scan, loaderConfig } });
+}
+
+/** `config/fml.toml` with `dependencyOverrides.<target> = [entries…]`. */
+export function fmlToml(overrides: Record<string, string[]>): LoaderConfig {
+  return {
+    sourceFiles: ['config/fml.toml'],
+    fmlDependencyOverrides: Object.entries(overrides).map(([modId, entries]) => ({ modId, entries })),
+    connector: null,
+  };
+}
+
+/** `config/connector.json` as Rust reports it (absent fields = null). */
+export function connectorJson(over: Partial<ConnectorConfigFile> = {}): LoaderConfig {
+  return {
+    sourceFiles: ['config/connector.json'],
+    fmlDependencyOverrides: [],
+    connector: { hiddenMods: null, globalModAliases: null, invalidFields: [], ...over },
+  };
 }
 
 export function only(findings: readonly Finding[], code: FindingCode): Finding[] {

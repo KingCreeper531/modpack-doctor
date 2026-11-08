@@ -211,6 +211,27 @@ export type ChunkReason =
 /**  A structural block Rust recognises without classifying it. */
 { kind: "block"; block: LogBlock };
 
+export type ConnectorAlias = {
+	modId: string,
+	aliases: string[],
+};
+
+/**  The fields of `config/connector.json` that matter to the checks, as written. */
+export type ConnectorConfigFile = {
+	/**  `hiddenMods`; None when absent or not a list of strings. */
+	hiddenMods: string[] | null,
+	/**
+	 *  `globalModAliases` (`{ "id": "alias" | ["alias", …] }`), sorted by mod id; None when absent
+	 *  or not of that shape.
+	 */
+	globalModAliases: ConnectorAlias[] | null,
+	/**
+	 *  Top-level fields that are present but not what Connector's config codec accepts: wrong JSON
+	 *  type, or a `version` other than 1. Sorted.
+	 */
+	invalidFields: string[],
+};
+
 /**
  *  Event: one per crash episode for a watched instance (see module docs for debouncing).
  *  The UI reads a digest of `source`, classifies it, and notifies only if `src/core` finds an
@@ -334,6 +355,13 @@ export type FixAction =
 { kind: "installDependency"; modId: string; versionId: string } | 
 /**  Advice only (Java version, memory); never produces file ops. */
 { kind: "manual"; steps: string[] };
+
+export type FmlDependencyOverride = {
+	/**  The TOML key: the mod whose dependencies are overridden (case-sensitive, as written). */
+	modId: string,
+	/**  Raw override strings, in file order. */
+	entries: string[],
+};
 
 export type GameStatus = {
 	running: boolean,
@@ -517,6 +545,29 @@ export type LauncherProbe = {
 export type LauncherRoot = {
 	launcher: Launcher,
 	path: string,
+};
+
+/**
+ *  Raw facts from the instance's loader config files (read by `instance_config`, capped at
+ *  256 KiB each; a broken file is a `ScanIssue`, never a failed scan).
+ */
+export type LoaderConfig = {
+	/**
+	 *  Game-dir-relative paths of the config files that exist (`config/fml.toml`,
+	 *  `config/connector.json`), whether or not they could be used.
+	 */
+	sourceFiles: string[],
+	/**
+	 *  `config/fml.toml` `dependencyOverrides` (NeoForge FML): one item per target mod id, the
+	 *  strings exactly as written (`"-dep"`, `"+dep"`; a single string becomes one entry), sorted
+	 *  by mod id. Empty when the file, the table or the entries are absent or unusable.
+	 */
+	fmlDependencyOverrides: FmlDependencyOverride[],
+	/**
+	 *  `config/connector.json` (Sinytra Connector) when it exists and is a JSON object; None
+	 *  otherwise (Connector then runs with its defaults).
+	 */
+	connector: ConnectorConfigFile | null,
 };
 
 export type LoaderInfo = {
@@ -813,6 +864,12 @@ export type ScanResult = {
 	 */
 	unverifiedDownloads: UnverifiedDownload[],
 	issues: ScanIssue[],
+	/**
+	 *  Instance config files that change what the loader enforces (`config/fml.toml`,
+	 *  `config/connector.json`), as raw facts; `src/core` interprets them. Omitted when neither
+	 *  file exists (and for `.mrpack` packs).
+	 */
+	loaderConfig?: LoaderConfig | null,
 };
 
 /**

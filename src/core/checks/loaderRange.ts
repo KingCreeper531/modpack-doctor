@@ -12,12 +12,15 @@
  *   NeoForge 1.20.1, declares a range over a *different* loader's version numbers, which we cannot
  *   map, so it is skipped.
  * - Skipped when the loader version is unknown (inferred packs) or the verdict is unknown.
+ * - A NeoForge `config/fml.toml` override `-neoforge` for the mod lowers it to info
+ *   (checks/fmlOverrides.ts).
  * Fixes (error): manual "update the loader / get a matching build"; disable the jar.
  */
 import type { Check, Finding } from '../model';
 import { describeFallback, evaluateRange, LOADER_DEP_IDS, LOADER_NAMES, MCMOD_INFO } from '../pack';
 import { contextFor } from './context';
 import { dependencyLines, describeRange, disable, entryEvidence, entryLabel, entryRef, makeFinding, manual, modName, rangeDependency, rawRange } from './evidence';
+import { relaxByOverride } from './fmlOverrides';
 import { depSideApplies } from './missingDep';
 
 export const loaderRangeCheck: Check = {
@@ -44,7 +47,7 @@ export const loaderRangeCheck: Check = {
       if (verdict.kind === 'fallback') {
         const via = describeFallback(verdict, depId);
         out.push(
-          makeFinding({
+          relaxByOverride(ctx, e, depId, makeFinding({
             code: 'E-LOADER-RANGE',
             severity: 'info',
             title: `${name} declares ${loaderName} ${rawRange(range)}; loads on ${version} through a compatibility override`,
@@ -56,13 +59,13 @@ export const loaderRangeCheck: Check = {
             evidence: [...evidence.slice(0, -1), { kind: 'note', text: `Accepted through ${via}.` }, ctx.packNote],
             fixes: [manual(`Optional: update ${name} to a version that declares support for ${loaderName} ${version}.`)],
             discriminator: e.mod.modId,
-          }),
+          })),
         );
         continue;
       }
       const bundled = e.jar.depth > 0 ? ` It is bundled inside ${e.top.fileName}.` : '';
       out.push(
-        makeFinding({
+        relaxByOverride(ctx, e, depId, makeFinding({
           code: 'E-LOADER-RANGE',
           severity: 'error',
           title: `${name} needs ${loaderName} ${wants}, but the pack has ${version}`,
@@ -80,7 +83,7 @@ export const loaderRangeCheck: Check = {
             disable(e.top),
           ],
           discriminator: e.mod.modId,
-        }),
+        })),
       );
     }
     return out;

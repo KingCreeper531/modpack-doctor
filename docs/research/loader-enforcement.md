@@ -56,7 +56,7 @@ mod is softened by an environment-disabled dependency.
   - FML, same id across different kept files: **error**.
   - Fabric: **warning**.
   - Quilt: **error**.
-- **Known gap:** `config/fml.toml` `dependencyOverrides` is not read yet.
+- **Known gap (closed):** `config/fml.toml` `dependencyOverrides` are read now; see "Instance config files" below.
 
 Sources are linked in the report preserved in the M3 commit message history, and in the research
 agent's notes (FML 44982c69, Forge 1.20.1 d13dd327, fabric-loader cb9523bc, quilt-loader 35a644ed).
@@ -96,7 +96,7 @@ agent's notes (FML 44982c69, Forge 1.20.1 d13dd327, fabric-loader cb9523bc, quil
 - **Skipped silently:**
   - the upstream Fabric API jar (`fabric_api`) and, on 1.21.x, `mixinextras`;
   - ids already loaded as native mods;
-  - `hiddenMods` in `config/connector.json`.
+  - ~~`hiddenMods` in `config/connector.json`~~ (wrong: it only hides native mods from Fabric mods at runtime; see "Instance config files" below).
 - **Fabric `depends`:** resolved by Fabric's own solver against Fabric jars plus every FML mod. FFAPI
   `x_y` ids satisfy `x-y`.
   - `fabricloader` dependencies are dropped.
@@ -124,3 +124,99 @@ agent's notes (FML 44982c69, Forge 1.20.1 d13dd327, fabric-loader cb9523bc, quil
   sharing a package give a `ResolutionException`.
 - **Corrupt zip:** ERROR on NeoForge 20.6+/21.x (`brokenfile.invalidzip`).
 - **Uncertain:** the exact NeoForge 20.6 build that switched to FML 3.0.19.
+
+## Instance config files (NeoForge `config/fml.toml`, Connector `config/connector.json`)
+
+Read from source at the branch heads on 2026-11-07, and checked against the published FML jars.
+Nothing was run.
+
+### NeoForge `config/fml.toml` `dependencyOverrides`
+- **Where:** `FMLConfig.load()` reads `<gameDir>/config/fml.toml` (`FMLPaths.FMLCONFIG`), and
+  `ModSorter.verifyDependencyVersions()` applies the overrides
+  ([FMLConfig.java](https://github.com/neoforged/FancyModLoader/blob/1.21.1/loader/src/main/java/net/neoforged/fml/loading/FMLConfig.java),
+  [ModSorter.java](https://github.com/neoforged/FancyModLoader/blob/1.21.1/loader/src/main/java/net/neoforged/fml/loading/ModSorter.java);
+  same code on `1.21.3`, `1.21.4`, `1.21.8` and `main`). Added by FML PR
+  [#214](https://github.com/neoforged/FancyModLoader/pull/214) (2024-11-25), backported in #221.
+- **Syntax** (the file's own comment): `dependencyOverrides.targetMod = ["-dep1", "+dep2"]`. Any
+  TOML form works (dotted keys, `[dependencyOverrides]`, inline table, the default
+  `dependencyOverrides = {}`). A value may be one string or a list of strings.
+  - Keys are the *target* mod ids, matched exactly (case-sensitive).
+  - `-dep`: every dependency entry of the target on `dep` is dropped before checking — required,
+    optional, `incompatible` and `discouraged` alike. Nothing about `dep` is enforced for that
+    mod any more. `minecraft` and `neoforge` are ordinary entries there, so `-minecraft` and
+    `-neoforge` remove the MC and loader range checks too. The language loader
+    (`loaderVersion`) is not a dependency and stays enforced.
+  - `+dep`: only adds a load-order edge (target after `dep`); it changes no check.
+  - An entry without `+`/`-`: logged as an error and ignored. `dependencyOverrides` that isn't a
+    table: logged, and no overrides apply. A non-string entry (`ClassCastException`) or an empty
+    string (`charAt(0)`) throws inside `FMLConfig.load`.
+  - An override whose target or dependency isn't loaded shows a loading-screen *warning*
+    (`fml.modloadingissue.depoverride.unknown_target` / `unknown_dependency`).
+  - Only FML's own dependency check reads it. Fabric mods under Sinytra Connector are resolved by
+    Fabric's solver, which doesn't.
+- **Which versions have it.** Checked by downloading the
+  `net.neoforged.fancymodloader:loader` jars and looking for `dependencyOverrides` in
+  `FMLConfig.class`: absent in 4.0.33 and 5.0.5, present in 4.0.34, 5.0.6 and 6.0.4.
+
+  | NeoForge | FML | Overrides |
+  |---|---|---|
+  | 1.21.1: **21.1.81**+ ([changelog](https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.100/neoforge-21.1.100-changelog.txt): "Update FML to v4.0.34 - add dependency overrides (#1705)") | 4.0.34 | yes |
+  | 1.21.3: **21.3.41-beta**+ (NeoForge commit `3ddaffa705` bumped FML 5.0.1 → 5.0.6) | 5.0.6 | yes |
+  | 1.21.4 and later, 26.x (21.4.0-beta used FML 6.0.4) | 6.0.4+ | yes |
+  | 47.1 (1.20.1), 20.2–20.6, 21.0, 21.2, 21.1 < 81, 21.3 < 41 | — | no |
+  | Forge (any branch; `FMLConfig` on `1.20.1`, `1.21.x`, `26.3` has no such key) | — | no |
+- **Other `fml.toml` keys** (`disableConfigWatcher`, `earlyWindow*`, `maxThreads`, `versionCheck`,
+  `defaultConfigPath`, `disableOptimizedDFU`, `debugOpenGl`, `earlyLoadingScreenTheme`) don't
+  change dependency, range or loading decisions, so the checks don't model them.
+
+### Sinytra Connector `config/connector.json`
+- **Where:** `ConnectorConfig` (1.21.x: `org/sinytra/connector/util/ConnectorConfig.java`; 1.20.1:
+  `org/sinytra/connector/locator/ConnectorConfig.java`; same on `26.2.x`), read from
+  `FMLPaths.CONFIGDIR/connector.json`. Fields: `version` (must be 1), `hiddenMods` (string
+  list), `globalModAliases` (`{ id: "alias" | ["alias", …] }`), `enableMixinSafeguard` (1.21.x+).
+  When the file is missing, Connector writes its defaults (exactly what the real packs here have).
+- **`hiddenMods`** ([ConnectorEarlyLoader.init](https://github.com/Sinytra/Connector/blob/1.21.x/src/main/java/org/sinytra/connector/ConnectorEarlyLoader.java)):
+  FML mods whose id is listed are left out of `FabricLoaderImpl.addFmlMods`. This only hides
+  *native* mods from Fabric mods' runtime view (`FabricLoader.isModLoaded`, `getModContainer`).
+  Connector's dependency resolution (`DependencyResolver.resolveDependencies`) still gets every
+  loaded FML mod file, and the duplicate skip (`handleDuplicateMods`) uses all FML mod ids. So
+  `hiddenMods` changes no static finding. **This corrects the earlier note** ("Skipped silently: …
+  `hiddenMods`"): it never skips a Fabric jar.
+- **`globalModAliases`** ([DependencyResolver](https://github.com/Sinytra/Connector/blob/1.21.x/src/main/java/org/sinytra/connector/locator/DependencyResolver.java)):
+  `FabricLoaderImpl.aliasMods(...)` is called before resolution, and
+  `removeAliasedModDependencyConstraints` widens every Fabric dependency on a key or value to `*`
+  and drops `breaks` on them. Default
+  (`ConnectorUtil.DEFAULT_GLOBAL_MOD_ALIASES`): cloth_config → cloth-config2, playeranimator →
+  player-animator.
+  - **No file, or the file can't be parsed:** the defaults apply.
+  - **Readable file without the key:** no aliases (`optionalFieldOf("globalModAliases",
+    ImmutableMultimap.of())` defaults to an empty map, not to the defaults).
+  - **Invalid field:** on 1.21.x (DFU 7+: strict `optionalFieldOf`, `getOrThrow()`) the whole
+    decode fails, so the defaults apply. On 1.20.1 (DFU 6: lenient `optionalFieldOf`) the invalid
+    field reads as absent.
+- **Other files:** `config/fabric_loader_dependencies.json` is passed only to Connector's built-in
+  `java` / `fabricloader` / `mixinextras` candidates, not to the Fabric mods' own metadata (not
+  verified further). `enableMixinSafeguard` is runtime only.
+
+### Rules for the static checker
+- **Reading the files:** Rust reads both files next to every instance scan
+  (`src-tauri/src/instance_config`), with a 256 KiB cap and through PathGuard. It reports raw facts
+  as `ScanResult.loaderConfig`. A broken file is a `ScanIssue`, never a failed scan.
+- **FML overrides** (`src/core/checks/fmlOverrides.ts`): a `-dep` override for an FML entry's mod
+  id turns E-MISSING-DEP, E-DEP-RANGE, E-MC-RANGE (`-minecraft`), E-LOADER-RANGE (`-neoforge`)
+  and E-INCOMPAT findings about that constraint into **info**. The finding says
+  "overridden in config/fml.toml" and keeps no file-changing fixes.
+  - Gated: NeoForge ≥ 21.1.81 (1.21.1), ≥ 21.3.41-beta (1.21.3), every 1.21.4+/26.x. With an
+    unknown version on 1.21.1/1.21.3, the override is assumed to apply, and the wording says so.
+  - Elsewhere, Forge and older NeoForge keep the finding plus a note that the override has no
+    effect.
+  - Fabric mods via Connector are never affected.
+- **Connector** (`src/core/checks/connector.ts`): alias groups come from `globalModAliases`, using
+  the rules above. `hiddenMods` is exposed but changes nothing.
+- **Real packs on this machine (2026-11-07):** ATM10 and the two Modrinth NeoForge 1.21.1 packs
+  have an `fml.toml` with `dependencyOverrides = {}` or no key. antarchy craft and Create
+  Aeronautic have Connector's default `connector.json`. No real pack uses an override, so findings
+  are unchanged.
+- **Not modelled:** a `.mrpack`'s own `overrides/config/fml.toml`. The override `-forge` on the
+  other-loader rule in E-WRONG-LOADER (case d) is not modelled either; that rule looks at entries
+  the loader never loads.

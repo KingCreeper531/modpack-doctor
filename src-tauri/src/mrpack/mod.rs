@@ -283,6 +283,7 @@ pub fn scan_pack(
         declared: Vec::new(),
         unverified_downloads: Vec::new(),
         issues: Vec::new(),
+        loader_config: None,
     };
     let finish = |mut res: ScanResult| {
         res.jars.sort_by(|a, b| a.id.cmp(&b.id));
