@@ -126,7 +126,10 @@ export const commands = {
 	 *  cache folders (absolute). Read-only.
 	 */
 	appInfo: () => typedError<AppInfo, AppError>(__TAURI_INVOKE("app_info")),
-	/**  Checks GitHub for a newer release and reports it (null when up to date); never installs. */
+	/**
+	 *  Checks GitHub for a newer release and reports it (null when up to date); never installs.
+	 *  Runs when the user asks, or once at start when `Settings.autoCheckUpdates` is on.
+	 */
 	checkUpdate: () => typedError<UpdateInfo | null, AppError>(__TAURI_INVOKE("check_update")),
 	/**  Downloads, verifies the updater signature, installs, restarts. */
 	installUpdate: () => typedError<null, AppError>(__TAURI_INVOKE("install_update")),
@@ -844,6 +847,12 @@ export type Settings = {
 	includeBeta: boolean,
 	gridSort: GridSort,
 	inspectorWidth: number,
+	/**
+	 *  Opt-in: check GitHub for a newer release once, a few seconds after the app starts
+	 *  (CONTRACTS invariant 18). It only reports; nothing is downloaded or installed by itself.
+	 *  Settings stored before this field existed load it as `false`.
+	 */
+	autoCheckUpdates: boolean,
 };
 
 /**
@@ -858,6 +867,7 @@ export type SettingsPatch = {
 	includeBeta: boolean | null,
 	gridSort: GridSort | null,
 	inspectorWidth: number | null,
+	autoCheckUpdates: boolean | null,
 };
 
 export type Side = "client" | "server";

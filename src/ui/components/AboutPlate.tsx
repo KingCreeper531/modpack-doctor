@@ -5,8 +5,10 @@
  * the full value as their title; rows the build cannot report are left out), the update section,
  * and the non-affiliation disclaimer. No third-party logos.
  *
- * `UpdateSection` is presentational: it renders an `UpdateView` (app/updateState.ts) and calls
+ * `UpdateSection` is presentational: it renders an `UpdateView` (the store's `update`) and calls
  * back. Release notes are rendered as a plain text node (pre-wrapped), never as HTML or Markdown.
+ * Its last row is the opt-in "Check for updates at startup" toggle (`Settings.autoCheckUpdates`,
+ * labelled like the rail's Modrinth toggles, DESIGN §6.5).
  */
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
@@ -16,6 +18,7 @@ import { Button } from './Button';
 import { cx } from './cx';
 import { ErrorRow } from './ErrorRow';
 import { Panel } from './Panel';
+import { Toggle } from './Toggle';
 
 export const DISCLAIMER =
   'Modpack Doctor is not affiliated with or endorsed by Modrinth, Mojang, Microsoft, Forge, NeoForge, Fabric, or Quilt.';
@@ -132,26 +135,41 @@ export function releaseDate(date: string | null): string | null {
   return m ? m[1]! : date.trim();
 }
 
+/** The opt-in startup check (`Settings.autoCheckUpdates`). */
+export interface AutoCheckProps {
+  on: boolean;
+  onChange: (on: boolean) => void;
+  /** The last refused write, shown under the toggle. */
+  error?: AppError | null;
+}
+
+export const AUTO_CHECK_LABEL = 'Check for updates at startup';
+
 export interface UpdateSectionProps {
   view: UpdateView;
   onCheck: () => void;
   /** Install exactly this version (the one on screen). */
   onInstall: (version: string) => void;
+  /** The "Check for updates at startup" toggle; left out, the row is not shown. */
+  autoCheck?: AutoCheckProps;
   className?: string;
 }
 
 /**
- * UPDATES: a ruled sub-panel. Nothing here runs by itself: the check runs on "Check for updates",
- * and the install only on "Install <version> and restart" for the version shown.
+ * UPDATES: a ruled sub-panel. The check runs on "Check for updates" (or, opted in, once at
+ * start); the install only on "Install <version> and restart" for the version shown.
  */
-export function UpdateSection({ view, onCheck, onInstall, className }: UpdateSectionProps) {
+export function UpdateSection({ view, onCheck, onInstall, autoCheck, className }: UpdateSectionProps) {
   const checking = view.status === 'checking';
   const busy = view.status === 'available' && view.install !== 'idle';
+  const atStart = autoCheck?.on === true;
   return (
     <section aria-label="Updates" className={cx('border-b border-line', className)}>
       <header className="flex h-8 items-center gap-4 border-b border-line px-4">
         <h3 className="t-label text-fg-faint">Updates</h3>
-        <span className="ml-auto truncate t-mono text-fg-faint">GitHub Releases · only when you ask</span>
+        <span className="ml-auto truncate t-mono text-fg-faint">
+          {atStart ? 'GitHub Releases · at start and when you ask' : 'GitHub Releases · only when you ask'}
+        </span>
       </header>
       <div aria-live="polite">
         {view.status === 'available' ? (
@@ -215,12 +233,23 @@ export function UpdateSection({ view, onCheck, onInstall, className }: UpdateSec
                     ? `${view.version} is the latest release.`
                     : view.status === 'error'
                       ? 'Nothing was downloaded.'
-                      : 'Contacts github.com only when you click.'}
+                      : atStart
+                        ? 'Contacts github.com when you click, and once at start.'
+                        : 'Contacts github.com only when you click.'}
               </span>
             </div>
           </>
         )}
       </div>
+      {autoCheck ? (
+        <div className="border-t border-line">
+          <div className="flex h-8 items-center justify-between gap-4 px-4">
+            <span className="min-w-0 truncate t-small text-fg-dim">{AUTO_CHECK_LABEL}</span>
+            <Toggle on={autoCheck.on} label={AUTO_CHECK_LABEL} showState onChange={autoCheck.onChange} />
+          </div>
+          {autoCheck.error ? <ErrorRow error={autoCheck.error} /> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

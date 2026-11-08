@@ -10,8 +10,10 @@
  * - Build rows: version and commit come from the bundle; Tauri version, data folder and cache
  *   folder from `app_info`, asked each time About opens (the browser mock answers with fixed
  *   values). Rows stay off the plate until they are known.
- * - Updates (CONTRACTS invariant 18): nothing is checked until "Check for updates" is pressed,
- *   and nothing is installed until "Install <version> and restart" is pressed for that version.
+ * - Updates (CONTRACTS invariant 18): nothing is checked until "Check for updates" is pressed
+ *   (or, with the opt-in "Check for updates at startup" toggle here, once a few seconds after
+ *   start: app/startupUpdate.ts), and nothing is installed until "Install <version> and restart"
+ *   is pressed for that version.
  * - The only link is the project's GitHub page, through the opener plugin (capability scope
  *   `https://github.com/KingCreeper531/modpack-doctor` and `…/modpack-doctor/*`); the browser mock
  *   opens a tab.
@@ -20,7 +22,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 
-import { commands, type AppInfo } from '../../bindings';
+import { commands, type AppError, type AppInfo } from '../../bindings';
 import { AboutPlate, REPO_URL, UpdateSection, type AboutInfo } from '../components/AboutPlate';
 import { suppressesDefault } from '../app/keyboard';
 import type { AppCommands, Backend } from '../app/ipc';
@@ -94,9 +96,16 @@ export function AboutDialog() {
 function AboutLayer() {
   const update = useApp((s) => s.update);
   const backendKind = useApp((s) => s.backendKind);
+  const autoCheck = useApp((s) => s.settings.autoCheckUpdates);
   const a = useActions();
   const dialog = useRef<HTMLElement>(null);
   const [app, setApp] = useState<AppInfo | null>(null);
+  const [autoCheckError, setAutoCheckError] = useState<AppError | null>(null);
+  const setAutoCheck = async (on: boolean) => {
+    setAutoCheckError(null);
+    const e = await a.setAutoCheckUpdates(on);
+    if (dialog.current?.isConnected) setAutoCheckError(e);
+  };
 
   // Asked each time About opens (this layer mounts on open), never before.
   useEffect(() => {
@@ -166,7 +175,14 @@ function AboutLayer() {
           onClose={() => a.setAboutOpen(false)}
           onOpenLink={(url) => void openRepoUrl(url, backendKind)}
           className="focus-visible:outline-none"
-          updates={<UpdateSection view={update} onCheck={() => void a.checkUpdate()} onInstall={(v) => void a.installUpdate(v)} />}
+          updates={
+            <UpdateSection
+              view={update}
+              onCheck={() => void a.checkUpdate()}
+              onInstall={(v) => void a.installUpdate(v)}
+              autoCheck={{ on: autoCheck, onChange: (on) => void setAutoCheck(on), error: autoCheckError }}
+            />
+          }
         />
       </div>
     </>

@@ -57,7 +57,9 @@
  * Updates (M8, CONTRACTS invariant 18): only on request. `checkUpdate` (About → "Check for
  * updates", or the palette) → `check_update` → up to date / the `UpdateInfo` / an inline error.
  * `installUpdate(version)` calls `install_update` only for the version on screen, never while a
- * work order executes (refused inline as a `conflict`; Rust refuses too). Nothing runs at start.
+ * work order executes (refused inline as a `conflict`; Rust refuses too). Nothing runs at start
+ * unless the user opted in (`Settings.autoCheckUpdates`): then startupUpdate.ts runs the same
+ * `checkUpdate` once, a few seconds after start; it never installs anything.
  *
  * Nothing is persisted beyond `Settings` (theme, grid sort, inspector width, overrides; watched
  * instances are persisted by Rust).
@@ -107,6 +109,7 @@ import type { ModSortKey } from '../components/ModTable';
 import { clampSize, INSPECTOR_DEFAULT, INSPECTOR_MAX, INSPECTOR_MIN } from '../components/resize';
 import type { SortState } from '../components/sort';
 import { packIdentity, topLevelId } from './derive';
+import { scheduleStartupUpdateCheck, startupCheckAllowed } from './startupUpdate';
 import {
   crashNotification,
   defaultSourceId,
@@ -252,6 +255,11 @@ export interface StoreDeps {
   reportCore?: ReportCoreApi;
   /** Written into reports (`ReportInput.appVersion`). */
   appVersion?: string;
+  /**
+   * Whether the opt-in startup update check may run at all (startupUpdate.ts); it then still
+   * needs `Settings.autoCheckUpdates`. Default: under Tauri, or a mock scenario that asks for it.
+   */
+  startupUpdateCheck?: boolean;
 }
 
 /** How long a saved report's path stays on screen. */
@@ -274,6 +282,7 @@ export const DEFAULT_SETTINGS: Settings = {
   includeBeta: false,
   gridSort: 'name',
   inspectorWidth: INSPECTOR_DEFAULT,
+  autoCheckUpdates: false,
 };
 
 export interface AppState {
@@ -414,8 +423,10 @@ export interface AppState {
   exportReport(id: string, format: ReportFormat): Promise<void>;
   dismissReport(id: string): void;
   setAboutOpen(open: boolean): void;
-  /** `check_update`, only when the user asks (never at start or on a timer). */
+  /** `check_update`: when the user asks, or once at start with `autoCheckUpdates` (startupUpdate.ts). */
   checkUpdate(): Promise<void>;
+  /** Store `autoCheckUpdates` (takes effect at the next start); the refusal, if any. */
+  setAutoCheckUpdates(on: boolean): Promise<AppError | null>;
   /** `install_update`, only for `version` when it is the update on screen. */
   installUpdate(version: string): Promise<void>;
 }
@@ -433,7 +444,7 @@ export type AppStore = StoreApi<AppState>;
 
 /** A full `SettingsPatch` with every field but the given ones left unchanged (null). */
 export function settingsPatch(p: Partial<SettingsPatch>): SettingsPatch {
-  return { theme: null, overrides: null, modrinthEnabled: null, includeBeta: null, gridSort: null, inspectorWidth: null, ...p };
+  return { theme: null, overrides: null, modrinthEnabled: null, includeBeta: null, gridSort: null, inspectorWidth: null, autoCheckUpdates: null, ...p };
 }
 
 const UNKNOWN_PACK: AppError = {
@@ -490,6 +501,9 @@ export function createAppStore(deps: StoreDeps): AppStore {
   const reportTokens = new Map<string, number>();
   /** Latest update check / install; an older one's answer is dropped. */
   let updateToken = 0;
+  /** Latest `autoCheckUpdates` write; an older one's answer is dropped. */
+  let autoCheckSeq = 0;
+  const startupUpdateCheck = deps.startupUpdateCheck ?? startupCheckAllowed(backend);
 
   const unlisten: Unlisten[] = [];
   let initOnce: Promise<void> | null = null;
@@ -1373,6 +1387,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
       set({ phase: 'ready' });
       const first = get().discovery?.instances[0];
       if (first) get().selectInstance(first.id);
+      // Opt-in, a few seconds later, never blocking startup.
+      if (startupUpdateCheck && settings.status === 'ok') scheduleStartupUpdateCheck(store, setTimer);
     };
 
     return {
@@ -1844,6 +1860,20 @@ export function createAppStore(deps: StoreDeps): AppStore {
         if (r.status === 'error') set({ update: { status: 'error', error: r.error } });
         else if (r.data === null) set({ update: { status: 'current', version: appVersion } });
         else set({ update: { status: 'available', info: r.data, install: 'idle', error: null } });
+      },
+
+      async setAutoCheckUpdates(on) {
+        const seq = ++autoCheckSeq;
+        const before = get().settings.autoCheckUpdates;
+        set((st) => ({ settings: { ...st.settings, autoCheckUpdates: on } }));
+        const r = await call(cmd.setSettings(settingsPatch({ autoCheckUpdates: on })));
+        if (seq !== autoCheckSeq) return r.status === 'error' ? r.error : null;
+        if (r.status === 'error') {
+          set((st) => ({ settings: { ...st.settings, autoCheckUpdates: before } }));
+          return r.error;
+        }
+        set((st) => ({ settings: { ...st.settings, autoCheckUpdates: r.data.autoCheckUpdates } }));
+        return null;
       },
 
       async installUpdate(version) {

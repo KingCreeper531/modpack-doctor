@@ -101,12 +101,13 @@ describe('mock backend', () => {
   it('round-trips settings patches, including removing an override', async () => {
     const b = createMockBackend({ latencyMs: 0 });
     const o = { mcVersion: '1.20.4', loader: null, side: 'server' as const };
-    await b.commands.setSettings({ theme: 'light', overrides: { a: o }, modrinthEnabled: null, includeBeta: null, gridSort: 'severity', inspectorWidth: 400 });
+    await b.commands.setSettings({ theme: 'light', overrides: { a: o }, modrinthEnabled: null, includeBeta: null, gridSort: 'severity', inspectorWidth: 400, autoCheckUpdates: true });
     const got = await b.commands.getSettings();
-    expect(got.status === 'ok' && got.data).toMatchObject({ theme: 'light', gridSort: 'severity', inspectorWidth: 400, overrides: { a: o } });
-    await b.commands.setSettings({ theme: null, overrides: { a: null }, modrinthEnabled: null, includeBeta: null, gridSort: null, inspectorWidth: null });
+    expect(got.status === 'ok' && got.data).toMatchObject({ theme: 'light', gridSort: 'severity', inspectorWidth: 400, overrides: { a: o }, autoCheckUpdates: true });
+    await b.commands.setSettings({ theme: null, overrides: { a: null }, modrinthEnabled: null, includeBeta: null, gridSort: null, inspectorWidth: null, autoCheckUpdates: null });
     expect(b.settings().overrides).toEqual({});
     expect(b.settings().theme).toBe('light');
+    expect(b.settings().autoCheckUpdates).toBe(true);
   });
 
   it('answers the M7 commands: packs open and scan (with declared files), reports save', async () => {
