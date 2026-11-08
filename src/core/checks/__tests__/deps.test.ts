@@ -237,7 +237,7 @@ describe('E-DEP-RANGE', () => {
       { jarId: 'mods/x.jar', fileName: 'x.jar', modId: 'x' },
       { jarId: 'mods/geckolib-4.2.1.jar', fileName: 'geckolib-4.2.1.jar', modId: 'geckolib' },
     ]);
-    expect(f?.title).toContain('4.2.1 in geckolib-4.2.1.jar');
+    expect(f?.title).toBe('X Mod needs "geckolib" 4.4 or newer; you have 4.2.1 (geckolib-4.2.1.jar)');
     expect(highlighted(f)).toEqual(['modId="geckolib"', 'versionRange="[4.4,)"']);
   });
 

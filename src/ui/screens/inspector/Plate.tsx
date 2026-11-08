@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react';
 
 import type { RawRange } from '../../../bindings';
+import { describePlaceholderRange } from '../../../core/version/placeholders';
 import { cx } from '../../components/cx';
 
 export function Plate({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
@@ -31,10 +32,14 @@ export function SubLegend({ children, meta }: { children: ReactNode; meta?: Reac
   );
 }
 
-/** A declared range as written (`[47,)`, `>=0.15 <0.16`), or `any`. */
+/**
+ * A declared range as written (`[47,)`, `>=0.15 <0.16`), or `any`. An unfilled `${…}` build
+ * placeholder is never shown as if it were a real requirement: `[${create_version},) — any version
+ * (the mod's metadata has an unfilled placeholder: `${create_version}`)`.
+ */
 export function rangeText(r: RawRange | null): string {
   if (!r) return '—';
-  if (r.unrepresentable) return r.unrepresentable;
-  if (!r.raw.length || r.raw.includes('*')) return 'any';
-  return r.raw.join(' || ');
+  const raw = r.unrepresentable ? r.unrepresentable : !r.raw.length || r.raw.includes('*') ? 'any' : r.raw.join(' || ');
+  const placeholder = describePlaceholderRange(r);
+  return placeholder ? `${raw} — ${placeholder}` : raw;
 }

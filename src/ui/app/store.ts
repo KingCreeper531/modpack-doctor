@@ -101,6 +101,9 @@ import { buildReport, reportFileName, reportJson, reportMarkdown } from '../../c
 // that step (and degrades) instead of failing the whole module graph.
 import * as coreModrinth from '../../core/modrinth';
 import type { DependencyResolution, ModrinthQueries } from '../../core/modrinth';
+// E-DEP-RANGE advice (concrete version to switch to); a namespace import like `coreModrinth`.
+import * as depRangeCore from '../../core/modrinth/depRangeFix';
+import type { DepRangeData, DepRangeRequest } from '../../core/modrinth/depRangeFix';
 import { buildJarIndex as coreBuildJarIndex, resolvePack as coreResolvePack } from '../../core/pack';
 import type { UpdateView } from '../components/AboutPlate';
 import type { ModSortKey } from '../components/ModTable';
@@ -538,6 +541,8 @@ export function createAppStore(deps: StoreDeps): AppStore {
   let mrConfirmed: { modrinthEnabled: boolean; includeBeta: boolean } | null = null;
   /** Missing mod ids already looked up for the instance's current context. */
   const mrAttempted = new Map<string, Set<string>>();
+  /** E-DEP-RANGE Modrinth lookups (`m:<modId>` / `p:<projectId>`) already made for the current context. */
+  const mrDepAttempted = new Map<string, Set<string>>();
   /** Instances whose one automatic rate-limit retry is used up. */
   const mrRetried = new Set<string>();
   const bump =(m: Map<string, number>, key: string) => {
@@ -622,9 +627,14 @@ export function createAppStore(deps: StoreDeps): AppStore {
         let findings: Finding[] | null = null;
         if (m) {
           try {
-            const checked = core.runChecks({ instance: inst, scan: sc.result, pack, modrinth: m.ctx });
+            const input: CheckInput = { instance: inst, scan: sc.result, pack, modrinth: m.ctx };
+            const checked = core.runChecks(input);
             // Packs get the Modrinth context for their checks, never `replace` / `installDependency`.
             findings = inst.launcher === 'mrpack' ? checked : mr.enrichFindings(checked, m.ctx, m.resolutions, sc.result.jars);
+            if (inst.launcher !== 'mrpack' && m.depRange) {
+              // E-DEP-RANGE: the concrete version to switch to (and a `replace` when Rust can do it).
+              findings = depRangeCore.enrichDepRangeFindings(findings, input, m.ctx, m.depRange, get().settings.includeBeta);
+            }
           } catch {
             // A Modrinth-side failure must not cost the static findings.
             findings = null;
@@ -854,6 +864,84 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (limited) scheduleRetry(id, token, limited);
     };
 
+    /**
+     * E-DEP-RANGE advice (`src/core/modrinth/depRangeFix.ts`): fetch what `depRangeRequests` asks
+     * for (resolve the dependency's mod id, then its project's versions for the pack's loader +
+     * MC, then — when none fits — the dependent mod's versions), re-checking after each round so
+     * `enrichDepRangeFindings` names the version. Each request runs once per context; a failure
+     * leaves that finding with its static advice (a network failure adds the quiet notice).
+     */
+    const resolveDepRanges = async (id: string): Promise<void> => {
+      for (let round = 0; round < 3; round++) {
+        const m = get().modrinth[id];
+        const sc = get().scans[id];
+        const inst = instanceById(id);
+        if (!m || m.status !== 'done' || !m.ctx || m.ctx.offline || !m.filters || !sc?.result || !sc.pack || !inst) return;
+        if (isPack(id) || m.notice?.kind === 'rateLimited') return;
+        const token = mrTokens.get(id) ?? 0;
+        const key = m.key;
+        let attempted = mrDepAttempted.get(id);
+        if (!attempted) mrDepAttempted.set(id, (attempted = new Set()));
+        const data: DepRangeData = m.depRange ?? depRangeCore.emptyDepRangeData();
+        let requests: DepRangeRequest[];
+        try {
+          const input: CheckInput = { instance: inst, scan: sc.result, pack: sc.pack, modrinth: m.ctx };
+          requests = depRangeCore.depRangeRequests(sc.findings, input, m.ctx, data);
+        } catch {
+          return;
+        }
+        const reqKey = (r: DepRangeRequest) => (r.kind === 'resolveModId' ? `m:${r.modId}` : `p:${r.projectId}`);
+        requests = requests.filter((r) => !attempted.has(reqKey(r)));
+        if (!requests.length) return;
+        for (const r of requests) attempted.add(reqKey(r));
+        const { loaders, gameVersions } = m.filters;
+        let limited: AppError | null = null;
+        let degraded: AppError | null = null;
+        const projects: Record<string, DepRangeData['projectsByModId'][string]> = {};
+        const versions: Record<string, DepRangeData['versionsByProject'][string]> = {};
+        await Promise.all(
+          requests.map(async (r) => {
+            const fail = (e: AppError) => {
+              if (e.kind === 'rateLimited') limited ??= e;
+              else if (isNetworkError(e)) degraded ??= e;
+            };
+            if (r.kind === 'resolveModId') {
+              const res = await call(cmd.modrinthResolveModId(r.modId, loaders, gameVersions));
+              if (res.status === 'error') fail(res.error);
+              else projects[r.modId] = res.data ?? null;
+            } else {
+              const res = await call(cmd.modrinthProjectVersions(r.projectId, loaders, gameVersions, mr.updateVersionTypes(true)));
+              if (res.status === 'error') fail(res.error);
+              else versions[r.projectId] = res.data;
+            }
+          }),
+        );
+        if (mrTokens.get(id) !== token || get().modrinth[id]?.key !== key) return;
+        const failed: AppError | null = degraded;
+        const got = Object.keys(projects).length + Object.keys(versions).length > 0;
+        if (got || failed) {
+          patchMr(id, (cur) => {
+            const prev = cur.depRange ?? depRangeCore.emptyDepRangeData();
+            return {
+              ...cur,
+              depRange: {
+                projectsByModId: { ...prev.projectsByModId, ...projects },
+                versionsByProject: { ...prev.versionsByProject, ...versions },
+              },
+              notice: failed && !cur.notice ? { kind: 'partial' } : cur.notice,
+              error: cur.error ?? failed,
+            };
+          });
+        }
+        if (got) recheck(id);
+        if (limited) {
+          scheduleRetry(id, token, limited);
+          return;
+        }
+        if (!got) return;
+      }
+    };
+
     /** Step 7: icons, a second pass after the context is on screen (never re-runs the checks). */
     const loadIcons = async (id: string, token: number, projectIds: readonly string[]): Promise<void> => {
       if (!projectIds.length) return;
@@ -925,6 +1013,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       if (reason !== 'retry') mrRetried.delete(id);
       const token = bump(mrTokens, id);
       mrAttempted.set(id, new Set());
+      mrDepAttempted.set(id, new Set());
       patchMr(id, (m) => ({ ...m, status: 'loading', key: null, scanRef: null }));
       const run: MrRun = { token, key, enabled, epoch: mrEpoch, result, promise: Promise.resolve() };
       mrInflight.set(id, run);
@@ -1100,7 +1189,7 @@ export function createAppStore(deps: StoreDeps): AppStore {
       // A pack skips both: nothing is installed into it, and its rows need no icons.
       if (isPack(id)) return;
       const icons = unreachable || !projects || projects.offline ? null : loadIcons(id, token, Object.keys(ctx.projects).sort());
-      await Promise.all([resolveMissing(id), icons]);
+      await Promise.all([resolveMissing(id), resolveDepRanges(id), icons]);
     };
 
     /** Serialised `set_settings` for the Modrinth settings (see `mrWrites`). */

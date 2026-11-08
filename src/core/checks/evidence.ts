@@ -5,6 +5,7 @@ import type { Dependency, DependencyKind, FixAction, JarRecord, ModMeta, RawRang
 import { findingId } from '../crash/id';
 import type { Evidence, Finding, FindingCode, JarRef, Severity } from '../model';
 import { versionApi } from '../version';
+import { describePlaceholderRange } from '../version/placeholders';
 import type { CheckContext, ModEntry } from './context';
 
 export function jarRef(jar: JarRecord, modId?: string): JarRef {
@@ -29,6 +30,9 @@ export function entryLabel(e: ModEntry): string {
 
 /** Human description of a range ("[47,)" → "47 or newer"), falling back to the raw text. */
 export function describeRange(range: RawRange, subject: 'minecraft' | 'other' = 'other'): string {
+  // An unfilled `${…}` build placeholder is never shown as a real requirement.
+  const placeholder = describePlaceholderRange(range, subject);
+  if (placeholder) return placeholder;
   const parsed = versionApi.parseRange(range, subject);
   if (parsed.ok) return parsed.describe();
   return rawRange(range);

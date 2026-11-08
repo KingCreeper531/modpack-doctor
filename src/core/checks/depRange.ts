@@ -17,6 +17,7 @@
  *   `provides` alias the provider's own version is used, as Fabric does.
  * - No finding when any candidate satisfies the range, or when `satisfies` returns null.
  * Fixes: manual (install a matching version of the dependency); disable the dependent jar.
+ * With Modrinth, `src/core/modrinth/depRangeFix.ts` names the concrete version and adds `replace`.
  */
 import type { Dependency } from '../../bindings';
 import type { Check, Finding, JarRef } from '../model';
@@ -41,6 +42,7 @@ import {
   rawRange,
 } from './evidence';
 import { depSideApplies } from './missingDep';
+import { depRangeText } from './depRangeText';
 
 /** Dependencies on the game or the FML loader mod: versions come from the pack, not a jar. */
 const PLATFORM_IDS: readonly string[] = ['minecraft', 'forge', 'neoforge'];
@@ -114,29 +116,21 @@ export const depRangeCheck: Check = {
         if (providers.length === 0) continue;
         if (providers.some((p) => versionApi.satisfies(p.mod.version, dep.range, 'other') !== false)) continue;
 
-        const name = modName(e.mod);
-        const wants = describeRange(dep.range);
-        const installed = providers.map((p) => `${p.mod.version} in ${p.jar.depth === 0 ? p.jar.fileName : `${p.jar.fileName} (bundled in ${p.top.fileName})`}`);
         const culprits: JarRef[] = [entryRef(e)];
         for (const p of providers) {
           if (!culprits.some((c) => c.jarId === p.top.id)) culprits.push(jarRef(p.top, dep.modId));
         }
-        const optional = dep.kind === 'optional' ? ' (optional, but enforced when installed)' : '';
+        // Wording (range in words, installed version, what to switch to): depRangeText.ts.
+        const text = depRangeText(ctx, e, dep, providers);
         out.push(
           makeFinding({
             code: 'E-DEP-RANGE',
             severity: 'error',
-            title: `${name} needs "${dep.modId}" ${wants}, but ${installed[0] ?? 'another version'} is installed`,
-            explanation:
-              `${entryLabel(e)} depends on "${dep.modId}" ${wants} (${rawRange(dep.range)})${optional}. ` +
-              `The pack has ${installed.join('; ')}, which is outside that range, so the loader refuses to start or the mods ` +
-              `crash on missing classes or methods. Install a version of "${dep.modId}" in the range, or update ${name}.`,
+            title: text.title,
+            explanation: text.explanation,
             culprits,
-            evidence: entryEvidence(ctx, e, dependencyLines(e.mod, dep.modId, dep.kind), `Installed "${dep.modId}": ${installed.join('; ')}.`),
-            fixes: [
-              manual(`Replace "${dep.modId}" with a version in ${wants} (${rawRange(dep.range)}).`, `Or update ${name} to a version that accepts the installed "${dep.modId}".`),
-              disable(e.top),
-            ],
+            evidence: entryEvidence(ctx, e, dependencyLines(e.mod, dep.modId, dep.kind), text.installedNote),
+            fixes: text.fixes,
             discriminator: `${e.mod.modId}->${dep.modId}`,
           }),
         );

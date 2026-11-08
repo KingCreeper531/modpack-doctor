@@ -10,6 +10,7 @@
 import type { AppError, DeclaredFile, JarRecord, MrProject, MrVersion, ScanResult } from '../../bindings';
 import type * as ModrinthCore from '../../core/modrinth';
 import type { DependencyResolution, JarMatch, UpdateFilters } from '../../core/modrinth';
+import { depRangeVersions, type DepRangeData } from '../../core/modrinth/depRangeFix';
 import type { ModrinthContext } from '../../core/model';
 import type { ModrinthMatch, ModRow } from '../components/ModTable';
 import type { FixVersions } from '../components/labels';
@@ -66,6 +67,11 @@ export interface InstanceModrinth {
   filters: UpdateFilters | null;
   /** Missing mod id → chosen Modrinth version. */
   resolutions: Readonly<Record<string, DependencyResolution>>;
+  /**
+   * Modrinth answers for E-DEP-RANGE advice (`src/core/modrinth/depRangeFix.ts`): resolved mod ids
+   * and version lists, for the current context. Absent = nothing fetched yet.
+   */
+  depRange?: DepRangeData;
   /**
    * Missing mod ids whose Modrinth lookup failed for a non-network reason (`invalid`,
    * `internal`…): that dependency is skipped and its finding says so; no global notice.
@@ -224,7 +230,11 @@ const isBeta = (v: MrVersion) => v.versionType !== 'release';
  * Version facts the fix buttons need (`Update Sodium to 0.5.11`, `Install Cloth Config 15.0.140`):
  * every update in the context and every dependency resolution, by version id.
  */
-export function fixVersions(ctx: ModrinthContext | null, resolutions: Readonly<Record<string, DependencyResolution>>): FixVersions {
+export function fixVersions(
+  ctx: ModrinthContext | null,
+  resolutions: Readonly<Record<string, DependencyResolution>>,
+  depRange?: DepRangeData,
+): FixVersions {
   const out: Record<string, { versionNumber: string; beta: boolean; title?: string }> = {};
   if (ctx) {
     for (const v of Object.values(ctx.updates)) {
@@ -233,6 +243,12 @@ export function fixVersions(ctx: ModrinthContext | null, resolutions: Readonly<R
     }
   }
   for (const r of Object.values(resolutions)) out[r.version.id] = { versionNumber: r.version.versionNumber, beta: r.beta, title: r.project.title };
+  // Versions an E-DEP-RANGE `replace` may name ("Update Create to 6.0.6").
+  if (depRange) {
+    for (const { version: v, title } of depRangeVersions(depRange, ctx)) {
+      if (!(v.id in out)) out[v.id] = { versionNumber: v.versionNumber, beta: isBeta(v), ...(title ? { title } : {}) };
+    }
+  }
   return out;
 }
 
