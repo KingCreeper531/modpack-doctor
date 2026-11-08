@@ -110,20 +110,28 @@ describe('JVM start-up failures', () => {
     expect(analyze(body, 'latestLog')).toEqual([]);
   });
 
-  it('every start-up line is a fatal anchor, so the digest and watch mode keep it', () => {
-    const fatal = new Set(CRASH_ANCHORS.filter((a) => a.tier === 'fatal').map((a) => a.text));
+  it('every start-up line is an anchor (the digest keeps it); only the JVM’s closing lines are fatal', () => {
+    const tier = new Map(CRASH_ANCHORS.map((a) => [a.text, a.tier]));
     for (const t of [
       'Error: Could not create the Java Virtual Machine',
+      'Error: A fatal exception has occurred. Program will exit',
       'Error occurred during initialization of VM',
       'Error occurred during initialization of boot layer',
+    ]) {
+      expect(tier.get(t), t).toBe('fatal');
+    }
+    for (const t of [
       'Error: Could not find or load main class',
       'Could not reserve enough space for',
       'Unrecognized VM option',
       'Unrecognized option: ',
       'Invalid maximum heap size',
+      'Invalid initial heap size',
+      'Initial heap size set to a larger value than the maximum heap size',
+      'The specified size exceeds the maximum representable size',
       'java.lang.module.FindException',
     ]) {
-      expect(fatal.has(t), t).toBe(true);
+      expect(tier.get(t), t).toBe('contextual');
     }
   });
 

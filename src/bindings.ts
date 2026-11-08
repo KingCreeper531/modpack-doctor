@@ -35,10 +35,16 @@ export const commands = {
 	 */
 	readLogDigest: (instanceId: string, sourceId: string, anchors: string[], options: DigestOptions | null) => typedError<LogDigest, AppError>(__TAURI_INVOKE("read_log_digest", { instanceId, sourceId, anchors, options })),
 	/**
-	 *  Uploads the log source to mclo.gs and returns its links. The file is read while the scope
-	 *  lock is held; the upload runs after it is released.
+	 *  Uploads the log source to mclo.gs and returns its links. The file is resolved and opened
+	 *  while the scope lock is held; reading it (possibly a long file) and the upload run after the
+	 *  lock is released.
 	 */
 	shareLog: (instanceId: string, sourceId: string) => typedError<SharedLog, AppError>(__TAURI_INVOKE("share_log", { instanceId, sourceId })),
+	/**
+	 *  Deletes a log this app run uploaded to mclo.gs (`id` from its `https://mclo.gs/<id>` link),
+	 *  with the delete token Rust kept from the upload. `notFound` when there is none.
+	 */
+	deleteSharedLog: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_shared_log", { id })),
 	/**
 	 *  Toggle live watch mode (persisted in `Settings.watched`). Emits `CrashDetected` per the
 	 *  episode rules in `model/logs.rs`. `anchors` = the tiered list from

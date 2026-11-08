@@ -4,15 +4,19 @@
  * transparent click-away layer, focus kept inside, Esc closes, focus returns where it was.
  *
  * Paste: a textarea; Analyse runs the crash pipeline on the text for the selected instance. The
- * dialog states the limits and that the text stays on this computer.
+ * dialog states the limits and that the text is not uploaded or saved (mod names in it may be
+ * looked up on Modrinth when that is on).
  *
  * Share: nothing is uploaded until "Upload to mclo.gs" is pressed. The confirmation names the
- * file and says the log becomes public and that the home folder is replaced with `~`. After the
- * upload the link is copied (browser clipboard API) and shown, with Copy and Open (opener scope
- * `https://mclo.gs/*`). Errors are inline rows; offline gets its own sentence.
+ * file and says the log becomes public, that the home folder is replaced with `~`, and that login
+ * tokens and the computer's user name are removed while the Minecraft name stays. While the
+ * upload runs the dialog cannot be closed or replaced (`logDialogBusy`) and focus stays on the
+ * panel. After the upload, the link is copied (browser clipboard API) and shown with Copy, Open
+ * (opener scope `https://mclo.gs/*`) and "Delete from mclo.gs" (Rust holds the delete token for
+ * this app run). Focus moves to Close. Errors are inline rows, and offline gets its own sentence.
  */
 import { X } from '@phosphor-icons/react';
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { AppError, SharedLog } from '../../bindings';
@@ -21,7 +25,18 @@ import { ErrorRow } from '../components/ErrorRow';
 import { formatBytes, formatInt, logPath, plural } from '../components/format';
 import { Panel } from '../components/Panel';
 import { suppressesDefault } from '../app/keyboard';
-import { copyText, isPastedSource, openMclogs, PASTE_LIMIT_TEXT, sharedNote, shareErrorText, type LogDialog } from '../app/logTools';
+import {
+  copyText,
+  isPastedSource,
+  openMclogs,
+  PASTE_LIMIT_TEXT,
+  pastePrivacyText,
+  SHARE_PRIVACY_TEXT,
+  sharedNote,
+  shareErrorText,
+  utf8Length,
+  type LogDialog,
+} from '../app/logTools';
 import { useActions, useApp } from '../app/StoreContext';
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -34,11 +49,10 @@ export function LogDialogs() {
 
 function Layer({ dialog }: { dialog: LogDialog }) {
   const a = useActions();
+  const busy = useApp((s) => s.logDialogBusy);
   const ref = useRef<HTMLElement>(null);
-  const [busy, setBusy] = useState(false);
-  const close = () => {
-    if (!busy) a.setLogDialog(null);
-  };
+  // setLogDialog ignores this while an upload or delete runs.
+  const close = () => a.setLogDialog(null);
 
   useEffect(() => {
     const returnTo = document.activeElement;
@@ -60,11 +74,14 @@ function Layer({ dialog }: { dialog: LogDialog }) {
     }
     if (e.key !== 'Tab' || !ref.current) return;
     const list = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (!list.length) return;
+    if (!list.length) {
+      e.preventDefault();
+      return;
+    }
     const first = list[0]!;
     const last = list[list.length - 1]!;
     const active = document.activeElement;
-    if (e.shiftKey && (active === first || !ref.current.contains(active))) {
+    if (e.shiftKey && (active === first || active === ref.current || !ref.current.contains(active))) {
       e.preventDefault();
       last.focus();
     } else if (!e.shiftKey && (active === last || !ref.current.contains(active))) {
@@ -84,6 +101,7 @@ function Layer({ dialog }: { dialog: LogDialog }) {
           role="dialog"
           aria-modal="true"
           aria-label={legend}
+          aria-busy={busy || undefined}
           tabIndex={-1}
           legend={legend}
           flush
@@ -98,7 +116,7 @@ function Layer({ dialog }: { dialog: LogDialog }) {
           {dialog.kind === 'paste' ? (
             <PasteBody instanceId={dialog.instanceId} onClose={close} />
           ) : (
-            <ShareBody instanceId={dialog.instanceId} sourceId={dialog.sourceId} onClose={close} onBusy={setBusy} />
+            <ShareBody instanceId={dialog.instanceId} sourceId={dialog.sourceId} onClose={close} panel={ref} />
           )}
         </Panel>
       </div>
@@ -115,14 +133,24 @@ function Footer({ meta, children }: { meta?: ReactNode; children: ReactNode }) {
   );
 }
 
+/** Line and byte count of the pasted text, computed once per change (not on every render). */
+function pasteMeta(text: string): string {
+  if (!text) return 'nothing pasted yet';
+  let lines = 1;
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) lines++;
+  if (text.endsWith('\n')) lines--;
+  return `${plural(lines, 'line')} · ${formatBytes(utf8Length(text))}`;
+}
+
 function PasteBody({ instanceId, onClose }: { instanceId: string; onClose: () => void }) {
   const name = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId)?.name ?? null);
+  const modrinthEnabled = useApp((s) => s.settings.modrinthEnabled);
   const a = useActions();
   const [text, setText] = useState('');
-  const lines = text ? text.split('\n').length - (text.endsWith('\n') ? 1 : 0) : 0;
-  const bytes = text.length ? new TextEncoder().encode(text).length : 0;
+  const meta = useMemo(() => pasteMeta(text), [text]);
+  const blank = useMemo(() => !text.trim(), [text]);
   const analyse = () => {
-    if (!text.trim()) return;
+    if (blank) return;
     a.analyzePastedText(instanceId, text);
     onClose();
   };
@@ -133,7 +161,9 @@ function PasteBody({ instanceId, onClose }: { instanceId: string; onClose: () =>
           Paste console output, a crash report or any log{name ? ` of ${name}` : ''}. It is analysed with the same crash checks as a log file
           {name ? ', and mapped to this instance’s mods when it has been scanned' : ''}.
         </p>
-        <p className="t-small text-fg-dim">The text stays on this computer: it is not uploaded and not saved. {PASTE_LIMIT_TEXT}</p>
+        <p className="t-small text-fg-dim">
+          {pastePrivacyText(modrinthEnabled)} {PASTE_LIMIT_TEXT}
+        </p>
       </div>
       <div className="border-b border-line p-4">
         <textarea
@@ -146,11 +176,11 @@ function PasteBody({ instanceId, onClose }: { instanceId: string; onClose: () =>
           className="block h-[280px] w-full resize-none rounded-1 border border-line-strong bg-raised px-2 py-1 t-log whitespace-pre text-fg placeholder:text-fg-faint"
         />
       </div>
-      <Footer meta={lines ? `${plural(lines, 'line')} · ${formatBytes(bytes)}` : 'nothing pasted yet'}>
+      <Footer meta={meta}>
         <Button size={24} onClick={onClose}>
           Cancel
         </Button>
-        <Button size={24} variant="primary" onClick={analyse} disabled={!text.trim()}>
+        <Button size={24} variant="primary" onClick={analyse} disabled={blank}>
           Analyse
         </Button>
       </Footer>
@@ -158,13 +188,16 @@ function PasteBody({ instanceId, onClose }: { instanceId: string; onClose: () =>
   );
 }
 
+type DeleteState = { kind: 'idle' } | { kind: 'deleting' } | { kind: 'error'; error: AppError };
+
 type SharePhase =
   | { kind: 'confirm' }
   | { kind: 'uploading' }
-  | { kind: 'done'; shared: SharedLog; copied: boolean }
+  | { kind: 'done'; shared: SharedLog; copied: boolean; del: DeleteState }
+  | { kind: 'deleted'; shared: SharedLog }
   | { kind: 'error'; error: AppError };
 
-function ShareBody({ instanceId, sourceId, onClose, onBusy }: { instanceId: string; sourceId: string; onClose: () => void; onBusy: (b: boolean) => void }) {
+function ShareBody({ instanceId, sourceId, onClose, panel }: { instanceId: string; sourceId: string; onClose: () => void; panel: RefObject<HTMLElement | null> }) {
   const name = useApp((s) => s.discovery?.instances.find((i) => i.id === instanceId)?.name ?? null);
   const source = useApp((s) => s.crashes[instanceId]?.sources.find((x) => x.id === sourceId) ?? null);
   const backendKind = useApp((s) => s.backendKind);
@@ -179,22 +212,39 @@ function ShareBody({ instanceId, sourceId, onClose, onBusy }: { instanceId: stri
     };
   }, []);
 
+  // Keep focus inside the dialog when the focused button goes away or is disabled: on the panel
+  // while a request runs, on Close once there is an answer.
+  const deleting = phase.kind === 'done' && phase.del.kind === 'deleting';
+  const focusKey = deleting ? 'deleting' : phase.kind;
+  useEffect(() => {
+    const root = panel.current;
+    if (!root) return;
+    if (focusKey === 'uploading' || focusKey === 'deleting') root.focus();
+    else if (focusKey === 'done' || focusKey === 'deleted') (root.querySelector<HTMLElement>('[data-autofocus]') ?? root).focus();
+  }, [focusKey, panel]);
+
   if (isPastedSource(sourceId)) {
     return <p className="px-4 py-2 t-small text-fg-dim">Pasted text is never uploaded. Only log files of an instance can be shared.</p>;
   }
 
   const upload = async () => {
     setPhase({ kind: 'uploading' });
-    onBusy(true);
     const r = await a.shareLog(instanceId, sourceId);
-    onBusy(false);
     if (!live.current) return;
     if (r.status === 'error') {
       setPhase({ kind: 'error', error: r.error });
       return;
     }
     const copied = await copyText(r.data.url);
-    if (live.current) setPhase({ kind: 'done', shared: r.data, copied });
+    if (live.current) setPhase({ kind: 'done', shared: r.data, copied, del: { kind: 'idle' } });
+  };
+
+  const remove = async (shared: SharedLog, copied: boolean) => {
+    setPhase({ kind: 'done', shared, copied, del: { kind: 'deleting' } });
+    const r = await a.deleteSharedLog(shared.url);
+    if (!live.current) return;
+    if (r.status === 'error') setPhase({ kind: 'done', shared, copied, del: { kind: 'error', error: r.error } });
+    else setPhase({ kind: 'deleted', shared });
   };
 
   const plate = (
@@ -213,8 +263,25 @@ function ShareBody({ instanceId, sourceId, onClose, onBusy }: { instanceId: stri
     </dl>
   );
 
+  if (phase.kind === 'deleted') {
+    return (
+      <>
+        <div className="flex flex-col gap-1 border-b border-line px-4 py-2" role="status">
+          <p className="t-body text-fg">Deleted from mclo.gs. The link no longer works.</p>
+          <p className="t-mono break-all text-fg-dim">{phase.shared.url}</p>
+        </div>
+        <Footer>
+          <Button size={24} variant="primary" onClick={onClose} data-autofocus>
+            Close
+          </Button>
+        </Footer>
+      </>
+    );
+  }
+
   if (phase.kind === 'done') {
-    const { shared, copied } = phase;
+    const { shared, copied, del } = phase;
+    const busy = del.kind === 'deleting';
     return (
       <>
         <div className="flex flex-col gap-1 border-b border-line px-4 py-2" role="status">
@@ -231,21 +298,26 @@ function ShareBody({ instanceId, sourceId, onClose, onBusy }: { instanceId: stri
             className="h-6 min-w-0 flex-1 rounded-1 border border-line-strong bg-raised px-2 t-mono text-fg"
           />
         </div>
-        <Footer meta={`raw: ${shared.rawUrl.replace(/^https:\/\//, '')}`}>
+        {del.kind === 'error' ? <ErrorRow error={del.error} /> : null}
+        <Footer meta={busy ? 'deleting…' : `raw: ${shared.rawUrl.replace(/^https:\/\//, '')}`}>
+          <Button size={24} variant="danger" disabled={busy} onClick={() => void remove(shared, copied)}>
+            Delete from mclo.gs
+          </Button>
           <Button
             size={24}
+            disabled={busy}
             onClick={() =>
               void copyText(shared.url).then((ok) => {
-                if (live.current) setPhase({ kind: 'done', shared, copied: ok });
+                if (live.current) setPhase((p) => (p.kind === 'done' ? { ...p, copied: ok } : p));
               })
             }
           >
             Copy link
           </Button>
-          <Button size={24} onClick={() => void openMclogs(shared.url, backendKind)}>
+          <Button size={24} disabled={busy} onClick={() => void openMclogs(shared.url, backendKind)}>
             Open in browser
           </Button>
-          <Button size={24} variant="primary" onClick={onClose} data-autofocus>
+          <Button size={24} variant="primary" disabled={busy} onClick={onClose} data-autofocus>
             Close
           </Button>
         </Footer>
@@ -258,8 +330,8 @@ function ShareBody({ instanceId, sourceId, onClose, onBusy }: { instanceId: stri
       <div className="flex flex-col gap-1 border-b border-line px-4 py-2">
         <p className="t-body text-fg">This uploads the log file below to mclo.gs. Anyone with the link can read it, so it is public.</p>
         <p className="t-small text-fg-dim">
-          Your home folder is replaced with ~ before the upload. Logs longer than {formatInt(25_000)} lines or 10 MB keep their end, where
-          crashes are. Nothing is uploaded until you press Upload.
+          {SHARE_PRIVACY_TEXT} Logs longer than {formatInt(25_000)} lines or 10 MB keep their end, where crashes are. Nothing is uploaded until
+          you press Upload.
         </p>
       </div>
       {plate}

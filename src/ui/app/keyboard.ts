@@ -9,7 +9,11 @@
  * | Enter | expand or collapse the row under the keyboard cursor |
  * | Ctrl/Cmd+R | rescan the open instance (the webview reload is always suppressed) |
  * | F5, Ctrl/Cmd/Shift+F5, Ctrl/Cmd+Shift+R | nothing: only the webview reload is suppressed |
- * | Esc | close the top-most layer: palette, then the context menu, then the inspector selection |
+ * | Esc | close the top-most layer: palette, then a Paste/Share dialog (not while it uploads or deletes), then About, then the context menu, then the inspector selection |
+ *
+ * While a modal dialog (About, Paste a log, Share on mclo.gs) is open, only Esc acts at window
+ * level (screens/Overlays.tsx `handleKey`): the palette, rescan, J/K and Enter stay off even
+ * when focus has left the dialog.
  *
  * Never while typing: nothing fires when the event comes from an input, textarea, select or
  * contenteditable element (the palette's own input may close the palette with Ctrl/Cmd+K).

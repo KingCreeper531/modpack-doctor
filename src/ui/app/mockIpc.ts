@@ -30,7 +30,8 @@
  *
  * Share (`share_log`): never touches the network. It answers a fake `https://mclo.gs/Mock<n>` link
  * for a listed source of the instance (recorded for tests, `shares()`), `notFound` for anything
- * else, and `offline` with `?scenario=shareoffline`.
+ * else, and `offline` with `?scenario=shareoffline`. `delete_shared_log` "deletes" a `Mock<n>` it
+ * handed out once (recorded, `deletedShares()`), `notFound` otherwise.
  *
  * `.mrpack` (M7): `pick_mrpack` "opens" `MOCK_PICKED_PACK` (Explorer Kit 2.1); scanning a pack
  * reports the jars inside its zip (`overrides/…`) plus the files its index declares
@@ -256,6 +257,8 @@ export interface MockBackend extends Backend {
   startupUpdateCheck: boolean;
   /** Test hook: every `share_log` call that "uploaded" (instance id, source id). */
   shares(): ReadonlyArray<{ instanceId: string; sourceId: string }>;
+  /** Test hook: the mclo.gs ids `delete_shared_log` "deleted". */
+  deletedShares(): readonly string[];
 }
 
 export function createMockBackend(options: Partial<MockOptions> = {}): MockBackend {
@@ -287,6 +290,7 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
   const added: Instance[] = [];
   const reports: Array<{ name: string; format: ReportFormat; contents: string }> = [];
   const shared: Array<{ instanceId: string; sourceId: string }> = [];
+  const deletedShares: string[] = [];
 
   const ev = {
     scanStarted: emitter<ScanStarted>(),
@@ -526,6 +530,18 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
       const lines = digestFromText(hit.log.text, hit.source).totalLines;
       return ok({ url: `https://mclo.gs/${id}`, rawUrl: `https://api.mclo.gs/1/raw/${id}`, totalLines: lines, sentLines: lines, truncated: false });
     },
+    deleteSharedLog: async (id: string): Promise<Result<null>> => {
+      await lag();
+      const n = /^Mock([0-9]+)$/.exec(id)?.[1];
+      if (!n || Number(n) < 1 || Number(n) > shared.length || deletedShares.includes(id)) {
+        return err(
+          'notFound',
+          'Modpack Doctor can only delete logs it uploaded since it was started, and it has no delete key for this one. mclo.gs removes logs on its own after 90 days.',
+        );
+      }
+      deletedShares.push(id);
+      return ok(null);
+    },
     setWatch: async (instanceId: string, enabled: boolean, anchors: WatchAnchor[]): Promise<Result<null>> => {
       await lag();
       const inst = instances().find((i) => i.id === instanceId);
@@ -682,5 +698,6 @@ export function createMockBackend(options: Partial<MockOptions> = {}): MockBacke
     emitDropRejected: (e) => ev.dropRejected.emit(e),
     startupUpdateCheck: autoUpdate,
     shares: () => shared,
+    deletedShares: () => deletedShares,
   };
 }

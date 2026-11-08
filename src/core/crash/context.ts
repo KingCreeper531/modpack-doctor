@@ -52,13 +52,11 @@ export const CRASH_SIGNALS: readonly CrashAnchor[] = [
   ...fatal('java.lang.module.ResolutionException'),
   // The Java launcher could not load the main class; the old Fabric resolver gave up.
   ...fatal('Error: LinkageError occurred while loading main class', 'Could not find required mod'),
-  // The JVM itself gave up before the game started (console output: launchers.md §7).
-  ...fatal(
-    'Error: Could not create the Java Virtual Machine',
-    'Error occurred during initialization of VM',
-    'Error occurred during initialization of boot layer',
-    'Error: Could not find or load main class',
-  ),
+  // The JVM itself gave up before the game started (console output: launchers.md §7). Only its
+  // closing lines are fatal; the missing-main-class line can be quoted by a running game, so it
+  // counts only with an exit or a crash file (see patterns/jvmStartup.ts).
+  ...fatal('Error: Could not create the Java Virtual Machine', 'Error occurred during initialization of VM', 'Error occurred during initialization of boot layer'),
+  ...contextual('Error: Could not find or load main class'),
   // Mentions of these are common in healthy logs (heap-dump flags, optional class probes).
   ...contextual('java.lang.OutOfMemoryError', 'UnsupportedClassVersionError'),
 ];

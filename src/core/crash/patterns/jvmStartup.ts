@@ -28,7 +28,7 @@ import type { CrashPattern, Finding } from '../../model';
 import { ctxOf, finding, logEvidence, manual, type Ctx } from '../context';
 import { minJavaForMinecraft } from '../javaVersions';
 import { logLevel } from '../text';
-import { fatal } from '../tiers';
+import { contextual, fatal } from '../tiers';
 
 const CREATE_VM = 'Error: Could not create the Java Virtual Machine';
 const FATAL_EXIT = 'Error: A fatal exception has occurred. Program will exit';
@@ -291,12 +291,15 @@ export const jvmStartupPattern: CrashPattern = {
   id: 'jvm-startup',
   codes: ['C-JVM-START', 'C-OOM', 'C-JAVA-VERSION'],
   anchors: [
-    // Printed only by a JVM that is exiting before the game runs.
-    ...fatal(
-      CREATE_VM,
-      FATAL_EXIT,
-      INIT_VM,
-      BOOT_LAYER,
+    // The Java launcher's own last words: printed only by a JVM that is exiting before the game
+    // runs, never by a running game.
+    ...fatal(CREATE_VM, FATAL_EXIT, INIT_VM, BOOT_LAYER),
+    // The reasons. Watch mode tails only `latest.log`, which a JVM that fails to start never
+    // writes, while a running game (or a mod's help text) can quote these phrases in a WARN or
+    // INFO line: a fatal tier there would be a false CrashDetected that also suppresses the
+    // session's real crash (CONTRACTS invariant 11). So they only count with an exit or a
+    // crash file; the digest keeps them either way.
+    ...contextual(
       'Error: Could not find or load main class',
       'Could not reserve enough space for',
       'Unrecognized VM option',

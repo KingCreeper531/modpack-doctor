@@ -257,6 +257,10 @@ export function digestLines(
   return { source, totalLines, truncated, chunks };
 }
 
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
 /** What kind of log pasted text looks like (decides only whether it counts as a crash file). */
 export function pastedKind(text: string): LogKind {
   if (/^---- Minecraft Crash Report ----/m.test(text)) return 'crashReport';
@@ -282,24 +286,43 @@ export function digestPastedText(
   source: Omit<LogSource, 'kind'> & { kind?: LogKind },
   options: DigestOptions = DEFAULT_DIGEST_OPTIONS,
 ): PastedDigest {
-  let lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
+  // Every whole line that fits lies within the last 2 × PASTE_MAX_CHARS characters (the cap counts
+  // a line's characters plus one, and a CRLF line end is two). So a longer text is sliced first:
+  // the line breaks before the slice are only counted, never split or copied.
+  const sliceChars = 2 * PASTE_MAX_CHARS;
+  let prefixLines = 0;
+  let body = text;
+  let partialFirst = false;
+  if (text.length > sliceChars) {
+    let start = text.length - sliceChars;
+    if (isLowSurrogate(text.charCodeAt(start))) start++;
+    for (let i = text.indexOf('\n'); i !== -1 && i < start; i = text.indexOf('\n', i + 1)) prefixLines++;
+    partialFirst = text.charCodeAt(start - 1) !== 10;
+    body = text.slice(start);
+  }
+  let lines = body.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  const totalLines = lines.length;
-  let cut = Math.max(0, lines.length - PASTE_MAX_LINES);
-  lines = lines.slice(cut);
-  // Character cap, keeping whole lines from the end.
+  const totalLines = prefixLines + lines.length;
+  const lineCut = Math.max(0, lines.length - PASTE_MAX_LINES);
+  if (lineCut > 0) partialFirst = false;
+  let cut = prefixLines + lineCut;
+  lines = lines.slice(lineCut);
+  // Character cap, keeping whole lines from the end (a line cut by the slice is never whole).
+  const firstWhole = partialFirst ? 1 : 0;
   let chars = 0;
   let keepFrom = lines.length;
-  while (keepFrom > 0) {
+  while (keepFrom > firstWhole) {
     const len = (lines[keepFrom - 1]?.length ?? 0) + 1;
     if (chars + len > PASTE_MAX_CHARS) break;
     chars += len;
     keepFrom--;
   }
   if (keepFrom === lines.length && lines.length > 0) {
-    // One line longer than the cap: keep its end.
+    // One line longer than the cap: keep its end (without splitting a surrogate pair).
     const lastLine = lines[lines.length - 1] ?? '';
-    lines = [lastLine.slice(lastLine.length - (PASTE_MAX_CHARS - 1))];
+    let from = Math.max(0, lastLine.length - (PASTE_MAX_CHARS - 1));
+    if (isLowSurrogate(lastLine.charCodeAt(from))) from++;
+    lines = [lastLine.slice(from)];
     cut = totalLines - 1;
   } else {
     cut += keepFrom;
