@@ -236,6 +236,8 @@ fn unsafe_entries_are_skipped_as_issues() {
         ("overrides/mods/CON.jar", "reserves"),
         ("overrides/aux/x.jar", "reserves"),
         ("overrides/mods/x.jar. ", "reserves"),
+        ("overrides//mods/dbl.jar", "empty or \".\" folder name"),
+        ("overrides/./mods/dot.jar", "empty or \".\" folder name"),
     ];
     let mut pack = Pack::new().index(&index_json(r#"{"minecraft":"1.20.1"}"#, &[])).file("overrides/mods/good.jar", &jar);
     for (name, _) in &bad {
@@ -261,7 +263,9 @@ fn path_problem_rules() {
     for ok in ["overrides/mods/a.jar", "mods/a b.jar", "overrides/", "config/x.y.toml", "mods/名前.jar"] {
         assert_eq!(archive::path_problem(ok), None, "{ok}");
     }
-    for bad in ["", "/", "..", "a/../b", "/etc", "\\x", "a\\b", "C:x", "c:/x", "a\0b", "nul", "mods/LPT1.txt", "a/b:c", "a/ b ", "a/x."] {
+    for bad in ["", "/", "..", "a/../b", "/etc", "\\x", "a\\b", "C:x", "c:/x", "a\0b", "nul", "mods/LPT1.txt", "a/b:c", "a/ b ", "a/x.", ".", "./a",
+        "a/./b", "a//b", "a/.", "a//", "overrides//mods/x.jar", "overrides/./mods/x.jar", "./modrinth.index.json"]
+    {
         assert!(archive::path_problem(bad).is_some(), "{bad:?}");
     }
 }

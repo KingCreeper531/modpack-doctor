@@ -7,7 +7,8 @@
  * Execute). Rust opens the native save dialog; the opened file is never changed.
  *
  * Above the list: Rust's planning refusal or the last save failure as an inline error row (an
- * expired plan offers Plan again), and the plan's warnings. Each row has Remove while the draft is
+ * expired plan, or one of a pack that changed since planning, offers Plan again), and the plan's
+ * warnings. Each row has Remove while the draft is
  * reviewed. Once saved, a `saved` line gives the new file's path and "Open it in your launcher to
  * install it." and Close replaces the buttons.
  *
@@ -72,7 +73,7 @@ export function PackFixPanel({ draft, packPath, onSave, onCancel, onRemoveEdit, 
   const saving = phase === 'saving';
   const done = phase === 'saved';
   const fileName = plan?.packFileName ?? packPath.slice(Math.max(packPath.lastIndexOf('\\'), packPath.lastIndexOf('/')) + 1);
-  // An expired plan (`notFound` on save) or a refusal: planning again is the way on.
+  // An expired or stale plan (`notFound` / `conflict` on save) or a refusal: planning again is the way on.
   const planAgain = !plan && phase === 'review';
 
   useEffect(() => {

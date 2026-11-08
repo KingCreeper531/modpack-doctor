@@ -188,7 +188,9 @@ fn pack_remote(st: &AppState, handle: &tokio::runtime::Handle) -> Result<Option<
     Ok(Some(ClientRemote::new(svc.client(true).clone(), handle.clone())))
 }
 
-/// Blocking: plan and store a fixed copy. Must not run on an async worker thread.
+/// Blocking: plan and store a fixed copy. Must not run on an async worker thread. With Modrinth
+/// on, the pack's declared files are identified for every plan (warnings name the ones that are
+/// not on Modrinth); a missing client fails only plans that replace or add files.
 pub(crate) fn plan_pack_fix_with(
     st: &AppState,
     store: &PackFixStore,
@@ -197,16 +199,21 @@ pub(crate) fn plan_pack_fix_with(
     edits: &[PackEdit],
 ) -> Result<PackFixPlan> {
     let needs_remote = edits.iter().any(|e| matches!(e, PackEdit::ReplaceDeclared { .. } | PackEdit::AddDependency { .. }));
-    let r = if needs_remote { pack_remote(st, handle)? } else { None };
+    let r = match pack_remote(st, handle) {
+        Ok(r) => r,
+        Err(e) if needs_remote => return Err(e),
+        Err(_) => None,
+    };
     fixcopy::plan(st, store, r.as_ref().map(|r| r as &dyn Remote), instance_id, edits)
 }
 
 /// Plan a fixed copy of an opened `.mrpack` from edit intents. Nothing is written. Every edit is
 /// checked against the pack (index paths, override jars) and every Modrinth version is fetched
-/// fresh and checked (same project for a replacement, the pack's loader and Minecraft version,
-/// a CDN download with sha1, sha512 and size, no path collision). The plan is stored in Rust for
-/// 15 minutes, single use; any failure refuses the whole plan with a readable error naming the
-/// edit.
+/// fresh and checked (same project and a newer version for a replacement; for an addition, a
+/// project some kept file requires and the copy does not have yet; the pack's loader and
+/// Minecraft version, a CDN download with sha1, sha512 and size, no path collision). The plan is
+/// stored in Rust for 15 minutes, single use; any failure refuses the whole plan with a readable
+/// error naming the edit.
 #[tauri::command]
 #[specta::specta]
 pub async fn plan_pack_fix(
@@ -261,8 +268,7 @@ pub async fn save_fixed_pack(
         return Ok(None);
     };
     // The dialog confirmed replacing `picked` itself; a name we had to extend was not confirmed.
-    let dest = fixcopy::enforce_mrpack_extension(picked.clone())?;
-    let may_replace = dest == picked;
+    let (dest, may_replace) = fixcopy::destination(picked)?;
     let st = AppState::clone(&state);
     let store = PackFixStore::clone(&plans);
     let _scope = st.scope_lock.clone().read_owned().await;
